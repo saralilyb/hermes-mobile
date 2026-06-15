@@ -194,7 +194,12 @@ fun KeysScreen(
                                                     }
                                                 }) {
                                                     Icon(
-                                                        imageVector = if (isRevealed) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                                        imageVector =
+                                                            if (isRevealed) {
+                                                                Icons.Filled.VisibilityOff
+                                                            } else {
+                                                                Icons.Filled.Visibility
+                                                            },
                                                         contentDescription = "Toggle Visibility",
                                                     )
                                                 }

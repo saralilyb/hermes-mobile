@@ -1,7 +1,5 @@
 package com.m57.hermescontrol.data.model
 
-import com.google.gson.annotations.SerializedName
-
 data class PluginInfo(
     val name: String,
     val description: String?,

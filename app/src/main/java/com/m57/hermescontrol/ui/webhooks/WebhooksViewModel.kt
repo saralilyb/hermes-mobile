@@ -3,7 +3,6 @@ package com.m57.hermescontrol.ui.webhooks
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.WebhookSubscription
-import com.m57.hermescontrol.data.model.WebhooksResponse
 import com.m57.hermescontrol.data.model.WebhooksToggleRequest
 import com.m57.hermescontrol.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers

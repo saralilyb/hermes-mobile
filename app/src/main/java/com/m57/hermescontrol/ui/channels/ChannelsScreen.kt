@@ -206,7 +206,12 @@ fun ChannelsScreen(
                                                 Text(
                                                     text = if (field.isSet) "Configured" else "Not set",
                                                     style = MaterialTheme.typography.bodyMedium,
-                                                    color = if (field.isSet) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                                    color =
+                                                        if (field.isSet) {
+                                                            MaterialTheme.colorScheme.primary
+                                                        } else {
+                                                            MaterialTheme.colorScheme.error
+                                                        },
                                                 )
                                             }
                                         }

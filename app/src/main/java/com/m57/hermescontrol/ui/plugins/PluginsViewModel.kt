@@ -3,7 +3,6 @@ package com.m57.hermescontrol.ui.plugins
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.PluginInfo
-import com.m57.hermescontrol.data.model.TogglePluginRequest
 import com.m57.hermescontrol.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
