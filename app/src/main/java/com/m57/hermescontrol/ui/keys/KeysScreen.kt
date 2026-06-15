@@ -15,7 +15,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,7 +56,7 @@ fun KeysScreen(
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
-        viewModel.loadKeys(reveal = false)
+        viewModel.loadKeys()
     }
 
     LaunchedEffect(state.toastMessage) {
@@ -77,8 +81,11 @@ fun KeysScreen(
                 },
                 title = { Text("Keys & Credentials") },
                 actions = {
-                    Button(onClick = { viewModel.loadKeys(reveal = !state.isRevealed) }) {
-                        Text(if (state.isRevealed) "Hide Values" else "Reveal Values")
+                    IconButton(onClick = { viewModel.loadKeys() }) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = "Refresh",
+                        )
                     }
                 },
             )
@@ -108,9 +115,20 @@ fun KeysScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(state.envVars.toList()) { (key, value) ->
+                    items(state.envVars.toList()) { (key, config) ->
                         var isEditing by remember { mutableStateOf(false) }
-                        var editedValue by remember { mutableStateOf(value) }
+                        val revealedVal = state.revealedValues[key]
+                        val isRevealed = revealedVal != null
+                        var editedValue by remember { mutableStateOf(revealedVal ?: "") }
+
+                        val displayValue =
+                            if (isRevealed) {
+                                revealedVal.orEmpty()
+                            } else if (config.isSet) {
+                                config.redactedValue ?: "********"
+                            } else {
+                                "Not configured"
+                            }
 
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(16.dp)) {
@@ -119,6 +137,14 @@ fun KeysScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     fontFamily = FontFamily.Monospace,
                                 )
+                                if (!config.description.isNullOrBlank()) {
+                                    Text(
+                                        text = config.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        modifier = Modifier.padding(vertical = 4.dp),
+                                    )
+                                }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 if (isEditing) {
                                     OutlinedTextField(
@@ -141,7 +167,6 @@ fun KeysScreen(
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Button(onClick = {
                                             isEditing = false
-                                            editedValue = value
                                         }) {
                                             Text("Cancel")
                                         }
@@ -153,13 +178,36 @@ fun KeysScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Text(
-                                            text = value,
+                                            text = displayValue,
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontFamily = FontFamily.Monospace,
+                                            modifier = Modifier.weight(1f),
                                         )
-                                        IconButton(onClick = { isEditing = true }) {
-                                            Text("Edit", style = MaterialTheme.typography.bodySmall)
+                                        Row {
+                                            if (config.isSet) {
+                                                IconButton(onClick = {
+                                                    if (isRevealed) {
+                                                        viewModel.hideKey(key)
+                                                    } else {
+                                                        viewModel.revealKey(key)
+                                                    }
+                                                }) {
+                                                    Icon(
+                                                        imageVector = if (isRevealed) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                                        contentDescription = "Toggle Visibility",
+                                                    )
+                                                }
+                                            }
+                                            IconButton(onClick = {
+                                                editedValue = if (isRevealed) revealedVal.orEmpty() else ""
+                                                isEditing = true
+                                            }) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Edit,
+                                                    contentDescription = "Edit",
+                                                )
+                                            }
                                         }
                                     }
                                 }

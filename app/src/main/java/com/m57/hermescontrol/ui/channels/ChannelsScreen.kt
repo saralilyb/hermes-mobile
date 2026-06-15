@@ -26,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -41,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.m57.hermescontrol.data.model.MessagingPlatformUpdate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -135,8 +137,20 @@ fun ChannelsScreen(
                                             style = MaterialTheme.typography.bodyMedium,
                                         )
                                     }
-                                    Button(onClick = { showConfigureForm = !showConfigureForm }) {
-                                        Text(if (showConfigureForm) "Cancel" else "Configure")
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Switch(
+                                            checked = platform.enabled,
+                                            onCheckedChange = { isChecked ->
+                                                viewModel.configurePlatform(
+                                                    platform.id,
+                                                    MessagingPlatformUpdate(enabled = isChecked),
+                                                )
+                                            },
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Button(onClick = { showConfigureForm = !showConfigureForm }) {
+                                            Text(if (showConfigureForm) "Cancel" else "Configure")
+                                        }
                                     }
                                 }
 
@@ -147,20 +161,19 @@ fun ChannelsScreen(
                                         style = MaterialTheme.typography.titleMedium,
                                     )
 
-                                    val fields =
-                                        if (platform.name.lowercase() == "telegram") {
-                                            listOf("bot_token", "chat_id")
-                                        } else {
-                                            listOf("webhook_url", "channel")
-                                        }
-
+                                    val envFields = platform.envVars.orEmpty()
                                     val inputValues = remember { mutableStateMapOf<String, String>() }
 
-                                    fields.forEach { field ->
+                                    envFields.forEach { field ->
                                         OutlinedTextField(
-                                            value = inputValues[field].orEmpty(),
-                                            onValueChange = { inputValues[field] = it },
-                                            label = { Text(field.replace("_", " ").uppercase()) },
+                                            value = inputValues[field.key].orEmpty(),
+                                            onValueChange = { inputValues[field.key] = it },
+                                            label = { Text(field.prompt ?: field.key) },
+                                            placeholder = {
+                                                if (field.isSet) {
+                                                    Text("******** (Already Configured)")
+                                                }
+                                            },
                                             modifier = Modifier.fillMaxWidth(),
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
@@ -168,7 +181,7 @@ fun ChannelsScreen(
 
                                     Button(
                                         onClick = {
-                                            viewModel.configurePlatform(platform.name, inputValues.toMap())
+                                            viewModel.configurePlatform(platform.id, inputValues.toMap())
                                             showConfigureForm = false
                                         },
                                         modifier = Modifier.align(Alignment.End),
@@ -176,15 +189,24 @@ fun ChannelsScreen(
                                         Text("Save Settings")
                                     }
                                 } else {
-                                    platform.details?.let { details ->
-                                        if (details.isNotEmpty()) {
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Text(text = "Details:", style = MaterialTheme.typography.titleSmall)
-                                            details.forEach { (key, value) ->
+                                    val envFields = platform.envVars.orEmpty()
+                                    if (envFields.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(text = "Configured Keys:", style = MaterialTheme.typography.titleSmall)
+                                        envFields.forEach { field ->
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                            ) {
                                                 Text(
-                                                    text = "$key: $value",
+                                                    text = field.key,
                                                     style = MaterialTheme.typography.bodyMedium,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                                Text(
+                                                    text = if (field.isSet) "Configured" else "Not set",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = if (field.isSet) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                                                 )
                                             }
                                         }

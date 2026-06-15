@@ -2,17 +2,24 @@ package com.m57.hermescontrol.data.remote
 
 import com.m57.hermescontrol.data.model.AchievementsResponse
 import com.m57.hermescontrol.data.model.ActiveProfileResponse
-import com.m57.hermescontrol.data.model.CreateTaskRequest
+import com.m57.hermescontrol.data.model.AgentPluginInstallBody
+import com.m57.hermescontrol.data.model.CreateTaskBody
 import com.m57.hermescontrol.data.model.CronJob
 import com.m57.hermescontrol.data.model.DoctorResponse
+import com.m57.hermescontrol.data.model.EnvVarConfig
+import com.m57.hermescontrol.data.model.EnvVarRevealRequest
+import com.m57.hermescontrol.data.model.EnvVarRevealResponse
+import com.m57.hermescontrol.data.model.EnvVarUpdate
 import com.m57.hermescontrol.data.model.KanbanBoard
+import com.m57.hermescontrol.data.model.KanbanBoardResponse
+import com.m57.hermescontrol.data.model.KanbanBoardsResponse
 import com.m57.hermescontrol.data.model.KanbanTask
 import com.m57.hermescontrol.data.model.LogResponse
 import com.m57.hermescontrol.data.model.McpServerToggleRequest
 import com.m57.hermescontrol.data.model.McpServersResponse
 import com.m57.hermescontrol.data.model.MessagingPlatform
+import com.m57.hermescontrol.data.model.MessagingPlatformUpdate
 import com.m57.hermescontrol.data.model.ModelOptionsResponse
-import com.m57.hermescontrol.data.model.MoveTaskRequest
 import com.m57.hermescontrol.data.model.PairingApproveRequest
 import com.m57.hermescontrol.data.model.PairingResponse
 import com.m57.hermescontrol.data.model.PairingRevokeRequest
@@ -40,9 +47,11 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 interface HermesApiService {
     @GET("api/status")
@@ -205,72 +214,82 @@ interface HermesApiService {
     @GET("api/logs")
     suspend fun getLogs(): Response<LogResponse>
 
-    @GET("api/plugins")
+    @GET("api/dashboard/plugins")
     suspend fun getPlugins(): Response<List<PluginInfo>>
 
-    @POST("api/plugins/{name}/install")
+    @POST("api/dashboard/agent-plugins/install")
     suspend fun installPlugin(
-        @Path("name") name: String,
+        @Body body: AgentPluginInstallBody,
     ): Response<Unit>
 
-    @POST("api/plugins/{name}/uninstall")
+    @DELETE("api/dashboard/agent-plugins/{name}")
     suspend fun uninstallPlugin(
         @Path("name") name: String,
     ): Response<Unit>
 
-    @POST("api/plugins/{name}/update")
+    @POST("api/dashboard/agent-plugins/{name}/update")
     suspend fun updatePlugin(
         @Path("name") name: String,
     ): Response<Unit>
 
-    @PUT("api/plugins/{name}/toggle")
-    suspend fun togglePlugin(
+    @POST("api/dashboard/agent-plugins/{name}/enable")
+    suspend fun enablePlugin(
         @Path("name") name: String,
-        @Body body: TogglePluginRequest,
+    ): Response<Unit>
+
+    @POST("api/dashboard/agent-plugins/{name}/disable")
+    suspend fun disablePlugin(
+        @Path("name") name: String,
     ): Response<Unit>
 
     @GET("api/messaging/platforms")
     suspend fun getMessagingPlatforms(): Response<List<MessagingPlatform>>
 
-    @POST("api/messaging/platforms/{name}/configure")
+    @PUT("api/messaging/platforms/{platform_id}")
     suspend fun configurePlatform(
-        @Path("name") name: String,
-        @Body config: Map<String, String>,
+        @Path("platform_id") platformId: String,
+        @Body config: MessagingPlatformUpdate,
     ): Response<Unit>
 
     @GET("api/env")
-    suspend fun getEnvVars(): Response<Map<String, String>>
+    suspend fun getEnvVars(): Response<Map<String, EnvVarConfig>>
 
     @PUT("api/env")
     suspend fun updateEnvVar(
-        @Body vars: Map<String, String>,
+        @Body body: EnvVarUpdate,
     ): Response<Unit>
 
     @POST("api/env/reveal")
-    suspend fun revealEnvVars(): Response<Map<String, String>>
+    suspend fun revealEnvVar(
+        @Body request: EnvVarRevealRequest,
+    ): Response<EnvVarRevealResponse>
 
     @POST("api/ops/backup")
     suspend fun triggerBackup(): Response<Unit>
 
-    @GET("api/ops/doctor")
+    @POST("api/ops/doctor")
     suspend fun runDoctor(): Response<DoctorResponse>
 
     @GET("api/plugins/kanban/boards")
-    suspend fun getKanbanBoards(): Response<List<KanbanBoard>>
+    suspend fun getKanbanBoards(): Response<KanbanBoardsResponse>
 
-    @GET("api/plugins/kanban/boards/{id}/tasks")
-    suspend fun getKanbanTasks(
-        @Path("id") boardId: String,
-    ): Response<List<KanbanTask>>
+    @GET("api/plugins/kanban/board")
+    suspend fun getKanbanBoard(): Response<KanbanBoardResponse>
 
-    @POST("api/plugins/kanban/tasks/{id}/move")
-    suspend fun moveKanbanTask(
+    @POST("api/plugins/kanban/boards/{slug}/switch")
+    suspend fun switchKanbanBoard(
+        @Path("slug") slug: String,
+    ): Response<Unit>
+
+    @PATCH("api/plugins/kanban/tasks/{id}")
+    suspend fun updateKanbanTask(
         @Path("id") taskId: String,
-        @Body body: MoveTaskRequest,
+        @Body body: Map<String, String?>,
     ): Response<Unit>
 
     @POST("api/plugins/kanban/tasks")
     suspend fun createKanbanTask(
-        @Body task: CreateTaskRequest,
+        @Query("board") board: String?,
+        @Body task: CreateTaskBody,
     ): Response<KanbanTask>
 }

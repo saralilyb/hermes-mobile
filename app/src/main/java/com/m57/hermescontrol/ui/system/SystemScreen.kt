@@ -149,50 +149,37 @@ fun SystemScreen(
                         }
                     }
 
-                    // Doctor reports
+                    // Doctor status
                     state.doctorReport?.let { report ->
                         item {
-                            Text(
-                                text = "Doctor Diagnostic Reports (Status: ${report.status})",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp),
-                            )
-                        }
-
-                        items(report.reports) { diagnosis ->
                             Card(modifier = Modifier.fillMaxWidth()) {
-                                Row(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(16.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = diagnosis.category.uppercase(),
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(text = diagnosis.message, style = MaterialTheme.typography.bodyMedium)
-                                    }
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.padding(16.dp)) {
                                     Text(
-                                        text = diagnosis.status.uppercase(),
-                                        color =
-                                            if (diagnosis.status.lowercase() == "ok" ||
-                                                diagnosis.status.lowercase() == "success"
-                                            ) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.error
-                                            },
+                                        text = "Doctor Diagnostics",
+                                        style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.titleMedium,
                                     )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Diagnostics Status: ${if (report.ok) "Running" else "Failed"}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (report.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                    )
+                                    report.pid?.let { pid ->
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Process PID: $pid",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                    }
+                                    report.name?.let { name ->
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Process Name: $name",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                    }
                                 }
                             }
                         }

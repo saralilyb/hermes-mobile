@@ -2,10 +2,8 @@ package com.m57.hermescontrol.ui.kanban
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.m57.hermescontrol.data.model.CreateTaskRequest
 import com.m57.hermescontrol.data.model.KanbanBoard
 import com.m57.hermescontrol.data.model.KanbanTask
-import com.m57.hermescontrol.data.model.MoveTaskRequest
 import com.m57.hermescontrol.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,10 +35,12 @@ class KanbanViewModel : ViewModel() {
                         ApiClient.hermesApi.getKanbanBoards()
                     }
                 if (response.isSuccessful) {
-                    val boards = response.body().orEmpty()
+                    val boards = response.body()?.boards.orEmpty()
                     _uiState.update { it.copy(isLoading = false, boards = boards) }
-                    if (boards.isNotEmpty()) {
-                        selectBoard(boards.first())
+                    val currentSlug = response.body()?.current
+                    val currentBoard = boards.find { it.id == currentSlug } ?: boards.firstOrNull()
+                    if (currentBoard != null) {
+                        selectBoard(currentBoard)
                     }
                 } else {
                     _uiState.update {
@@ -65,12 +65,23 @@ class KanbanViewModel : ViewModel() {
         _uiState.update { it.copy(selectedBoard = board, isLoading = true, errorMessage = null) }
         viewModelScope.launch {
             try {
+                // Switch current board slug
+                withContext(Dispatchers.IO) {
+                    ApiClient.hermesApi.switchKanbanBoard(board.id)
+                }
+
                 val response =
                     withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getKanbanTasks(board.id)
+                        ApiClient.hermesApi.getKanbanBoard()
                     }
                 if (response.isSuccessful) {
-                    _uiState.update { it.copy(isLoading = false, tasks = response.body().orEmpty()) }
+                    val allTasks =
+                        response
+                            .body()
+                            ?.columns
+                            ?.flatMap { it.tasks }
+                            .orEmpty()
+                    _uiState.update { it.copy(isLoading = false, tasks = allTasks) }
                 } else {
                     _uiState.update {
                         it.copy(
@@ -101,12 +112,12 @@ class KanbanViewModel : ViewModel() {
                 val response =
                     withContext(Dispatchers.IO) {
                         ApiClient.hermesApi.createKanbanTask(
-                            CreateTaskRequest(
-                                boardId = board.id,
-                                title = title,
-                                description = description,
-                                status = status,
-                            ),
+                            board = board.id,
+                            task =
+                                com.m57.hermescontrol.data.model.CreateTaskBody(
+                                    title = title,
+                                    body = description,
+                                ),
                         )
                     }
                 if (response.isSuccessful) {
@@ -142,7 +153,7 @@ class KanbanViewModel : ViewModel() {
             try {
                 val response =
                     withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.moveKanbanTask(task.id, MoveTaskRequest(newStatus))
+                        ApiClient.hermesApi.updateKanbanTask(task.id, mapOf("status" to newStatus))
                     }
                 if (!response.isSuccessful) {
                     revertTaskMove(task.id, originalStatus, "Failed to move task: HTTP ${response.code()}")

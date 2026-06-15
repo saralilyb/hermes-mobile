@@ -66,7 +66,11 @@ class PluginsViewModel : ViewModel() {
             try {
                 val response =
                     withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.togglePlugin(plugin.name, TogglePluginRequest(targetEnabled))
+                        if (targetEnabled) {
+                            ApiClient.hermesApi.enablePlugin(plugin.name)
+                        } else {
+                            ApiClient.hermesApi.disablePlugin(plugin.name)
+                        }
                     }
                 if (!response.isSuccessful) {
                     revertPluginToggle(plugin.name, originalEnabled, "Failed to toggle plugin: HTTP ${response.code()}")
@@ -82,7 +86,10 @@ class PluginsViewModel : ViewModel() {
             try {
                 val response =
                     withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.installPlugin(name)
+                        ApiClient.hermesApi.installPlugin(
+                            com.m57.hermescontrol.data.model
+                                .AgentPluginInstallBody(name),
+                        )
                     }
                 if (response.isSuccessful) {
                     _uiState.update { it.copy(toastMessage = "Plugin installed successfully") }

@@ -2,6 +2,9 @@ package com.m57.hermescontrol.ui.keys
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.m57.hermescontrol.data.model.EnvVarConfig
+import com.m57.hermescontrol.data.model.EnvVarRevealRequest
+import com.m57.hermescontrol.data.model.EnvVarUpdate
 import com.m57.hermescontrol.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,8 +16,8 @@ import kotlinx.coroutines.withContext
 
 data class KeysUiState(
     val isLoading: Boolean = false,
-    val envVars: Map<String, String> = emptyMap(),
-    val isRevealed: Boolean = false,
+    val envVars: Map<String, EnvVarConfig> = emptyMap(),
+    val revealedValues: Map<String, String> = emptyMap(),
     val errorMessage: String? = null,
     val toastMessage: String? = null,
 )
@@ -29,18 +32,13 @@ class KeysViewModel : ViewModel() {
             try {
                 val response =
                     withContext(Dispatchers.IO) {
-                        if (reveal) {
-                            ApiClient.hermesApi.revealEnvVars()
-                        } else {
-                            ApiClient.hermesApi.getEnvVars()
-                        }
+                        ApiClient.hermesApi.getEnvVars()
                     }
                 if (response.isSuccessful) {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
                             envVars = response.body().orEmpty(),
-                            isRevealed = reveal,
                         )
                     }
                 } else {
@@ -57,23 +55,50 @@ class KeysViewModel : ViewModel() {
         }
     }
 
+    fun revealKey(key: String) {
+        viewModelScope.launch {
+            try {
+                val response =
+                    withContext(Dispatchers.IO) {
+                        ApiClient.hermesApi.revealEnvVar(EnvVarRevealRequest(key))
+                    }
+                if (response.isSuccessful && response.body() != null) {
+                    val body = response.body()!!
+                    _uiState.update { state ->
+                        state.copy(
+                            revealedValues = state.revealedValues + (body.key to body.value),
+                        )
+                    }
+                } else {
+                    _uiState.update { it.copy(toastMessage = "Failed to reveal key: HTTP ${response.code()}") }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(toastMessage = "Failed to reveal key: ${e.message}") }
+            }
+        }
+    }
+
+    fun hideKey(key: String) {
+        _uiState.update { state ->
+            state.copy(
+                revealedValues = state.revealedValues.toMutableMap().apply { remove(key) },
+            )
+        }
+    }
+
     fun updateKey(
         key: String,
         value: String,
     ) {
         viewModelScope.launch {
             try {
-                val updatedVars =
-                    _uiState.value.envVars.toMutableMap().apply {
-                        put(key, value)
-                    }
                 val response =
                     withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.updateEnvVar(updatedVars)
+                        ApiClient.hermesApi.updateEnvVar(EnvVarUpdate(key, value))
                     }
                 if (response.isSuccessful) {
                     _uiState.update { it.copy(toastMessage = "Key updated successfully") }
-                    loadKeys(_uiState.value.isRevealed)
+                    loadKeys()
                 } else {
                     _uiState.update { it.copy(toastMessage = "Failed to update key: HTTP ${response.code()}") }
                 }

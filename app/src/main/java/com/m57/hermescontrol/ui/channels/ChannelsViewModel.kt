@@ -3,6 +3,7 @@ package com.m57.hermescontrol.ui.channels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.MessagingPlatform
+import com.m57.hermescontrol.data.model.MessagingPlatformUpdate
 import com.m57.hermescontrol.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,25 +49,32 @@ class ChannelsViewModel : ViewModel() {
     }
 
     fun configurePlatform(
-        name: String,
-        config: Map<String, String>,
+        platformId: String,
+        update: MessagingPlatformUpdate,
     ) {
         viewModelScope.launch {
             try {
                 val response =
                     withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.configurePlatform(name, config)
+                        ApiClient.hermesApi.configurePlatform(platformId, update)
                     }
                 if (response.isSuccessful) {
-                    _uiState.update { it.copy(toastMessage = "$name configured successfully") }
+                    _uiState.update { it.copy(toastMessage = "$platformId configured successfully") }
                     loadPlatforms()
                 } else {
-                    _uiState.update { it.copy(toastMessage = "Failed to configure $name: HTTP ${response.code()}") }
+                    _uiState.update { it.copy(toastMessage = "Failed to configure platform: HTTP ${response.code()}") }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(toastMessage = "Failed to configure $name: ${e.message}") }
+                _uiState.update { it.copy(toastMessage = "Failed to configure platform: ${e.message}") }
             }
         }
+    }
+
+    fun configurePlatform(
+        platformId: String,
+        config: Map<String, String>,
+    ) {
+        configurePlatform(platformId, MessagingPlatformUpdate(env = config))
     }
 
     fun clearToast() {

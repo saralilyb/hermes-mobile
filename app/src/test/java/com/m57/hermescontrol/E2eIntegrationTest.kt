@@ -3,20 +3,21 @@ package com.m57.hermescontrol
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.m57.hermescontrol.data.local.AuthManager
-import com.m57.hermescontrol.data.model.CreateTaskRequest
+import com.m57.hermescontrol.data.model.CreateTaskBody
 import com.m57.hermescontrol.data.model.CronJob
-import com.m57.hermescontrol.data.model.DoctorReport
 import com.m57.hermescontrol.data.model.DoctorResponse
+import com.m57.hermescontrol.data.model.EnvVarConfig
 import com.m57.hermescontrol.data.model.KanbanBoard
+import com.m57.hermescontrol.data.model.KanbanBoardResponse
+import com.m57.hermescontrol.data.model.KanbanBoardsResponse
+import com.m57.hermescontrol.data.model.KanbanColumn
 import com.m57.hermescontrol.data.model.KanbanTask
 import com.m57.hermescontrol.data.model.LogResponse
 import com.m57.hermescontrol.data.model.MessagingPlatform
-import com.m57.hermescontrol.data.model.MoveTaskRequest
 import com.m57.hermescontrol.data.model.PluginInfo
 import com.m57.hermescontrol.data.model.Skill
 import com.m57.hermescontrol.data.model.StatusResponse
 import com.m57.hermescontrol.data.model.SystemStatsResponse
-import com.m57.hermescontrol.data.model.TogglePluginRequest
 import com.m57.hermescontrol.data.model.ToggleSkillRequest
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.HermesApiService
@@ -795,8 +796,7 @@ class E2eIntegrationTest {
         runTest {
             val plugin = PluginInfo("plugin-1", "Desc", "1.0", false, true)
             coEvery { mockApiService.getPlugins() } returns Response.success(listOf(plugin))
-            coEvery { mockApiService.togglePlugin("plugin-1", TogglePluginRequest(true)) } returns
-                Response.success(Unit)
+            coEvery { mockApiService.enablePlugin("plugin-1") } returns Response.success(Unit)
 
             val viewModel = PluginsViewModel()
             viewModel.loadPlugins()
@@ -825,7 +825,7 @@ class E2eIntegrationTest {
     @Test
     fun testChannelsConfiguration_success() =
         runTest {
-            val platform = MessagingPlatform("telegram", false, false, null)
+            val platform = MessagingPlatform("telegram", "Telegram", false, false, emptyList())
             coEvery { mockApiService.getMessagingPlatforms() } returns Response.success(listOf(platform))
             coEvery { mockApiService.configurePlatform("telegram", any()) } returns Response.success(Unit)
 
@@ -844,14 +844,19 @@ class E2eIntegrationTest {
     @Test
     fun testKeysManagement_success() =
         runTest {
-            coEvery { mockApiService.getEnvVars() } returns Response.success(mapOf("KEY1" to "value1"))
+            coEvery { mockApiService.getEnvVars() } returns
+                Response.success(mapOf("KEY1" to EnvVarConfig(true, "value1", "desc", null, null, false)))
             coEvery { mockApiService.updateEnvVar(any()) } returns Response.success(Unit)
 
             val viewModel = KeysViewModel()
             viewModel.loadKeys(reveal = false)
             advanceUntilIdle()
 
-            assertEquals("value1", viewModel.uiState.value.envVars["KEY1"])
+            assertEquals(
+                "value1",
+                viewModel.uiState.value.envVars["KEY1"]
+                    ?.redactedValue,
+            )
 
             viewModel.updateKey("KEY1", "newValue")
             advanceUntilIdle()
@@ -863,7 +868,7 @@ class E2eIntegrationTest {
     fun testSystemDiagnostics_success() =
         runTest {
             val stats = SystemStatsResponse(cpu = mapOf("percent" to 50.0), memory = mapOf("percent" to 60.0))
-            val doctor = DoctorResponse("ok", listOf(DoctorReport("networking", "ok", "all good")))
+            val doctor = DoctorResponse(true, 24856, "doctor")
             coEvery { mockApiService.getSystemStats() } returns Response.success(stats)
             coEvery { mockApiService.runDoctor() } returns Response.success(doctor)
             coEvery { mockApiService.triggerBackup() } returns Response.success(Unit)
@@ -878,9 +883,9 @@ class E2eIntegrationTest {
                     ?.cpuPercent,
             )
             assertEquals(
-                "ok",
+                true,
                 viewModel.uiState.value.doctorReport
-                    ?.status,
+                    ?.ok,
             )
 
             viewModel.triggerBackup()
@@ -893,10 +898,13 @@ class E2eIntegrationTest {
     fun testKanbanBoardAndTasks_success() =
         runTest {
             val board = KanbanBoard("board-1", "Backlog", null)
-            val task = KanbanTask("task-1", "board-1", "Do laundry", null, "todo", null)
-            coEvery { mockApiService.getKanbanBoards() } returns Response.success(listOf(board))
-            coEvery { mockApiService.getKanbanTasks("board-1") } returns Response.success(listOf(task))
-            coEvery { mockApiService.moveKanbanTask("task-1", MoveTaskRequest("in_progress")) } returns
+            val task = KanbanTask("task-1", "Do laundry", null, "todo", null)
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(board), "board-1"))
+            coEvery { mockApiService.switchKanbanBoard("board-1") } returns Response.success(Unit)
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(listOf(KanbanColumn("todo", listOf(task))), null, null))
+            coEvery { mockApiService.updateKanbanTask("task-1", mapOf("status" to "in_progress")) } returns
                 Response.success(Unit)
 
             val viewModel = KanbanViewModel()
