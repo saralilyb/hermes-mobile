@@ -31,7 +31,9 @@ class LogsViewModel : ViewModel() {
                         ApiClient.hermesApi.getLogs()
                     }
                 if (response.isSuccessful) {
-                    _uiState.update { it.copy(isLoading = false, logs = response.body()?.logs.orEmpty()) }
+                    val body = response.body()
+                    val logsList = body?.lines ?: body?.logs ?: emptyList()
+                    _uiState.update { it.copy(isLoading = false, logs = logsList) }
                 } else {
                     _uiState.update {
                         it.copy(
