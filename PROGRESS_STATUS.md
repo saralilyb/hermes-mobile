@@ -10,6 +10,7 @@ This document tracks the completed features and the pending backlog for the Herm
 * **Code Formatting**: Code formatting checks integrated using `ktlint` (`./gradlew ktlintCheck`).
 * **Unit Testing Suite**: Verified with `./gradlew test` (AuthManager, EventParser, ConnectViewModel, ChatViewModel).
 * **Network Capabilities**: Cleartext traffic enabled in `AndroidManifest.xml` to allow connection to local networks (e.g., `192.168.1.18` to `192.168.1.48`).
+* **Git Repository**: Initialized and linked with GitHub (`https://github.com/Hy4ri/hermes-mobile.git`).
 
 ### 2. Implemented Features (~45 of 213 endpoints, ~21%)
 * **Connection Screen (`ConnectScreen`)**: Saves Host, Port, and Auth Token to `AuthManager` (EncryptedSharedPreferences), with live verification via `GET /api/status`.
@@ -30,28 +31,18 @@ This document tracks the completed features and the pending backlog for the Herm
 
 ## ⏳ Left (To Be Implemented)
 
-All remaining **168 endpoints** across the Hermes Dashboard API need to be implemented. The categories and their priority order are:
+All remaining **168 endpoints** across the Hermes Dashboard API need to be implemented. The specific requested views/features:
 
-### Priority 1: Model & Provider Management (3 endpoints)
-* List model providers (`GET /api/model/providers`)
-* Get and set recommended default model (`GET/POST /api/model/recommended-default`)
-* **UI**: Select model directly from a dropdown in Settings or Profiles.
+### 1. Model View (AI model selection & recommended configurations)
+### 2. Logs View (live scrolling platform logs / agent stdout logs)
+### 3. Plugins View (install, update, list agent plugin extensions)
+### 4. MCP (Model Context Protocol server configurations & management)
+### 5. Channels / Messaging (platform config, e.g., Telegram connection settings)
+### 6. Webhooks (create and dispatch live webhooks subscriptions)
+### 7. Pairing (device pairing approvals & security management)
+### 8. Live Config (edit live config parameters)
+### 9. Keys (live environment variables and credentials manager)
+### 10. System View (detailed stats, system health, and backups)
+### 11. Kanban View (boards, cards, comments, task management plugin)
 
-### Priority 2: Skills Hub & Editing (8 endpoints)
-* Browse hub, preview, install, uninstall, update skills.
-* Create/edit custom skills by editing their raw YAML/markdown files (`GET/PUT /api/skills/content`).
-
-### Priority 3: Advanced Sessions & Search (8 endpoints)
-* Search through session transcripts.
-* Delete sessions in bulk, prune empty sessions, export session transcripts.
-* Get session statistics.
-
-### Priority 4: Cron Creation & Blueprint Instantiation (3 endpoints)
-* Form/UI to create new Cron Jobs (`POST /api/cron/jobs`).
-* Form/UI to update Cron Jobs (`PUT /api/cron/jobs/{id}`).
-
-### Priority 5: Kanban Plugin (46 endpoints)
-* Full Kanban task boards, lists, cards, comments, attachments.
-
-### Priority 6: Other Administrative Tools
-* Env vars management, webhooks, system backup/restore, credential storage.
+*Other minor backlogs include Skills Hub and Advanced Session management.*

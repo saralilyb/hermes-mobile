@@ -3,8 +3,12 @@ package com.m57.hermescontrol.data.remote
 import com.m57.hermescontrol.data.model.AchievementsResponse
 import com.m57.hermescontrol.data.model.ActiveProfileResponse
 import com.m57.hermescontrol.data.model.CronJob
+import com.m57.hermescontrol.data.model.PairingApproveRequest
+import com.m57.hermescontrol.data.model.PairingResponse
+import com.m57.hermescontrol.data.model.PairingRevokeRequest
 import com.m57.hermescontrol.data.model.ProfileSoulResponse
 import com.m57.hermescontrol.data.model.ProfilesResponse
+import com.m57.hermescontrol.data.model.RawConfigResponse
 import com.m57.hermescontrol.data.model.SessionListResponse
 import com.m57.hermescontrol.data.model.SessionMessagesResponse
 import com.m57.hermescontrol.data.model.SetActiveProfileRequest
@@ -17,6 +21,7 @@ import com.m57.hermescontrol.data.model.ToolsetToggleRequest
 import com.m57.hermescontrol.data.model.UpdateProfileDescriptionRequest
 import com.m57.hermescontrol.data.model.UpdateProfileModelRequest
 import com.m57.hermescontrol.data.model.UpdateProfileSoulRequest
+import com.m57.hermescontrol.data.model.UpdateRawConfigRequest
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -128,4 +133,28 @@ interface HermesApiService {
 
     @GET("api/plugins/hermes-achievements/achievements")
     suspend fun getAchievements(): Response<AchievementsResponse>
+
+    @GET("api/pairing")
+    suspend fun getPairing(): Response<PairingResponse>
+
+    @POST("api/pairing/approve")
+    suspend fun approvePairing(
+        @Body body: PairingApproveRequest,
+    ): Response<Unit>
+
+    @POST("api/pairing/revoke")
+    suspend fun revokePairing(
+        @Body body: PairingRevokeRequest,
+    ): Response<Unit>
+
+    @POST("api/pairing/clear-pending")
+    suspend fun clearPendingPairing(): Response<Unit>
+
+    @GET("api/config/raw")
+    suspend fun getRawConfig(): Response<RawConfigResponse>
+
+    @PUT("api/config/raw")
+    suspend fun updateRawConfig(
+        @Body body: UpdateRawConfigRequest,
+    ): Response<Unit>
 }

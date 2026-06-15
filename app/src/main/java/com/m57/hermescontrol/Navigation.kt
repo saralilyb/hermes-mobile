@@ -22,9 +22,11 @@ import com.m57.hermescontrol.data.local.AuthManager
 import kotlinx.coroutines.launch
 import com.m57.hermescontrol.ui.achievements.AchievementsScreen as AchievementsScreenContent
 import com.m57.hermescontrol.ui.chat.ChatScreen as ChatScreenContent
+import com.m57.hermescontrol.ui.config.ConfigScreen as ConfigScreenContent
 import com.m57.hermescontrol.ui.connect.ConnectScreen as ConnectScreenContent
 import com.m57.hermescontrol.ui.cron.CronJobsScreen as CronJobsScreenContent
 import com.m57.hermescontrol.ui.gateway.GatewayScreen as GatewayScreenContent
+import com.m57.hermescontrol.ui.pairing.PairingScreen as PairingScreenContent
 import com.m57.hermescontrol.ui.profiles.ProfilesScreen as ProfilesScreenContent
 import com.m57.hermescontrol.ui.settings.SettingsScreen as SettingsScreenContent
 import com.m57.hermescontrol.ui.skills.SkillsScreen as SkillsScreenContent
@@ -45,7 +47,8 @@ fun MainNavigation() {
     val gesturesEnabled =
         currentScreen == ChatScreen || currentScreen == SkillsScreen || currentScreen == CronJobsScreen ||
             currentScreen == GatewayScreen || currentScreen == ProfilesScreen ||
-            currentScreen == ToolsetsScreen || currentScreen == AchievementsScreen
+            currentScreen == ToolsetsScreen || currentScreen == AchievementsScreen ||
+            currentScreen == PairingScreen || currentScreen == ConfigScreen
     val openDrawer = { scope.launch { drawerState.open() } }
 
     ModalNavigationDrawer(
@@ -111,6 +114,24 @@ fun MainNavigation() {
                         onClick = {
                             scope.launch { drawerState.close() }
                             NavigationController.navigateTo(AchievementsScreen)
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("Pairing") },
+                        selected = currentScreen == PairingScreen,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            NavigationController.navigateTo(PairingScreen)
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("Config") },
+                        selected = currentScreen == ConfigScreen,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            NavigationController.navigateTo(ConfigScreen)
                         },
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                     )
@@ -185,6 +206,18 @@ fun MainNavigation() {
 
                     entry<AchievementsScreen> {
                         AchievementsScreenContent(
+                            onOpenDrawer = { openDrawer() },
+                        )
+                    }
+
+                    entry<PairingScreen> {
+                        PairingScreenContent(
+                            onOpenDrawer = { openDrawer() },
+                        )
+                    }
+
+                    entry<ConfigScreen> {
+                        ConfigScreenContent(
                             onOpenDrawer = { openDrawer() },
                         )
                     }

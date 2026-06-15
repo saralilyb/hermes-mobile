@@ -20,3 +20,7 @@ import kotlinx.serialization.Serializable
 @Serializable data object ToolsetsScreen : NavKey
 
 @Serializable data object AchievementsScreen : NavKey
+
+@Serializable data object PairingScreen : NavKey
+
+@Serializable data object ConfigScreen : NavKey
