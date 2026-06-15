@@ -2,6 +2,8 @@ package com.m57.hermescontrol
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -70,7 +72,9 @@ fun MainNavigation() {
         gesturesEnabled = gesturesEnabled,
         drawerContent = {
             if (gesturesEnabled) {
-                ModalDrawerSheet {
+                ModalDrawerSheet(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                ) {
                     Text(
                         text = "Hermes Control",
                         modifier = Modifier.padding(16.dp),
