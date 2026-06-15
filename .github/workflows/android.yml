@@ -20,7 +20,9 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
@@ -28,14 +30,29 @@ jobs:
       - name: Run Code Style Check (ktlint)
         run: ./gradlew ktlintCheck
 
+      - name: Run Android Lint (Static Analysis)
+        run: ./gradlew lintDebug
+
       - name: Run Unit & Integration Tests
         run: ./gradlew test
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug
 
+      - name: Upload Test & Lint Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-reports
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results-debug.html
+            app/build/reports/ktlint/
+          retention-days: 7
+
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: hermescontrol-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
