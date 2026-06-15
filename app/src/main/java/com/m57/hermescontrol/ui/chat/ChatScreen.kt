@@ -256,7 +256,88 @@ fun ChatScreen(
                 )
             }
         },
-        bottomBar = {
+    ) { paddingValues ->
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .navigationBarsPadding()
+                    .imePadding(),
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+            ) {
+                if (state.messages.isEmpty() && !state.isLoading) {
+                    // Empty state
+                    EmptyState()
+                }
+
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 8.dp),
+                ) {
+                    items(
+                        items = state.messages,
+                        key = { it.id },
+                    ) { message ->
+                        ChatBubble(
+                            message = message,
+                            isDarkTheme = isDark,
+                        )
+                    }
+
+                    // Thinking indicator
+                    if (state.isThinking) {
+                        item(key = "thinking") {
+                            ThinkingIndicator(state.thinkingText)
+                        }
+                    }
+                }
+
+                // Loading overlay
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = state.isLoading,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.7f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Card(
+                            colors =
+                                CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                ),
+                            elevation = CardDefaults.cardElevation(4.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                CircularProgressIndicator(
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "Connecting to Hermes…",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             ChatInputBar(
                 inputText = inputText,
                 onInputChange = { inputText = it },
@@ -268,79 +349,6 @@ fun ChatScreen(
                 isAgentTyping = state.isAgentTyping,
                 isConnected = state.isConnected,
             )
-        },
-    ) { paddingValues ->
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-        ) {
-            if (state.messages.isEmpty() && !state.isLoading) {
-                // Empty state
-                EmptyState()
-            }
-
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 8.dp),
-            ) {
-                items(
-                    items = state.messages,
-                    key = { it.id },
-                ) { message ->
-                    ChatBubble(
-                        message = message,
-                        isDarkTheme = isDark,
-                    )
-                }
-
-                // Thinking indicator
-                if (state.isThinking) {
-                    item(key = "thinking") {
-                        ThinkingIndicator(state.thinkingText)
-                    }
-                }
-            }
-
-            // Loading overlay
-            AnimatedVisibility(
-                visible = state.isLoading,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.7f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Card(
-                        colors =
-                            CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                            ),
-                        elevation = CardDefaults.cardElevation(4.dp),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            CircularProgressIndicator(
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Connecting to Hermes…",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -452,11 +460,7 @@ private fun ChatInputBar(
         exit = slideOutVertically(targetOffsetY = { it }),
     ) {
         Card(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .imePadding(),
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
             colors =
                 CardDefaults.cardColors(
