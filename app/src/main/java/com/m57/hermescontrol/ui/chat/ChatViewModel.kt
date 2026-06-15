@@ -3,6 +3,7 @@ package com.m57.hermescontrol.ui.chat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.local.AuthManager
+import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.ws.HermesWsClient
 import com.m57.hermescontrol.data.ws.WsEvent
 import com.m57.hermescontrol.data.ws.WsMethods
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
@@ -371,6 +373,41 @@ class ChatViewModel : ViewModel() {
                     mapOf("session_id" to sessionId),
                 )
             pendingRequests[requestId] = WsMethods.SESSION_RESUME
+        }
+        loadSessionMessages(sessionId)
+    }
+
+    private fun loadSessionMessages(sessionId: String) {
+        viewModelScope.launch {
+            try {
+                val response =
+                    withContext(Dispatchers.IO) {
+                        ApiClient.hermesApi.getSessionMessages(sessionId)
+                    }
+                if (response.isSuccessful) {
+                    val messagesList = response.body()?.messages.orEmpty()
+                    val chatMessages =
+                        messagesList.map { msg ->
+                            val role =
+                                when (msg.role?.lowercase()) {
+                                    "user" -> MessageRole.USER
+                                    "system" -> MessageRole.SYSTEM
+                                    "tool" -> MessageRole.TOOL
+                                    else -> MessageRole.ASSISTANT
+                                }
+                            ChatMessage(
+                                role = role,
+                                content = msg.content.orEmpty(),
+                                isStreaming = false,
+                            )
+                        }
+                    _uiState.update { it.copy(messages = chatMessages) }
+                } else {
+                    _uiState.update { it.copy(errorMessage = "Failed to load messages: HTTP ${response.code()}") }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Failed to load messages: ${e.message}") }
+            }
         }
     }
 
