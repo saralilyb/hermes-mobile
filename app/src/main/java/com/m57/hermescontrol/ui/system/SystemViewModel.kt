@@ -33,26 +33,21 @@ class SystemViewModel : ViewModel() {
                     withContext(Dispatchers.IO) {
                         ApiClient.hermesApi.getSystemStats()
                     }
-                val doctorResponse =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.runDoctor()
-                    }
 
-                if (statsResponse.isSuccessful && doctorResponse.isSuccessful) {
+                if (statsResponse.isSuccessful) {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
                             stats = statsResponse.body(),
-                            doctorReport = doctorResponse.body(),
                         )
                     }
+                    // Doctor is optional; many servers do not expose it.
+                    loadDoctorReport()
                 } else {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage =
-                                "Failed to load system data: HTTP " +
-                                    "${statsResponse.code()} / ${doctorResponse.code()}",
+                            errorMessage = "Failed to load system stats: HTTP ${statsResponse.code()}",
                         )
                     }
                 }
@@ -60,9 +55,25 @@ class SystemViewModel : ViewModel() {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        errorMessage = "Failed to load system data: ${e.message}",
+                        errorMessage = "Failed to load system stats: ${e.message}",
                     )
                 }
+            }
+        }
+    }
+
+    private fun loadDoctorReport() {
+        viewModelScope.launch {
+            try {
+                val doctorResponse =
+                    withContext(Dispatchers.IO) {
+                        ApiClient.hermesApi.runDoctor()
+                    }
+                if (doctorResponse.isSuccessful) {
+                    _uiState.update { it.copy(doctorReport = doctorResponse.body()) }
+                }
+            } catch (_: Exception) {
+                // Ignore optional doctor failures.
             }
         }
     }

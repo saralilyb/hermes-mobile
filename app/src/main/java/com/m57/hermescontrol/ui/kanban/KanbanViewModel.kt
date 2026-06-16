@@ -3,6 +3,7 @@ package com.m57.hermescontrol.ui.kanban
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.KanbanBoard
+import com.m57.hermescontrol.data.model.KanbanColumn
 import com.m57.hermescontrol.data.model.KanbanTask
 import com.m57.hermescontrol.data.remote.ApiClient
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +18,7 @@ data class KanbanUiState(
     val isLoading: Boolean = false,
     val boards: List<KanbanBoard> = emptyList(),
     val selectedBoard: KanbanBoard? = null,
+    val columns: List<KanbanColumn> = emptyList(),
     val tasks: List<KanbanTask> = emptyList(),
     val errorMessage: String? = null,
     val toastMessage: String? = null,
@@ -75,13 +77,15 @@ class KanbanViewModel : ViewModel() {
                         ApiClient.hermesApi.getKanbanBoard()
                     }
                 if (response.isSuccessful) {
-                    val allTasks =
-                        response
-                            .body()
-                            ?.columns
-                            ?.flatMap { it.tasks }
-                            .orEmpty()
-                    _uiState.update { it.copy(isLoading = false, tasks = allTasks) }
+                    val body = response.body()
+                    val allTasks = body?.columns?.flatMap { it.tasks }.orEmpty()
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            columns = body?.columns.orEmpty(),
+                            tasks = allTasks,
+                        )
+                    }
                 } else {
                     _uiState.update {
                         it.copy(

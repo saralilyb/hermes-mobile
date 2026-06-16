@@ -145,23 +145,25 @@ fun KanbanScreen(
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("No boards found.")
                         }
+                    } else if (state.columns.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No columns found for this board.")
+                        }
                     } else {
-                        // Columns list: To Do, In Progress, Done
-                        val columns = listOf("todo", "in_progress", "done")
-                        val columnNames =
-                            mapOf(
-                                "todo" to "To Do",
-                                "in_progress" to "In Progress",
-                                "done" to "Done",
-                            )
-
                         LazyRow(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(16.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
-                            items(columns) { col ->
-                                val colTasks = state.tasks.filter { it.status.lowercase() == col }
+                            items(state.columns) { column ->
+                                val colName = column.name
+                                val colTasks =
+                                    state.tasks.filter {
+                                        it.status.equals(colName, ignoreCase = true)
+                                    }
+                                val columnIndex = state.columns.indexOf(column)
+                                val prevColumn = state.columns.getOrNull(columnIndex - 1)
+                                val nextColumn = state.columns.getOrNull(columnIndex + 1)
 
                                 Column(
                                     modifier =
@@ -170,7 +172,7 @@ fun KanbanScreen(
                                             .fillMaxSize(),
                                 ) {
                                     Text(
-                                        text = "${columnNames[col]} (${colTasks.size})",
+                                        text = "${colName.replaceFirstChar { it.uppercase() }} (${colTasks.size})",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(bottom = 8.dp),
@@ -181,30 +183,16 @@ fun KanbanScreen(
                                         verticalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
                                         items(colTasks) { task ->
-                                            val onMoveLeft: (() -> Unit)? =
-                                                if (col != "todo") {
-                                                    {
-                                                        val prevStatus = if (col == "done") "in_progress" else "todo"
-                                                        viewModel.moveTask(task, prevStatus)
-                                                    }
-                                                } else {
-                                                    null
-                                                }
-
-                                            val onMoveRight: (() -> Unit)? =
-                                                if (col != "done") {
-                                                    {
-                                                        val nextStatus = if (col == "todo") "in_progress" else "done"
-                                                        viewModel.moveTask(task, nextStatus)
-                                                    }
-                                                } else {
-                                                    null
-                                                }
-
                                             TaskCard(
                                                 task = task,
-                                                onMoveLeft = onMoveLeft,
-                                                onMoveRight = onMoveRight,
+                                                onMoveLeft =
+                                                    prevColumn?.let {
+                                                        { viewModel.moveTask(task, it.name) }
+                                                    },
+                                                onMoveRight =
+                                                    nextColumn?.let {
+                                                        { viewModel.moveTask(task, it.name) }
+                                                    },
                                             )
                                         }
                                     }
@@ -219,7 +207,7 @@ fun KanbanScreen(
                 AddTaskDialog(
                     onDismiss = { showAddTaskDialog = false },
                     onConfirm = { title, desc ->
-                        viewModel.createTask(title, desc, "todo")
+                        viewModel.createTask(title, desc, state.columns.firstOrNull()?.name ?: "todo")
                         showAddTaskDialog = false
                     },
                 )
