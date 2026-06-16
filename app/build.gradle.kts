@@ -21,6 +21,7 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -79,6 +80,7 @@ dependencies {
 
   // Encrypted storage
   implementation(libs.androidx.security.crypto)
+  implementation("androidx.startup:startup-runtime:1.1.1")
 
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)

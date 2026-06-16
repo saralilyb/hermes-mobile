@@ -6,6 +6,8 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.SpanStyle
@@ -96,6 +99,14 @@ private fun UserBubble(
                 .padding(horizontal = 12.dp, vertical = 3.dp),
         contentAlignment = Alignment.CenterEnd,
     ) {
+        val gradientBrush =
+            Brush.linearGradient(
+                colors =
+                    listOf(
+                        MaterialTheme.colorScheme.primary,
+                        MaterialTheme.colorScheme.secondary,
+                    ),
+            )
         Surface(
             modifier =
                 Modifier
@@ -107,8 +118,8 @@ private fun UserBubble(
                             bottomStart = 16.dp,
                             bottomEnd = 4.dp,
                         ),
-                    ),
-            color = UserBubble,
+                    ).background(brush = gradientBrush),
+            color = Color.Transparent,
             tonalElevation = 0.dp,
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
@@ -164,6 +175,11 @@ private fun AssistantBubble(
                         ),
                     ),
             color = bubbleColor,
+            border =
+                BorderStroke(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f),
+                ),
             tonalElevation = 1.dp,
         ) {
             Column(modifier = Modifier.padding(12.dp)) {

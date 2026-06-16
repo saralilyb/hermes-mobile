@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -74,6 +75,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -120,6 +122,16 @@ fun ChatScreen(
             onDismiss = viewModel::dismissClarify,
         )
     }
+
+    val backgroundGradient =
+        Brush.verticalGradient(
+            colors =
+                listOf(
+                    MaterialTheme.colorScheme.background,
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+                ),
+        )
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -262,6 +274,7 @@ fun ChatScreen(
                 Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
+                    .background(backgroundGradient)
                     .navigationBarsPadding()
                     .imePadding(),
         ) {
@@ -460,13 +473,21 @@ private fun ChatInputBar(
         exit = slideOutVertically(targetOffsetY = { it }),
     ) {
         Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(24.dp),
             colors =
                 CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
                 ),
-            elevation = CardDefaults.cardElevation(8.dp),
+            border =
+                BorderStroke(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column {
                 val commands =
