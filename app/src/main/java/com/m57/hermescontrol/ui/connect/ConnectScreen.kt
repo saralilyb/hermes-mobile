@@ -129,6 +129,27 @@ fun ConnectScreen(
                             ),
                     )
 
+                    var pairingString by remember { mutableStateOf("") }
+
+                    OutlinedTextField(
+                        value = pairingString,
+                        onValueChange = {
+                            pairingString = it
+                            if (it.isNotBlank()) {
+                                viewModel.onPairingString(it)
+                            }
+                        },
+                        label = { Text("Pairing Link / Connection String") },
+                        placeholder = { Text("Paste hermes://... or Base64 config") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors =
+                            OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.secondary,
+                                cursorColor = MaterialTheme.colorScheme.secondary,
+                            ),
+                    )
+
                     // Token field
                     OutlinedTextField(
                         value = state.token,

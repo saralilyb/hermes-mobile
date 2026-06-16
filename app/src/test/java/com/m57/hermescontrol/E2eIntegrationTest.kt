@@ -980,4 +980,56 @@ class E2eIntegrationTest {
             coVerify { mockApiService.updateProfileModel("default", any()) }
             assertEquals("Successfully set model to llama3", viewModel.uiState.value.toastMessage)
         }
+
+    @Test
+    fun testConnectViewModel_onPairingString_urlFormat() =
+        runTest {
+            mockkStatic(android.net.Uri::class)
+            val mockUri = mockk<android.net.Uri>()
+            every { android.net.Uri.parse("hermes://connect?host=192.168.1.5&port=9119&token=TEST_TOKEN") } returns
+                mockUri
+            every { mockUri.getQueryParameter("host") } returns "192.168.1.5"
+            every { mockUri.getQueryParameter("port") } returns "9119"
+            every { mockUri.getQueryParameter("token") } returns "TEST_TOKEN"
+
+            val statusResponse = mockk<StatusResponse>()
+            coEvery { mockApiService.getStatus() } returns Response.success(statusResponse)
+
+            val viewModel = ConnectViewModel()
+            viewModel.onPairingString("hermes://connect?host=192.168.1.5&port=9119&token=TEST_TOKEN")
+            advanceUntilIdle()
+
+            assertEquals("192.168.1.5", viewModel.uiState.value.host)
+            assertEquals("9119", viewModel.uiState.value.port)
+            assertEquals("TEST_TOKEN", viewModel.uiState.value.token)
+            assertTrue(viewModel.uiState.value.connectionSuccess)
+
+            unmockkStatic(android.net.Uri::class)
+        }
+
+    @Test
+    fun testConnectViewModel_onPairingString_base64Format() =
+        runTest {
+            mockkStatic(android.util.Base64::class)
+            val base64Str = "eyJob3N0IjoiMTkyLjE2OC4xLjUiLCJwb3J0Ijo5MTE5LCJ0b2tlbiI6IlRFU1RfVE9LRU4ifQ=="
+            every { android.util.Base64.decode(base64Str, any()) } answers {
+                java.util.Base64
+                    .getDecoder()
+                    .decode(base64Str)
+            }
+
+            val statusResponse = mockk<StatusResponse>()
+            coEvery { mockApiService.getStatus() } returns Response.success(statusResponse)
+
+            val viewModel = ConnectViewModel()
+            viewModel.onPairingString(base64Str)
+            advanceUntilIdle()
+
+            assertEquals("192.168.1.5", viewModel.uiState.value.host)
+            assertEquals("9119", viewModel.uiState.value.port)
+            assertEquals("TEST_TOKEN", viewModel.uiState.value.token)
+            assertTrue(viewModel.uiState.value.connectionSuccess)
+
+            unmockkStatic(android.util.Base64::class)
+        }
 }

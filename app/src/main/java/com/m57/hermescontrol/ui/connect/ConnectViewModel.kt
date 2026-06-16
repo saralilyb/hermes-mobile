@@ -116,4 +116,63 @@ class ConnectViewModel : ViewModel() {
             }
         }
     }
+
+    fun onPairingString(value: String) {
+        val trimmed = value.trim()
+        if (trimmed.isBlank()) return
+
+        try {
+            if (trimmed.startsWith("hermes://connect?", ignoreCase = true)) {
+                val uri = android.net.Uri.parse(trimmed)
+                val host = uri.getQueryParameter("host")
+                val port = uri.getQueryParameter("port")
+                val token = uri.getQueryParameter("token")
+                if (host != null && port != null && token != null) {
+                    _uiState.update {
+                        it.copy(
+                            host = host,
+                            port = port,
+                            token = token,
+                            errorMessage = null,
+                        )
+                    }
+                    connect()
+                    return
+                }
+            }
+
+            // Try decoding as Base64 JSON
+            try {
+                val decodedBytes = android.util.Base64.decode(trimmed, android.util.Base64.DEFAULT)
+                val decodedString = String(decodedBytes, Charsets.UTF_8)
+                if (decodedString.startsWith("{") && decodedString.endsWith("}")) {
+                    val json =
+                        com.google.gson.JsonParser
+                            .parseString(decodedString)
+                            .asJsonObject
+                    val host = json.get("host")?.asString
+                    val port = json.get("port")?.asInt?.toString() ?: json.get("port")?.asString
+                    val token = json.get("token")?.asString
+                    if (host != null && port != null && token != null) {
+                        _uiState.update {
+                            it.copy(
+                                host = host,
+                                port = port,
+                                token = token,
+                                errorMessage = null,
+                            )
+                        }
+                        connect()
+                        return
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore base64 decode failures, fallback to setting raw token
+            }
+
+            _uiState.update { it.copy(token = trimmed, errorMessage = null) }
+        } catch (e: Exception) {
+            _uiState.update { it.copy(errorMessage = "Failed to parse pairing string: ${e.message}") }
+        }
+    }
 }
