@@ -5,19 +5,24 @@ This document provides a summary of test readiness, including test suite executi
 ## Execution and Expected Outcome
 - **Test Runner Command**: `nix develop --command ./gradlew test`
 - **Expected Outcome**: All tests pass successfully.
-- **Total Test Count**: 28 tests
+- **Total Test Count**: 123 tests
 
 ---
 
 ## Coverage Summary
 
-| Test Tier | Description | Test Count | Features Covered |
-|-----------|-------------|------------|------------------|
-| **Tier 1** | Feature Coverage | 13 | Skills (5), Cron Jobs (7), Drawer (1) |
-| **Tier 2** | Boundary & Corner Cases | 12 | HTTP errors (400, 404, 500), timeouts, empty lists, action failures |
-| **Tier 3** | Cross-Feature Combinations | 2 | Drawer transition during active toggle, Auth token revocation |
-| **Tier 4** | Real-World Application Scenarios | 1 | Full end-to-end user session journey flow |
-| **Total** | | **28** | |
+### Per-File Breakdown
+
+| Test File | Test Count |
+|-----------|------------|
+| E2eIntegrationTest.kt | 37 |
+| ModelSerializationTest.kt | 30 |
+| HermesApiServiceTest.kt | 19 |
+| ConnectViewModelTest.kt | 14 |
+| ChatViewModelTest.kt | 9 |
+| AuthManagerTest.kt | 8 |
+| EventParserTest.kt | 6 |
+| **Total** | **123** |
 
 ---
 

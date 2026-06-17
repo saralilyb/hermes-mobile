@@ -33,6 +33,7 @@ The test suite utilizes **opaque-box JVM-based integration and E2E tests** that 
 - **Test Runner**:
   - Main Test suite command: `nix develop --command ./gradlew test`
   - Style checking command: `nix develop --command ./gradlew ktlintCheck`
+  - Total test count: 123 across 7 test files (see TEST_READY.md for per-file breakdown).
 - **Test Case Format**:
   - JUnit 4 / JUnit Platform JVM tests implemented in Kotlin.
   - Mocking library: `Mockk` for mock objects, static mocks, and API endpoints.
