@@ -2,10 +2,17 @@ package com.m57.hermescontrol.data.ws
 
 import android.util.Log
 import com.google.gson.Gson
+import com.m57.hermescontrol.BuildConfig
 import com.m57.hermescontrol.data.local.AuthManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -43,6 +50,15 @@ object HermesWsClient {
 
     @Volatile
     private var currentBackoff = INITIAL_BACKOFF_MS
+
+    // B4 (Jun 18 2026, kanban t_2b834d90): dedicated IO coroutine scope for
+    // the new single-Job reconnect scheduler below. SupervisorJob keeps one
+    // child failure from cancelling the scope; the scope itself lives as
+    // long as this singleton (object) exists.
+    private val wsScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    @Volatile
+    private var reconnectJob: Job? = null
 
     private val okHttpClient =
         OkHttpClient
@@ -83,6 +99,11 @@ object HermesWsClient {
     /** Cleanly close the WebSocket and stop auto-reconnect. */
     fun disconnect() {
         intentionalClose.set(true)
+        // B4 (Jun 18 2026, kanban t_2b834d90): also cancel any pending
+        // reconnect coroutine so a scheduled openSocket() can't fire after
+        // the user explicitly disconnected.
+        reconnectJob?.cancel()
+        reconnectJob = null
         webSocket?.close(1000, "Client closed")
         webSocket = null
         connected.set(false)
@@ -101,7 +122,10 @@ object HermesWsClient {
         val id = requestId.incrementAndGet().toString()
         val request = JsonRpcRequest(id = id, method = method, params = params)
         val json = gson.toJson(request)
-        Log.d(TAG, "→ $json")
+        // B2 (Jun 18 2026, kanban t_8884db16): outgoing JSON contains user
+        // prompts (PromptSubmit params include the `text` field) — never
+        // stream to logcat in release builds.
+        if (BuildConfig.DEBUG) Log.d(TAG, "→ $json")
         webSocket?.send(json) ?: Log.w(TAG, "send() called while disconnected")
         return id
     }
@@ -120,7 +144,9 @@ object HermesWsClient {
 
     private fun openSocket() {
         val url = AuthManager.wsUrl()
-        Log.d(TAG, "Connecting to $url")
+        // B2 (Jun 18 2026, kanban t_8884db16): url contains the auth token
+        // as a query param — never stream to logcat in release builds.
+        if (BuildConfig.DEBUG) Log.d(TAG, "Connecting to $url")
 
         val request = Request.Builder().url(url).build()
         webSocket = okHttpClient.newWebSocket(request, WsListenerImpl())
@@ -129,7 +155,7 @@ object HermesWsClient {
     private fun scheduleReconnect() {
         if (intentionalClose.get()) return
         if (!AuthManager.isAutoReconnect()) {
-            Log.d(TAG, "Auto-reconnect disabled")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Auto-reconnect disabled")
             return
         }
         val delay = currentBackoff
@@ -137,23 +163,32 @@ object HermesWsClient {
             (currentBackoff * BACKOFF_MULTIPLIER)
                 .toLong()
                 .coerceAtMost(MAX_BACKOFF_MS)
-        Log.d(TAG, "Reconnecting in ${delay}ms …")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Reconnecting in ${delay}ms …")
 
-        // Simple thread-based scheduling; could be replaced with coroutine delay.
-        Thread {
-            try {
-                Thread.sleep(delay)
-            } catch (_: InterruptedException) {
-                return@Thread
+        // B4 (Jun 18 2026, kanban t_2b834d90): replaced raw Thread{ sleep;
+        // check; openSocket() } with a single cancellable coroutine Job.
+        //
+        // Old code had two failure modes:
+        //   1. TOCTOU: line 149 `if (!intentionalClose && !connected)` was
+        //      not atomic with line 150 `openSocket()`. Two reconnect threads
+        //      spawned from a rapid onFailure/onClosed cycle could both pass
+        //      the gate and both call openSocket() — the second overwrote
+        //      `webSocket` without closing the first, leaking an orphaned
+        //      listener.
+        //   2. Unbounded thread spawn: a flaky network multiplied the
+        //      daemon-thread count. Backoff grew but old threads weren't
+        //      cancelled.
+        //
+        // New behavior: cancel any in-flight reconnect before scheduling the
+        // next one — only one reconnect coroutine exists at any time.
+        reconnectJob?.cancel()
+        reconnectJob =
+            wsScope.launch {
+                delay(delay)
+                if (!intentionalClose.get() && !connected.get()) {
+                    openSocket()
+                }
             }
-            if (!intentionalClose.get() && !connected.get()) {
-                openSocket()
-            }
-        }.apply {
-            isDaemon = true
-            name = "hermes-ws-reconnect"
-            start()
-        }
     }
 
     private fun emit(event: WsEvent) {
@@ -178,7 +213,10 @@ object HermesWsClient {
             ws: WebSocket,
             text: String,
         ) {
-            Log.d(TAG, "← $text")
+            // B2 (Jun 18 2026, kanban t_8884db16): incoming WS text contains
+            // AI reply tokens and tool output — never stream to logcat in
+            // release builds.
+            if (BuildConfig.DEBUG) Log.d(TAG, "← $text")
             try {
                 val rpc = gson.fromJson(text, JsonRpcResponse::class.java)
                 val event = EventParser.parse(rpc, text)

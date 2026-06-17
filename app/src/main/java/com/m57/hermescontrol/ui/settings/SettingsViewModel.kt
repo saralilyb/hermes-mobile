@@ -39,6 +39,10 @@ class SettingsViewModel : ViewModel() {
                 port = AuthManager.getPort().toString(),
                 token = AuthManager.getToken() ?: "",
                 autoReconnect = AuthManager.isAutoReconnect(),
+                // B6 (Jun 18 2026, kanban t_86e9be9b): restore user's theme
+                // choice from persistent storage on init. Previously this slot
+                // was missing — always defaulted to ThemePreference.SYSTEM.
+                themePreference = AuthManager.getThemePreference(),
             )
         }
     }
@@ -71,6 +75,9 @@ class SettingsViewModel : ViewModel() {
         AuthManager.setPort(port)
         AuthManager.setToken(state.token)
         AuthManager.setAutoReconnect(state.autoReconnect)
+        // B6 (Jun 18 2026, kanban t_86e9be9b): persist theme choice so it
+        // survives a cold start (was previously dropped on save()).
+        AuthManager.setThemePreference(state.themePreference)
         ApiClient.rebuild()
 
         _uiState.update { it.copy(isSaved = true, testResult = null) }

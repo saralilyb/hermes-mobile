@@ -19,7 +19,11 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            HermesControlTheme {
+            // B6 (Jun 18 2026, kanban t_86e9be9b): read the stored theme
+            // preference at startup so HermesControlTheme actually applies
+            // the user's SYSTEM/LIGHT/DARK choice rather than defaulting to
+            // SYSTEM on every cold start.
+            HermesControlTheme(themePreference = AuthManager.getThemePreference()) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,

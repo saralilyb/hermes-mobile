@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.m57.hermescontrol.theme.ThemePreference
 
 /**
  * Singleton that manages encrypted storage of the Hermes dashboard token
@@ -18,6 +19,7 @@ object AuthManager {
     private const val KEY_HOST = "host"
     private const val KEY_PORT = "port"
     private const val KEY_AUTO_RECONNECT = "auto_reconnect"
+    private const val KEY_THEME_PREFERENCE = "theme_preference"
 
     private const val DEFAULT_HOST = "127.0.0.1"
     private const val DEFAULT_PORT = 9119
@@ -86,6 +88,25 @@ object AuthManager {
 
     fun setAutoReconnect(enabled: Boolean) {
         requirePrefs().edit().putBoolean(KEY_AUTO_RECONNECT, enabled).apply()
+    }
+
+    // ── Theme preference ──────────────────────────────────────────────────
+    // B6 (Jun 18 2026, kanban t_86e9be9b): previously, SettingsScreen.kt let
+    // the user pick SYSTEM/LIGHT/DARK in a SingleChoiceSegmentedButtonRow
+    // (SettingsScreen.kt:213-238) and SettingsViewModel.onThemeChange
+    // (SettingsViewModel.kt:62-64) updated in-memory state — but
+    // SettingsViewModel.loadSettings() did NOT read the value back and
+    // SettingsViewModel.save() did NOT persist it. As a result, every cold
+    // start reset the theme to SYSTEM. Fix: round-trip via EncryptedSharedPreferences
+    // (the same store already used by token / host / port / auto_reconnect).
+
+    fun getThemePreference(): ThemePreference =
+        requirePrefs().getString(KEY_THEME_PREFERENCE, ThemePreference.SYSTEM.name)?.let { name ->
+            runCatching { ThemePreference.valueOf(name) }.getOrNull()
+        } ?: ThemePreference.SYSTEM
+
+    fun setThemePreference(theme: ThemePreference) {
+        requirePrefs().edit().putString(KEY_THEME_PREFERENCE, theme.name).apply()
     }
 
     /** Convenience: build the base URL from current host + port. */

@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.data.remote
 
+import com.m57.hermescontrol.BuildConfig
 import com.m57.hermescontrol.data.local.AuthManager
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -41,9 +42,18 @@ object ApiClient {
     // ── Internal ─────────────────────────────────────────────────────────
 
     private fun buildService(): HermesApiService {
+        // B1 (Jun 18 2026, kanban t_afc1d26f): Level.BODY prints every request —
+        // including the Authorization: Bearer header from authInterceptor below —
+        // to logcat in plaintext. Gate on BuildConfig.DEBUG so release builds
+        // are silent; debug builds behave identically to before.
         val logging =
             HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BODY
+                level =
+                    if (BuildConfig.DEBUG) {
+                        HttpLoggingInterceptor.Level.BODY
+                    } else {
+                        HttpLoggingInterceptor.Level.NONE
+                    }
             }
 
         val authInterceptor =

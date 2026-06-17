@@ -107,6 +107,19 @@ fun LogsScreen(
                             .align(Alignment.Center)
                             .padding(16.dp),
                 )
+            } else if (state.logs.isEmpty()) {
+                // B5 (Jun 18 2026, kanban t_2322818d): explicit empty-state UX.
+                // Sibling screens (PairingScreen.kt, WebhooksScreen.kt) did this;
+                // LogsScreen didn't — when logs were empty and not loading, the
+                // black Box rendered with NO content visible to the user.
+                Text(
+                    text = "No logs available",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier =
+                        Modifier
+                            .align(Alignment.Center)
+                            .padding(16.dp),
+                )
             } else {
                 LazyColumn(
                     state = listState,

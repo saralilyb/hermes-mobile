@@ -526,12 +526,37 @@ class ChatViewModel : ViewModel() {
                                 isStreaming = false,
                             )
                         }
-                    _uiState.update { it.copy(messages = chatMessages) }
+                    // B3 (Jun 18 2026, kanban t_33da8a97): switchSession fires
+                    // SESSION_RESUME (WS) and loadSessionMessages (REST) in
+                    // parallel. While this REST call is in flight, WsEvent
+                    // .MessageToken events append streaming messages to
+                    // `state.messages` (ChatViewModel.kt:99-125). Without
+                    // preservation, the unconditional `messages = chatMessages`
+                    // below stomps the just-streamed tokens. Preserve the
+                    // in-flight tail by appending any messages marked
+                    // isStreaming=true to the freshly-loaded history.
+                    _uiState.update { state ->
+                        val streamingTail = state.messages.filter { it.isStreaming }
+                        state.copy(
+                            messages = chatMessages + streamingTail,
+                            isLoading = false,
+                        )
+                    }
                 } else {
-                    _uiState.update { it.copy(errorMessage = "Failed to load messages: HTTP ${response.code()}") }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "Failed to load messages: HTTP ${response.code()}",
+                        )
+                    }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to load messages: ${e.message}") }
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "Failed to load messages: ${e.message}",
+                    )
+                }
             }
         }
     }
