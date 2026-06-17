@@ -1,7 +1,9 @@
 package com.m57.hermescontrol.ui.system
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.m57.hermescontrol.BuildConfig
 import com.m57.hermescontrol.data.model.DoctorResponse
 import com.m57.hermescontrol.data.model.SystemStatsResponse
 import com.m57.hermescontrol.data.remote.ApiClient
@@ -22,6 +24,10 @@ data class SystemUiState(
 )
 
 class SystemViewModel : ViewModel() {
+    companion object {
+        private const val TAG = "SystemViewModel"
+    }
+
     private val _uiState = MutableStateFlow(SystemUiState())
     val uiState: StateFlow<SystemUiState> = _uiState.asStateFlow()
 
@@ -72,8 +78,8 @@ class SystemViewModel : ViewModel() {
                 if (doctorResponse.isSuccessful) {
                     _uiState.update { it.copy(doctorReport = doctorResponse.body()) }
                 }
-            } catch (_: Exception) {
-                // Ignore optional doctor failures.
+            } catch (e: Exception) {
+                if (BuildConfig.DEBUG) Log.w(TAG, "doctor endpoint unavailable", e)
             }
         }
     }
