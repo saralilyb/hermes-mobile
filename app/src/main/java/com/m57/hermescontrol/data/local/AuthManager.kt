@@ -109,9 +109,12 @@ object AuthManager {
         requirePrefs().edit().putString(KEY_THEME_PREFERENCE, theme.name).apply()
     }
 
-    /** Convenience: build the base URL from current host + port. */
+    /** Convenience: build the base URL from current host + port.
+     *  NOTE: Uses plain http:// — intended for trusted local network only.
+     *  Exposing the host to a hostile LAN risks token interception. */
     fun baseUrl(): String = "http://${getHost()}:${getPort()}/"
 
-    /** Convenience: build the WebSocket URL with token query param. */
+    /** Convenience: build the WebSocket URL with token query param.
+     *  NOTE: Token in query string — trusted local network only. */
     fun wsUrl(): String = "ws://${getHost()}:${getPort()}/api/ws?token=${getToken().orEmpty()}"
 }
