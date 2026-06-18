@@ -1,11 +1,16 @@
 package com.m57.hermescontrol.ui.chat
 
+import android.app.Application
 import com.m57.hermescontrol.data.local.AuthManager
+import com.m57.hermescontrol.data.local.ChatMessageDao
+import com.m57.hermescontrol.data.local.HermesDatabase
 import com.m57.hermescontrol.data.ws.HermesWsClient
 import com.m57.hermescontrol.data.ws.JsonRpcError
 import com.m57.hermescontrol.data.ws.WsEvent
 import com.m57.hermescontrol.data.ws.WsMethods
+import io.mockk.coEvery
 import io.mockk.every
+import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
@@ -13,6 +18,7 @@ import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -31,6 +37,9 @@ import org.junit.Test
 class ChatViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private val mockEventsFlow = MutableSharedFlow<WsEvent>(extraBufferCapacity = 64)
+    private lateinit var app: Application
+    private val mockDao: ChatMessageDao = mockk(relaxed = true)
+    private val mockDb: HermesDatabase = mockk(relaxed = true)
 
     @Before
     fun setUp() {
@@ -43,11 +52,23 @@ class ChatViewModelTest {
 
         mockkObject(AuthManager)
         mockkObject(HermesWsClient)
+        mockkObject(HermesDatabase)
+
+        app = mockk(relaxed = true)
 
         every { AuthManager.getToken() } returns "test-token"
         every { HermesWsClient.events } returns mockEventsFlow
         every { HermesWsClient.connect() } returns Unit
         every { HermesWsClient.disconnect() } returns Unit
+        every { mockDb.chatMessageDao() } returns mockDao
+        every { HermesDatabase.get(any()) } returns mockDb
+        every { mockDao.observeMessagesForSession(any()) } returns flowOf(emptyList())
+        coEvery { mockDao.getMessagesForSession(any()) } returns emptyList()
+        coEvery { mockDao.upsert(any()) } returns Unit
+        coEvery { mockDao.upsertAll(any()) } returns Unit
+        coEvery { mockDao.finalizeMessage(any(), any()) } returns Unit
+        coEvery { mockDao.deleteMessagesForSession(any()) } returns Unit
+        coEvery { mockDao.count() } returns 0
 
         // Default mock stubs for requests returning unique IDs
         var reqCount = 0
@@ -70,7 +91,7 @@ class ChatViewModelTest {
     @Test
     fun testInitialStateAndConnection() =
         runTest {
-            val viewModel = ChatViewModel()
+            val viewModel = ChatViewModel(app)
             advanceUntilIdle()
 
             verify { HermesWsClient.connect() }
@@ -81,7 +102,7 @@ class ChatViewModelTest {
     @Test
     fun testGatewayReady_createsSessionIfNoneExists() =
         runTest {
-            val viewModel = ChatViewModel()
+            val viewModel = ChatViewModel(app)
             advanceUntilIdle()
 
             mockEventsFlow.emit(WsEvent.GatewayReady(null))
@@ -107,7 +128,7 @@ class ChatViewModelTest {
                 createReqId
             }
 
-            val viewModel = ChatViewModel()
+            val viewModel = ChatViewModel(app)
             advanceUntilIdle()
 
             // Trigger GatewayReady -> triggers createNewSession
@@ -135,7 +156,7 @@ class ChatViewModelTest {
                 listReqId
             }
 
-            val viewModel = ChatViewModel()
+            val viewModel = ChatViewModel(app)
             advanceUntilIdle()
 
             mockEventsFlow.emit(WsEvent.GatewayReady(null))
@@ -169,7 +190,7 @@ class ChatViewModelTest {
     @Test
     fun testMessageStreamingFlow() =
         runTest {
-            val viewModel = ChatViewModel()
+            val viewModel = ChatViewModel(app)
             advanceUntilIdle()
 
             // Set active session ID first
@@ -242,7 +263,7 @@ class ChatViewModelTest {
                 createReqId
             }
 
-            val viewModel = ChatViewModel()
+            val viewModel = ChatViewModel(app)
             advanceUntilIdle()
 
             // Set session ID
@@ -276,7 +297,7 @@ class ChatViewModelTest {
     @Test
     fun testSendMessage() =
         runTest {
-            val viewModel = ChatViewModel()
+            val viewModel = ChatViewModel(app)
             advanceUntilIdle()
 
             // Trigger GatewayReady -> triggers createSession -> feed result to set active session
@@ -309,7 +330,7 @@ class ChatViewModelTest {
     @Test
     fun testSwitchSession() =
         runTest {
-            val viewModel = ChatViewModel()
+            val viewModel = ChatViewModel(app)
             advanceUntilIdle()
 
             viewModel.switchSession("session-456")
@@ -339,7 +360,7 @@ class ChatViewModelTest {
                 createReqId
             }
 
-            val viewModel = ChatViewModel()
+            val viewModel = ChatViewModel(app)
             advanceUntilIdle()
 
             mockEventsFlow.emit(WsEvent.GatewayReady(null))

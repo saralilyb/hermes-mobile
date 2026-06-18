@@ -4,6 +4,8 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.kotlin.serialization)
+  alias(libs.plugins.room)
+  alias(libs.plugins.ksp)
 }
 
 android {
@@ -13,13 +15,16 @@ android {
         applicationId = "com.m57.hermescontrol"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        // Version overrides passed from CI via -PversionName / -PversionCode
+        // Falls back to defaults for local development.
+        versionCode = (project.findProperty("versionCode") as? String)?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("versionName") as? String) ?: "1.0-dev"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("debug")
         }
@@ -44,6 +49,10 @@ android {
 
 kotlin {
     jvmToolchain(17)
+}
+
+room {
+    schemaDirectory("$projectDir/schemas")
 }
 
 dependencies {
@@ -81,6 +90,14 @@ dependencies {
   // Encrypted storage
   implementation(libs.androidx.security.crypto)
   implementation("androidx.startup:startup-runtime:1.1.1")
+
+  // Local database (Room) — message persistence
+  implementation(libs.androidx.room.runtime)
+  implementation(libs.androidx.room.ktx)
+  ksp(libs.androidx.room.compiler)
+
+  // Background notifications (WorkManager)
+  implementation(libs.androidx.work.runtime)
 
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)
