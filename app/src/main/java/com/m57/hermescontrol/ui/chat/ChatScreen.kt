@@ -31,9 +31,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
@@ -78,6 +80,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -165,19 +168,16 @@ fun ChatScreen(
                 ),
         )
 
-    // Search: filter messages to matches only
-    val filteredMessages =
-        if (state.isSearchActive && state.searchQuery.isNotBlank()) {
-            state.messages.filterIndexed { index, _ -> index in state.searchMatchIndices }
-        } else {
-            state.messages
-        }
-
     // Scroll to current search match
-    LaunchedEffect(state.isSearchActive, state.currentSearchMatchIndex) {
-        if (state.isSearchActive && state.currentSearchMatchIndex >= 0 && filteredMessages.isNotEmpty()) {
+    LaunchedEffect(state.isSearchActive, state.currentSearchMatchIndex, state.searchMatchIndices) {
+        if (state.isSearchActive &&
+            state.currentSearchMatchIndex >= 0 &&
+            state.currentSearchMatchIndex < state.searchMatchIndices.size &&
+            state.messages.isNotEmpty()
+        ) {
+            val targetIndex = state.searchMatchIndices[state.currentSearchMatchIndex]
             listState.animateScrollToItem(
-                state.currentSearchMatchIndex.coerceIn(0, filteredMessages.lastIndex),
+                targetIndex.coerceIn(0, state.messages.lastIndex),
             )
         }
     }
@@ -336,18 +336,11 @@ fun ChatScreen(
                         .weight(1f)
                         .fillMaxWidth(),
             ) {
-                if (filteredMessages.isEmpty() && !state.isLoading) {
-                    if (state.isSearchActive && state.searchQuery.isNotBlank()) {
-                        EmptyState(
-                            title = "No matches",
-                            subtitle = "No messages match \"${state.searchQuery}\"",
-                        )
-                    } else {
-                        EmptyState(
-                            title = "Ready to chat",
-                            subtitle = "Send a message to start a conversation",
-                        )
-                    }
+                if (state.messages.isEmpty() && !state.isLoading) {
+                    EmptyState(
+                        title = "Ready to chat",
+                        subtitle = "Send a message to start a conversation",
+                    )
                 }
 
                 LazyColumn(
@@ -355,14 +348,21 @@ fun ChatScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 8.dp),
                 ) {
-                    items(
-                        items = filteredMessages,
-                        key = { it.id },
-                    ) { message ->
+                    itemsIndexed(
+                        items = state.messages,
+                        key = { _, message -> message.id },
+                    ) { index, message ->
+                        val isCurrentMatch =
+                            state.isSearchActive &&
+                                state.currentSearchMatchIndex >= 0 &&
+                                state.currentSearchMatchIndex < state.searchMatchIndices.size &&
+                                state.searchMatchIndices[state.currentSearchMatchIndex] == index
+
                         ChatBubble(
                             message = message,
                             isDarkTheme = isDark,
                             searchQuery = if (state.isSearchActive) state.searchQuery else "",
+                            isCurrentMatch = isCurrentMatch,
                         )
                     }
 
@@ -708,6 +708,8 @@ private fun SearchBarRow(
     onNavigateDown: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val isError = searchQuery.isNotEmpty() && searchMatchCount == 0
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -718,6 +720,8 @@ private fun SearchBarRow(
             modifier = Modifier.weight(1f),
             placeholder = { Text("Search messages…") },
             singleLine = true,
+            isError = isError,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
                     IconButton(onClick = { onQueryChange("") }) {
@@ -726,20 +730,34 @@ private fun SearchBarRow(
                 }
             },
         )
-        if (searchMatchCount > 0 && searchQuery.isNotEmpty()) {
+        if (searchQuery.isNotEmpty()) {
+            val countText =
+                if (searchMatchCount > 0) {
+                    "${currentMatchIndex + 1}/$searchMatchCount"
+                } else {
+                    "0/0"
+                }
             Text(
-                text = "${currentMatchIndex + 1}/$searchMatchCount",
-                style = MaterialTheme.typography.bodySmall,
+                text = countText,
+                style =
+                    MaterialTheme.typography.bodySmall.copy(
+                        color =
+                            if (isError) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                    ),
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
         }
-        IconButton(onClick = onNavigateUp) {
+        IconButton(onClick = onNavigateUp, enabled = searchMatchCount > 0) {
             Icon(
                 Icons.Filled.KeyboardArrowUp,
                 contentDescription = "Previous match",
             )
         }
-        IconButton(onClick = onNavigateDown) {
+        IconButton(onClick = onNavigateDown, enabled = searchMatchCount > 0) {
             Icon(
                 Icons.Filled.KeyboardArrowDown,
                 contentDescription = "Next match",
