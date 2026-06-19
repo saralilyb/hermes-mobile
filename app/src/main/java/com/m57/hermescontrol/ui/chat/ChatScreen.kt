@@ -184,6 +184,7 @@ fun ChatScreen(
 
     HermesScaffold(
         modifier = modifier,
+        pinTopBar = true,
         title = {
             if (state.isSearchActive) {
                 SearchBarRow(
