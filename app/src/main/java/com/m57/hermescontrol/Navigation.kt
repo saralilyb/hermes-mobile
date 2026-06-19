@@ -45,8 +45,8 @@ import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -201,12 +201,14 @@ fun MainNavigation() {
                 ) {
                     // Brand header with connection status
                     val connectionStatus by HermesWsClient.connectionStatus.collectAsState()
-                    val statusColor = when (connectionStatus) {
-                        ConnectionStatus.CONNECTED -> Color(0xFF4CAF50)    // green
-                        ConnectionStatus.CONNECTING,
-                        ConnectionStatus.RECONNECTING -> Color(0xFFFFC107) // yellow
-                        ConnectionStatus.DISCONNECTED -> Color(0xFFF44336) // red
-                    }
+                    val statusColor =
+                        when (connectionStatus) {
+                            ConnectionStatus.CONNECTED -> Color(0xFF4CAF50) // green
+                            ConnectionStatus.CONNECTING,
+                            ConnectionStatus.RECONNECTING,
+                            -> Color(0xFFFFC107) // yellow
+                            ConnectionStatus.DISCONNECTED -> Color(0xFFF44336) // red
+                        }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(start = 20.dp, top = 20.dp, end = 16.dp, bottom = 4.dp),
