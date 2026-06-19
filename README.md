@@ -211,7 +211,7 @@ hermes-mobile/
 | **Networking** | [Retrofit 2](https://square.github.io/retrofit/) + [OkHttp 4](https://square.github.io/okhttp/) | REST API calls |
 | **Persistence** | [Room](https://developer.android.com/training/data-storage/room) (SQLite) | Local message history |
 | **Encryption** | AndroidX Security Crypto | Secure key storage |
-| **Background** | [WorkManager](https://developer.android.com/topic/libraries/architecture/workmanager) | Notification polling |
+| **Background** | Foreground Service | Notification polling (`ChatNotificationService`) |
 | **Serialization** | [Gson](https://github.com/google/gson) | JSON parsing |
 | **Testing** | jUnit 5 + [MockK](https://mockk.io/) + [OkHttp MockWebServer](https://github.com/square/okhttp/tree/master/mockwebserver) | Unit testing |
 | **Linting** | [ktlint](https://ktlint.github.io/) | Kotlin code style |

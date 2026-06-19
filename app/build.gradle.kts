@@ -105,9 +105,6 @@ dependencies {
   implementation(libs.androidx.room.ktx)
   ksp(libs.androidx.room.compiler)
 
-  // Background notifications (WorkManager)
-  implementation(libs.androidx.work.runtime)
-
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)
   testImplementation(libs.junit.jupiter.api)
