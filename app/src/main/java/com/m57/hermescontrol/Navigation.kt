@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
@@ -80,6 +81,7 @@ import com.m57.hermescontrol.ui.model.ModelScreen as ModelScreenContent
 import com.m57.hermescontrol.ui.pairing.PairingScreen as PairingScreenContent
 import com.m57.hermescontrol.ui.plugins.PluginsScreen as PluginsScreenContent
 import com.m57.hermescontrol.ui.profiles.ProfilesScreen as ProfilesScreenContent
+import com.m57.hermescontrol.ui.sessions.SessionsScreen as SessionsScreenContent
 import com.m57.hermescontrol.ui.settings.SettingsScreen as SettingsScreenContent
 import com.m57.hermescontrol.ui.skills.SkillsScreen as SkillsScreenContent
 import com.m57.hermescontrol.ui.system.SystemScreen as SystemScreenContent
@@ -101,6 +103,7 @@ private val ALL_NAV_ITEMS: List<BottomNavItem> =
         BottomNavItem(SkillsScreen, "Skills", Icons.Filled.Extension),
         BottomNavItem(CronJobsScreen, "Cron", Icons.Filled.Schedule),
         BottomNavItem(SystemScreen, "System", Icons.Filled.Info),
+        BottomNavItem(SessionsScreen, "Sessions", Icons.Filled.Forum),
         BottomNavItem(SettingsScreen, "Settings", Icons.Filled.Settings),
         BottomNavItem(ProfilesScreen, "Profiles", Icons.Filled.AccountCircle),
         BottomNavItem(WebhooksScreen, "Webhooks", Icons.Filled.Webhook),
@@ -159,6 +162,7 @@ private val DRAWER_ENTRIES =
         DrawerEntry(KeysScreen, "Keys", Icons.Filled.Key, DrawerSection.CONFIGURE),
         DrawerEntry(ChannelsScreen, "Channels", Icons.AutoMirrored.Filled.ListAlt, DrawerSection.CONFIGURE),
         // Inspect
+        DrawerEntry(SessionsScreen, "Sessions", Icons.Filled.Forum, DrawerSection.INSPECT),
         DrawerEntry(LogsScreen, "Logs", Icons.Filled.HistoryEdu, DrawerSection.INSPECT),
         DrawerEntry(KanbanScreen, "Kanban", Icons.Filled.Dashboard, DrawerSection.INSPECT),
         DrawerEntry(AchievementsScreen, "Achievements", Icons.Filled.Info, DrawerSection.INSPECT),
@@ -428,6 +432,16 @@ fun MainNavigation() {
                         entry<SystemScreen> {
                             SystemScreenContent(
                                 onOpenDrawer = { openDrawer() },
+                            )
+                        }
+
+                        entry<SessionsScreen> {
+                            SessionsScreenContent(
+                                onOpenDrawer = { openDrawer() },
+                                onSwitchToSession = { sessionId, sessionTitle ->
+                                    backStack.removeAll { it == SessionsScreen }
+                                    NavigationController.navigateTo(ChatScreen)
+                                },
                             )
                         }
 

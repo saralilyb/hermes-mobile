@@ -76,6 +76,7 @@ class SettingsViewModel : ViewModel() {
             "SkillsScreen" to "Skills",
             "CronJobsScreen" to "Cron Jobs",
             "SystemScreen" to "System",
+            "SessionsScreen" to "Sessions",
             "SettingsScreen" to "Settings",
             "ProfilesScreen" to "Profiles",
             "WebhooksScreen" to "Webhooks",
