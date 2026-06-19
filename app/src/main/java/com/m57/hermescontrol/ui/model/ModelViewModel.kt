@@ -6,6 +6,8 @@ import com.m57.hermescontrol.data.model.ModelProvider
 import com.m57.hermescontrol.data.model.ProfileInfo
 import com.m57.hermescontrol.data.model.UpdateProfileModelRequest
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,26 +31,30 @@ class ModelViewModel : ViewModel() {
     fun loadModelOptions() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getModelOptions()
-                    }
-                val activeProfileNameRes =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getActiveProfile()
-                    }
-                val profilesRes =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getProfiles()
-                    }
+            val responseResult =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getModelOptions() }
+                }
+            val activeProfileNameResResult =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getActiveProfile() }
+                }
+            val profilesResResult =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getProfiles() }
+                }
 
-                if (response.isSuccessful) {
+            when (responseResult) {
+                is NetworkResult.Success -> {
                     val activeName =
-                        if (activeProfileNameRes.isSuccessful) activeProfileNameRes.body()?.active else null
+                        if (activeProfileNameResResult is NetworkResult.Success) {
+                            activeProfileNameResResult.data.active
+                        } else {
+                            null
+                        }
                     val activeProfile =
-                        if (profilesRes.isSuccessful && activeName != null) {
-                            profilesRes.body()?.profiles?.find { it.name == activeName }
+                        if (profilesResResult is NetworkResult.Success && activeName != null) {
+                            profilesResResult.data.profiles.find { it.name == activeName }
                         } else {
                             null
                         }
@@ -56,24 +62,18 @@ class ModelViewModel : ViewModel() {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            providers = response.body()?.providers.orEmpty(),
+                            providers = responseResult.data.providers.orEmpty(),
                             activeProfile = activeProfile,
                         )
                     }
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = "Failed to load model options: HTTP ${response.code()}",
+                            errorMessage = "Failed to load model options: ${responseResult.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to load model options: ${e.message}",
-                    )
                 }
             }
         }
@@ -84,40 +84,45 @@ class ModelViewModel : ViewModel() {
         modelName: String,
     ) {
         viewModelScope.launch {
-            try {
-                val activeProfileNameRes =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getActiveProfile()
-                    }
-                if (!activeProfileNameRes.isSuccessful) {
+            val activeProfileNameResResult =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getActiveProfile() }
+                }
+            when (activeProfileNameResResult) {
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
-                            toastMessage = "Failed to fetch active profile: HTTP ${activeProfileNameRes.code()}",
+                            toastMessage =
+                                "Failed to fetch active profile: ${activeProfileNameResResult.error.message}",
                         )
                     }
                     return@launch
                 }
-                val activeProfileName = activeProfileNameRes.body()?.active
-                if (activeProfileName == null) {
-                    _uiState.update { it.copy(toastMessage = "No active profile found") }
-                    return@launch
-                }
-
-                val updateRes =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.updateProfileModel(
-                            activeProfileName,
-                            UpdateProfileModelRequest(providerSlug, modelName),
-                        )
+                is NetworkResult.Success -> {
+                    val activeProfileName = activeProfileNameResResult.data.active
+                    val updateResResult =
+                        withContext(Dispatchers.IO) {
+                            safeApiCall {
+                                ApiClient.hermesApi.updateProfileModel(
+                                    activeProfileName,
+                                    UpdateProfileModelRequest(providerSlug, modelName),
+                                )
+                            }
+                        }
+                    when (updateResResult) {
+                        is NetworkResult.Success -> {
+                            _uiState.update { it.copy(toastMessage = "Successfully set model to $modelName") }
+                            loadModelOptions()
+                        }
+                        is NetworkResult.Failure -> {
+                            _uiState.update {
+                                it.copy(
+                                    toastMessage = "Failed to set model: ${updateResResult.error.message}",
+                                )
+                            }
+                        }
                     }
-                if (updateRes.isSuccessful) {
-                    _uiState.update { it.copy(toastMessage = "Successfully set model to $modelName") }
-                    loadModelOptions()
-                } else {
-                    _uiState.update { it.copy(toastMessage = "Failed to set model: HTTP ${updateRes.code()}") }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(toastMessage = "Failed to set model: ${e.message}") }
             }
         }
     }

@@ -8,6 +8,8 @@ import com.m57.hermescontrol.data.local.HermesDatabase
 import com.m57.hermescontrol.data.local.toEntity
 import com.m57.hermescontrol.data.local.toUiModel
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.data.ws.HermesWsClient
 import com.m57.hermescontrol.data.ws.WsEvent
 import com.m57.hermescontrol.data.ws.WsMethods
@@ -423,10 +425,13 @@ class ChatViewModel(
 
             "/status" -> {
                 viewModelScope.launch {
-                    try {
-                        val response = withContext(Dispatchers.IO) { ApiClient.hermesApi.getStatus() }
-                        if (response.isSuccessful && response.body() != null) {
-                            val body = response.body()!!
+                    val result =
+                        withContext(Dispatchers.IO) {
+                            safeApiCall { ApiClient.hermesApi.getStatus() }
+                        }
+                    when (result) {
+                        is NetworkResult.Success -> {
+                            val body = result.data
                             val platformsStr =
                                 body.gateway_platforms?.entries?.joinToString("\n") { (k, v) ->
                                     "  • **$k**: ${v.state ?: "Unknown"}${if (v.error_code != null) " (Error: ${v.error_code})" else ""}"
@@ -444,41 +449,45 @@ class ChatViewModel(
                                 $platformsStr
                                 """.trimIndent()
                             addAssistantMessage(statusText)
-                        } else {
-                            addAssistantMessage("Failed to retrieve status: HTTP ${response.code()}")
                         }
-                    } catch (e: Exception) {
-                        addAssistantMessage("Failed to retrieve status: ${e.message}")
+                        is NetworkResult.Failure -> {
+                            addAssistantMessage("Failed to retrieve status: ${result.error.message}")
+                        }
                     }
                 }
             }
 
             "/sessions" -> {
                 viewModelScope.launch {
-                    try {
-                        val response = withContext(Dispatchers.IO) { ApiClient.hermesApi.getSessions() }
-                        if (response.isSuccessful && response.body() != null) {
-                            val body = response.body()!!
+                    val result =
+                        withContext(Dispatchers.IO) {
+                            safeApiCall { ApiClient.hermesApi.getSessions() }
+                        }
+                    when (result) {
+                        is NetworkResult.Success -> {
+                            val body = result.data
                             val sessionsStr =
                                 body.sessions.joinToString("\n") { s ->
                                     "• **${s.title ?: "Untitled"}** (ID: `${s.id}`, Messages: ${s.message_count ?: 0})"
                                 }
                             addAssistantMessage("**Sessions List:**\n$sessionsStr")
-                        } else {
-                            addAssistantMessage("Failed to list sessions: HTTP ${response.code()}")
                         }
-                    } catch (e: Exception) {
-                        addAssistantMessage("Failed to list sessions: ${e.message}")
+                        is NetworkResult.Failure -> {
+                            addAssistantMessage("Failed to list sessions: ${result.error.message}")
+                        }
                     }
                 }
             }
 
             "/stats", "/system" -> {
                 viewModelScope.launch {
-                    try {
-                        val response = withContext(Dispatchers.IO) { ApiClient.hermesApi.getSystemStats() }
-                        if (response.isSuccessful && response.body() != null) {
-                            val body = response.body()!!
+                    val result =
+                        withContext(Dispatchers.IO) {
+                            safeApiCall { ApiClient.hermesApi.getSystemStats() }
+                        }
+                    when (result) {
+                        is NetworkResult.Success -> {
+                            val body = result.data
                             val cpuPct = body.cpuPercent?.let { String.format("%.1f%%", it) } ?: "N/A"
                             val memPct = body.memoryPercent?.let { String.format("%.1f%%", it) } ?: "N/A"
                             val uptimeVal = body.uptime ?: "N/A"
@@ -490,11 +499,10 @@ class ChatViewModel(
                                 • **Uptime:** $uptimeVal
                                 """.trimIndent()
                             addAssistantMessage(statsText)
-                        } else {
-                            addAssistantMessage("Failed to retrieve system stats: HTTP ${response.code()}")
                         }
-                    } catch (e: Exception) {
-                        addAssistantMessage("Failed to retrieve system stats: ${e.message}")
+                        is NetworkResult.Failure -> {
+                            addAssistantMessage("Failed to retrieve system stats: ${result.error.message}")
+                        }
                     }
                 }
             }
@@ -584,13 +592,13 @@ class ChatViewModel(
 
     private fun loadSessionMessages(sessionId: String) {
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getSessionMessages(sessionId)
-                    }
-                if (response.isSuccessful) {
-                    val messagesList = response.body()?.messages.orEmpty()
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getSessionMessages(sessionId) }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    val messagesList = result.data.messages.orEmpty()
                     val chatMessages =
                         messagesList.map { msg ->
                             val role =
@@ -618,20 +626,14 @@ class ChatViewModel(
                             isLoading = false,
                         )
                     }
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = "Failed to load messages: HTTP ${response.code()}",
+                            errorMessage = "Failed to load messages: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to load messages: ${e.message}",
-                    )
                 }
             }
         }

@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkError
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,43 +79,50 @@ class ConnectViewModel : ViewModel() {
         ApiClient.rebuild()
 
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getStatus()
-                    }
-                if (response.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getStatus() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(isConnecting = false, connectionSuccess = true, errorMessage = null)
                     }
-                } else {
-                    val code = response.code()
+                }
+                is NetworkResult.Failure -> {
                     val msg =
-                        when (code) {
-                            401 -> {
-                                AuthManager.setToken(null)
-                                "Invalid token (401 Unauthorized)"
+                        when (val err = result.error) {
+                            is NetworkError.Http -> {
+                                when (err.code) {
+                                    401 -> {
+                                        AuthManager.setToken(null)
+                                        "Invalid token (401 Unauthorized)"
+                                    }
+                                    403 -> "Access denied (403 Forbidden)"
+                                    else -> "Server returned HTTP ${err.code}"
+                                }
                             }
-
-                            403 -> {
-                                "Access denied (403 Forbidden)"
+                            is NetworkError.Connection -> {
+                                val causeMessage = err.cause.message ?: ""
+                                when {
+                                    causeMessage.contains("timeout", true) -> "Connection timed out"
+                                    causeMessage.contains("refused", true) -> "Connection refused – is Hermes running?"
+                                    causeMessage.contains("resolve", true) -> "Could not resolve host"
+                                    else -> "Connection failed: ${err.cause.message}"
+                                }
                             }
-
-                            else -> {
-                                "Server returned HTTP $code"
+                            is NetworkError.Unknown -> {
+                                val causeMessage = err.cause.message ?: ""
+                                when {
+                                    causeMessage.contains("timeout", true) -> "Connection timed out"
+                                    causeMessage.contains("refused", true) -> "Connection refused – is Hermes running?"
+                                    causeMessage.contains("resolve", true) -> "Could not resolve host"
+                                    else -> "Connection failed: ${err.cause.message}"
+                                }
                             }
                         }
                     _uiState.update { it.copy(isConnecting = false, errorMessage = msg) }
                 }
-            } catch (e: Exception) {
-                val msg =
-                    when {
-                        e.message?.contains("timeout", true) == true -> "Connection timed out"
-                        e.message?.contains("refused", true) == true -> "Connection refused – is Hermes running?"
-                        e.message?.contains("resolve", true) == true -> "Could not resolve host"
-                        else -> "Connection failed: ${e.message}"
-                    }
-                _uiState.update { it.copy(isConnecting = false, errorMessage = msg) }
             }
         }
     }

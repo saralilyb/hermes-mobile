@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.StatusResponse
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,53 +29,47 @@ class GatewayViewModel : ViewModel() {
     fun loadStatus() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getStatus()
-                    }
-                if (response.isSuccessful) {
-                    _uiState.update { it.copy(isLoading = false, status = response.body()) }
-                } else {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getStatus() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    _uiState.update { it.copy(isLoading = false, status = result.data) }
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = "Failed to load status: HTTP ${response.code()}",
+                            errorMessage = "Failed to load status: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to load status: ${e.message}",
-                    )
                 }
             }
         }
     }
 
     fun startGateway() {
-        runGatewayAction("start") { ApiClient.hermesApi.startGateway() }
+        runGatewayAction("start") { safeApiCall { ApiClient.hermesApi.startGateway() } }
     }
 
     fun stopGateway() {
-        runGatewayAction("stop") { ApiClient.hermesApi.stopGateway() }
+        runGatewayAction("stop") { safeApiCall { ApiClient.hermesApi.stopGateway() } }
     }
 
     fun restartGateway() {
-        runGatewayAction("restart") { ApiClient.hermesApi.restartGateway() }
+        runGatewayAction("restart") { safeApiCall { ApiClient.hermesApi.restartGateway() } }
     }
 
     private fun runGatewayAction(
         actionName: String,
-        apiCall: suspend () -> retrofit2.Response<Unit>,
+        apiCall: suspend () -> NetworkResult<Unit>,
     ) {
         _uiState.update { it.copy(isActionRunning = true) }
         viewModelScope.launch {
-            try {
-                val response = withContext(Dispatchers.IO) { apiCall() }
-                if (response.isSuccessful) {
+            val result = withContext(Dispatchers.IO) { apiCall() }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             isActionRunning = false,
@@ -81,20 +77,14 @@ class GatewayViewModel : ViewModel() {
                         )
                     }
                     loadStatus()
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isActionRunning = false,
-                            toastMessage = "Failed to $actionName gateway: HTTP ${response.code()}",
+                            toastMessage = "Failed to $actionName gateway: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isActionRunning = false,
-                        toastMessage = "Failed to $actionName gateway: ${e.message}",
-                    )
                 }
             }
         }

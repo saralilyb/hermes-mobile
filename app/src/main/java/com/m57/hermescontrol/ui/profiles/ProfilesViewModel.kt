@@ -7,6 +7,8 @@ import com.m57.hermescontrol.data.model.SetActiveProfileRequest
 import com.m57.hermescontrol.data.model.UpdateProfileModelRequest
 import com.m57.hermescontrol.data.model.UpdateProfileSoulRequest
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,33 +34,30 @@ class ProfilesViewModel : ViewModel() {
     fun loadProfiles() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val profilesRes = withContext(Dispatchers.IO) { ApiClient.hermesApi.getProfiles() }
-                val activeRes = withContext(Dispatchers.IO) { ApiClient.hermesApi.getActiveProfile() }
-
-                if (profilesRes.isSuccessful && activeRes.isSuccessful) {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            profiles = profilesRes.body()?.profiles.orEmpty(),
-                            activeProfileName = activeRes.body()?.active,
-                        )
-                    }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage =
-                                "Failed to load profiles/active: HTTP " +
-                                    "${profilesRes.code()} / ${activeRes.code()}",
-                        )
-                    }
+            val profilesResult =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getProfiles() }
                 }
-            } catch (e: Exception) {
+            val activeResult =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getActiveProfile() }
+                }
+
+            if (profilesResult is NetworkResult.Success && activeResult is NetworkResult.Success) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        errorMessage = "Error loading profiles: ${e.message}",
+                        profiles = profilesResult.data.profiles.orEmpty(),
+                        activeProfileName = activeResult.data.active,
+                    )
+                }
+            } else {
+                val profilesError = (profilesResult as? NetworkResult.Failure)?.error?.message ?: "Success"
+                val activeError = (activeResult as? NetworkResult.Failure)?.error?.message ?: "Success"
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "Failed to load profiles/active: Profiles: $profilesError, Active: $activeError",
                     )
                 }
             }
@@ -71,28 +70,22 @@ class ProfilesViewModel : ViewModel() {
         _uiState.update { it.copy(activeProfileName = name) }
 
         viewModelScope.launch {
-            try {
-                val res =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.setActiveProfile(SetActiveProfileRequest(name))
-                    }
-                if (res.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.setActiveProfile(SetActiveProfileRequest(name)) }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update { it.copy(toastMessage = "Switched to profile $name") }
                     loadProfiles()
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             activeProfileName = originalActive,
-                            toastMessage = "Failed to switch profile: HTTP ${res.code()}",
+                            toastMessage = "Failed to switch profile: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        activeProfileName = originalActive,
-                        toastMessage = "Failed to switch profile: ${e.message}",
-                    )
                 }
             }
         }
@@ -101,32 +94,26 @@ class ProfilesViewModel : ViewModel() {
     fun loadSoul(profileName: String) {
         _uiState.update { it.copy(isLoadingSoul = true, selectedSoulContent = null) }
         viewModelScope.launch {
-            try {
-                val res =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getProfileSoul(profileName)
-                    }
-                if (res.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getProfileSoul(profileName) }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             isLoadingSoul = false,
-                            selectedSoulContent = res.body()?.content ?: "",
-                        )
-                    }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isLoadingSoul = false,
-                            toastMessage = "Failed to load soul: HTTP ${res.code()}",
+                            selectedSoulContent = result.data.content,
                         )
                     }
                 }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoadingSoul = false,
-                        toastMessage = "Failed to load soul: ${e.message}",
-                    )
+                is NetworkResult.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            isLoadingSoul = false,
+                            toastMessage = "Failed to load soul: ${result.error.message}",
+                        )
+                    }
                 }
             }
         }
@@ -137,12 +124,17 @@ class ProfilesViewModel : ViewModel() {
         content: String,
     ) {
         viewModelScope.launch {
-            try {
-                val res =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.updateProfileSoul(profileName, UpdateProfileSoulRequest(content))
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall {
+                        ApiClient.hermesApi.updateProfileSoul(
+                            profileName,
+                            UpdateProfileSoulRequest(content),
+                        )
                     }
-                if (res.isSuccessful) {
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             selectedSoulContent = null,
@@ -150,18 +142,13 @@ class ProfilesViewModel : ViewModel() {
                         )
                     }
                     loadProfiles()
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
-                            toastMessage = "Failed to save soul: HTTP ${res.code()}",
+                            toastMessage = "Failed to save soul: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        toastMessage = "Failed to save soul: ${e.message}",
-                    )
                 }
             }
         }
@@ -173,19 +160,27 @@ class ProfilesViewModel : ViewModel() {
         model: String,
     ) {
         viewModelScope.launch {
-            try {
-                val res =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.updateProfileModel(profileName, UpdateProfileModelRequest(provider, model))
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall {
+                        ApiClient.hermesApi.updateProfileModel(
+                            profileName,
+                            UpdateProfileModelRequest(provider, model),
+                        )
                     }
-                if (res.isSuccessful) {
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update { it.copy(toastMessage = "Model settings updated") }
                     loadProfiles()
-                } else {
-                    _uiState.update { it.copy(toastMessage = "Failed to update model settings: HTTP ${res.code()}") }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(toastMessage = "Failed to update model settings: ${e.message}") }
+                is NetworkResult.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            toastMessage = "Failed to update model settings: ${result.error.message}",
+                        )
+                    }
+                }
             }
         }
     }

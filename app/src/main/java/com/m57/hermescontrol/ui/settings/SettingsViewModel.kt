@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.theme.ThemePreference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -144,29 +146,23 @@ class SettingsViewModel : ViewModel() {
         _uiState.update { it.copy(isTesting = true, testResult = null) }
 
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getStatus()
-                    }
-                if (response.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getStatus() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(isTesting = false, testResult = "✅ Connected successfully")
                     }
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isTesting = false,
-                            testResult = "❌ HTTP ${response.code()}: ${response.message()}",
+                            testResult = "❌ ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isTesting = false,
-                        testResult = "❌ ${e.message ?: "Connection failed"}",
-                    )
                 }
             }
         }

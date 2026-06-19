@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.Toolset
 import com.m57.hermescontrol.data.model.ToolsetToggleRequest
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,27 +29,21 @@ class ToolsetsViewModel : ViewModel() {
     fun loadToolsets() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getToolsets()
-                    }
-                if (response.isSuccessful) {
-                    _uiState.update { it.copy(isLoading = false, toolsets = response.body().orEmpty()) }
-                } else {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getToolsets() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    _uiState.update { it.copy(isLoading = false, toolsets = result.data.orEmpty()) }
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = "Failed to load toolsets: HTTP ${response.code()}",
+                            errorMessage = "Failed to load toolsets: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to load toolsets: ${e.message}",
-                    )
                 }
             }
         }
@@ -68,16 +64,12 @@ class ToolsetsViewModel : ViewModel() {
         }
 
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.toggleToolset(toolset.name, ToolsetToggleRequest(targetEnabled))
-                    }
-                if (!response.isSuccessful) {
-                    revertToggle(toolset.name, originalEnabled, "Failed to toggle toolset: HTTP ${response.code()}")
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.toggleToolset(toolset.name, ToolsetToggleRequest(targetEnabled)) }
                 }
-            } catch (e: Exception) {
-                revertToggle(toolset.name, originalEnabled, "Failed to toggle toolset: ${e.message}")
+            if (result is NetworkResult.Failure) {
+                revertToggle(toolset.name, originalEnabled, "Failed to toggle toolset: ${result.error.message}")
             }
         }
     }

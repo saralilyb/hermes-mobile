@@ -6,6 +6,8 @@ import com.m57.hermescontrol.data.model.PairingApproveRequest
 import com.m57.hermescontrol.data.model.PairingResponse
 import com.m57.hermescontrol.data.model.PairingRevokeRequest
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,27 +31,21 @@ class PairingViewModel : ViewModel() {
     fun loadPairing() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getPairing()
-                    }
-                if (response.isSuccessful) {
-                    _uiState.update { it.copy(isLoading = false, pairing = response.body()) }
-                } else {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getPairing() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    _uiState.update { it.copy(isLoading = false, pairing = result.data) }
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = "Failed to load pairing info: HTTP ${response.code()}",
+                            errorMessage = "Failed to load pairing info: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to load pairing info: ${e.message}",
-                    )
                 }
             }
         }
@@ -60,7 +56,7 @@ class PairingViewModel : ViewModel() {
         code: String,
     ) {
         runAction("Approve") {
-            ApiClient.hermesApi.approvePairing(PairingApproveRequest(platform, code))
+            safeApiCall { ApiClient.hermesApi.approvePairing(PairingApproveRequest(platform, code)) }
         }
     }
 
@@ -69,25 +65,25 @@ class PairingViewModel : ViewModel() {
         userId: String,
     ) {
         runAction("Revoke") {
-            ApiClient.hermesApi.revokePairing(PairingRevokeRequest(platform, userId))
+            safeApiCall { ApiClient.hermesApi.revokePairing(PairingRevokeRequest(platform, userId)) }
         }
     }
 
     fun clearPending() {
         runAction("Clear Pending") {
-            ApiClient.hermesApi.clearPendingPairing()
+            safeApiCall { ApiClient.hermesApi.clearPendingPairing() }
         }
     }
 
     private fun runAction(
         actionName: String,
-        apiCall: suspend () -> retrofit2.Response<Unit>,
+        apiCall: suspend () -> NetworkResult<Unit>,
     ) {
         _uiState.update { it.copy(isActionRunning = true) }
         viewModelScope.launch {
-            try {
-                val response = withContext(Dispatchers.IO) { apiCall() }
-                if (response.isSuccessful) {
+            val result = withContext(Dispatchers.IO) { apiCall() }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             isActionRunning = false,
@@ -95,20 +91,14 @@ class PairingViewModel : ViewModel() {
                         )
                     }
                     loadPairing()
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isActionRunning = false,
-                            toastMessage = "Action '$actionName' failed: HTTP ${response.code()}",
+                            toastMessage = "Action '$actionName' failed: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isActionRunning = false,
-                        toastMessage = "Action '$actionName' failed: ${e.message}",
-                    )
                 }
             }
         }

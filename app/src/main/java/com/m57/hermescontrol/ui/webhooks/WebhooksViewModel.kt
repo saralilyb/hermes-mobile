@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.WebhookSubscription
 import com.m57.hermescontrol.data.model.WebhooksToggleRequest
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,35 +32,29 @@ class WebhooksViewModel : ViewModel() {
     fun loadWebhooks() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getWebhooks()
-                    }
-                if (response.isSuccessful) {
-                    val body = response.body()
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getWebhooks() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    val body = result.data
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            enabled = body?.enabled ?: false,
-                            baseUrl = body?.base_url,
-                            subscriptions = body?.subscriptions.orEmpty(),
-                        )
-                    }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = "Failed to load webhooks: HTTP ${response.code()}",
+                            enabled = body.enabled,
+                            baseUrl = body.base_url,
+                            subscriptions = body.subscriptions.orEmpty(),
                         )
                     }
                 }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to load webhooks: ${e.message}",
-                    )
+                is NetworkResult.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "Failed to load webhooks: ${result.error.message}",
+                        )
+                    }
                 }
             }
         }
@@ -69,32 +65,26 @@ class WebhooksViewModel : ViewModel() {
         _uiState.update { it.copy(enabled = targetEnabled) }
 
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.toggleWebhooks(WebhooksToggleRequest(targetEnabled))
-                    }
-                if (response.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.toggleWebhooks(WebhooksToggleRequest(targetEnabled)) }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             toastMessage = "Webhooks global status ${if (targetEnabled) "enabled" else "disabled"}",
                         )
                     }
                     loadWebhooks()
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             enabled = originalEnabled,
-                            toastMessage = "Failed to toggle webhooks: HTTP ${response.code()}",
+                            toastMessage = "Failed to toggle webhooks: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        enabled = originalEnabled,
-                        toastMessage = "Failed to toggle webhooks: ${e.message}",
-                    )
                 }
             }
         }

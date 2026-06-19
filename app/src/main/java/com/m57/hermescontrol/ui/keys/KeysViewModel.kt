@@ -6,6 +6,8 @@ import com.m57.hermescontrol.data.model.EnvVarConfig
 import com.m57.hermescontrol.data.model.EnvVarRevealRequest
 import com.m57.hermescontrol.data.model.EnvVarUpdate
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,51 +31,49 @@ class KeysViewModel : ViewModel() {
     fun loadKeys(reveal: Boolean = false) {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getEnvVars()
-                    }
-                if (response.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getEnvVars() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            envVars = response.body().orEmpty(),
-                        )
-                    }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = "Failed to load keys: HTTP ${response.code()}",
+                            envVars = result.data.orEmpty(),
                         )
                     }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load keys: ${e.message}") }
+                is NetworkResult.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "Failed to load keys: ${result.error.message}",
+                        )
+                    }
+                }
             }
         }
     }
 
     fun revealKey(key: String) {
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.revealEnvVar(EnvVarRevealRequest(key))
-                    }
-                if (response.isSuccessful && response.body() != null) {
-                    val body = response.body()!!
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.revealEnvVar(EnvVarRevealRequest(key)) }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    val body = result.data
                     _uiState.update { state ->
                         state.copy(
                             revealedValues = state.revealedValues + (body.key to body.value),
                         )
                     }
-                } else {
-                    _uiState.update { it.copy(toastMessage = "Failed to reveal key: HTTP ${response.code()}") }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(toastMessage = "Failed to reveal key: ${e.message}") }
+                is NetworkResult.Failure -> {
+                    _uiState.update { it.copy(toastMessage = "Failed to reveal key: ${result.error.message}") }
+                }
             }
         }
     }
@@ -91,19 +91,18 @@ class KeysViewModel : ViewModel() {
         value: String,
     ) {
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.updateEnvVar(EnvVarUpdate(key, value))
-                    }
-                if (response.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.updateEnvVar(EnvVarUpdate(key, value)) }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update { it.copy(toastMessage = "Key updated successfully") }
                     loadKeys()
-                } else {
-                    _uiState.update { it.copy(toastMessage = "Failed to update key: HTTP ${response.code()}") }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(toastMessage = "Failed to update key: ${e.message}") }
+                is NetworkResult.Failure -> {
+                    _uiState.update { it.copy(toastMessage = "Failed to update key: ${result.error.message}") }
+                }
             }
         }
     }
