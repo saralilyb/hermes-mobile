@@ -12,3 +12,8 @@ local.properties
 .vscode/
 *.swp
 *.swo
+
+# Nix / Gradle user home
+\$PWD/
+$PWD/
+
