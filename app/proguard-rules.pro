@@ -1,6 +1,6 @@
 # ── Kotlin / Coroutines ─────────────────────────────────────────────────
--keepclassmembers class kotlinx.coroutines.** { *; }
 -dontwarn kotlinx.coroutines.**
+
 
 # ── Room ─────────────────────────────────────────────────────────────────
 -keep class * extends androidx.room.RoomDatabase { *; }
