@@ -143,6 +143,14 @@ class ConnectViewModelTest {
 
             val mockResponse = mockk<Response<StatusResponse>>()
             every { mockResponse.isSuccessful } returns true
+            every { mockResponse.body() } returns
+                StatusResponse(
+                    version = "1.0",
+                    gateway_running = true,
+                    active_sessions = 1,
+                    auth_required = false,
+                    gateway_platforms = emptyMap(),
+                )
             coEvery { mockApiService.getStatus() } returns mockResponse
 
             viewModel.connect()

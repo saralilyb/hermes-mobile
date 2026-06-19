@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.Skill
 import com.m57.hermescontrol.data.model.ToggleSkillRequest
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,23 +29,22 @@ class SkillsViewModel : ViewModel() {
     fun loadSkills() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getSkills()
-                    }
-                if (response.isSuccessful) {
-                    _uiState.update { it.copy(isLoading = false, skills = response.body().orEmpty()) }
-                } else {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getSkills() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    _uiState.update { it.copy(isLoading = false, skills = result.data.orEmpty()) }
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = "Failed to load skills: HTTP ${response.code()}",
+                            errorMessage = "Failed to load skills: ${result.error.message}",
                         )
                     }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load skills: ${e.message}") }
             }
         }
     }
@@ -63,16 +64,12 @@ class SkillsViewModel : ViewModel() {
         }
 
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.toggleSkill(ToggleSkillRequest(skill.name, targetEnabled))
-                    }
-                if (!response.isSuccessful) {
-                    revertSkillToggle(skill.name, originalEnabled, "Failed to toggle skill: HTTP ${response.code()}")
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.toggleSkill(ToggleSkillRequest(skill.name, targetEnabled)) }
                 }
-            } catch (e: Exception) {
-                revertSkillToggle(skill.name, originalEnabled, "Failed to toggle skill: ${e.message}")
+            if (result is NetworkResult.Failure) {
+                revertSkillToggle(skill.name, originalEnabled, "Failed to toggle skill: ${result.error.message}")
             }
         }
     }

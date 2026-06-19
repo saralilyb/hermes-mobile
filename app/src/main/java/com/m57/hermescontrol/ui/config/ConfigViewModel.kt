@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.UpdateRawConfigRequest
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,33 +30,27 @@ class ConfigViewModel : ViewModel() {
     fun loadRawConfig() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getRawConfig()
-                    }
-                if (response.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getRawConfig() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            path = response.body()?.path,
-                            yamlText = response.body()?.yaml,
-                        )
-                    }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = "Failed to load config: HTTP ${response.code()}",
+                            path = result.data.path,
+                            yamlText = result.data.yaml,
                         )
                     }
                 }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to load config: ${e.message}",
-                    )
+                is NetworkResult.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "Failed to load config: ${result.error.message}",
+                        )
+                    }
                 }
             }
         }
@@ -63,12 +59,12 @@ class ConfigViewModel : ViewModel() {
     fun saveRawConfig(yamlText: String) {
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.updateRawConfig(UpdateRawConfigRequest(yamlText))
-                    }
-                if (response.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.updateRawConfig(UpdateRawConfigRequest(yamlText)) }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             isSaving = false,
@@ -76,20 +72,14 @@ class ConfigViewModel : ViewModel() {
                             toastMessage = "Configuration saved successfully",
                         )
                     }
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isSaving = false,
-                            toastMessage = "Failed to save config: HTTP ${response.code()}",
+                            toastMessage = "Failed to save config: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isSaving = false,
-                        toastMessage = "Failed to save config: ${e.message}",
-                    )
                 }
             }
         }

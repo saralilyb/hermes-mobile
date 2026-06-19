@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.CronJob
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,23 +28,22 @@ class CronJobsViewModel : ViewModel() {
     fun loadCronJobs() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getCronJobs()
-                    }
-                if (response.isSuccessful) {
-                    _uiState.update { it.copy(isLoading = false, jobs = response.body().orEmpty()) }
-                } else {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getCronJobs() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    _uiState.update { it.copy(isLoading = false, jobs = result.data.orEmpty()) }
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = "Failed to load cron jobs: HTTP ${response.code()}",
+                            errorMessage = "Failed to load cron jobs: ${result.error.message}",
                         )
                     }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load cron jobs: ${e.message}") }
             }
         }
     }
@@ -59,16 +60,12 @@ class CronJobsViewModel : ViewModel() {
             )
         }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.pauseCronJob(id)
-                    }
-                if (!response.isSuccessful) {
-                    revertJobs(originalJobs, "Failed to pause cron job: HTTP ${response.code()}")
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.pauseCronJob(id) }
                 }
-            } catch (e: Exception) {
-                revertJobs(originalJobs, "Failed to pause cron job: ${e.message}")
+            if (result is NetworkResult.Failure) {
+                revertJobs(originalJobs, "Failed to pause cron job: ${result.error.message}")
             }
         }
     }
@@ -85,34 +82,29 @@ class CronJobsViewModel : ViewModel() {
             )
         }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.resumeCronJob(id)
-                    }
-                if (!response.isSuccessful) {
-                    revertJobs(originalJobs, "Failed to resume cron job: HTTP ${response.code()}")
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.resumeCronJob(id) }
                 }
-            } catch (e: Exception) {
-                revertJobs(originalJobs, "Failed to resume cron job: ${e.message}")
+            if (result is NetworkResult.Failure) {
+                revertJobs(originalJobs, "Failed to resume cron job: ${result.error.message}")
             }
         }
     }
 
     fun triggerCronJob(id: String) {
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.triggerCronJob(id)
-                    }
-                if (response.isSuccessful) {
-                    _uiState.update { it.copy(toastMessage = "Job triggered successfully") }
-                } else {
-                    _uiState.update { it.copy(toastMessage = "Failed to trigger cron job: HTTP ${response.code()}") }
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.triggerCronJob(id) }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(toastMessage = "Failed to trigger cron job: ${e.message}") }
+            when (result) {
+                is NetworkResult.Success -> {
+                    _uiState.update { it.copy(toastMessage = "Job triggered successfully") }
+                }
+                is NetworkResult.Failure -> {
+                    _uiState.update { it.copy(toastMessage = "Failed to trigger cron job: ${result.error.message}") }
+                }
             }
         }
     }
@@ -124,16 +116,12 @@ class CronJobsViewModel : ViewModel() {
             state.copy(jobs = state.jobs.filter { it.id != id })
         }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.deleteCronJob(id)
-                    }
-                if (!response.isSuccessful) {
-                    revertJobs(originalJobs, "Failed to delete cron job: HTTP ${response.code()}")
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.deleteCronJob(id) }
                 }
-            } catch (e: Exception) {
-                revertJobs(originalJobs, "Failed to delete cron job: ${e.message}")
+            if (result is NetworkResult.Failure) {
+                revertJobs(originalJobs, "Failed to delete cron job: ${result.error.message}")
             }
         }
     }

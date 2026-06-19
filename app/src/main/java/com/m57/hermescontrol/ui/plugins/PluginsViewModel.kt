@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.PluginInfo
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,24 +28,23 @@ class PluginsViewModel : ViewModel() {
     fun loadPlugins() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getPlugins()
-                    }
-                if (response.isSuccessful) {
-                    val plugins = response.body()?.plugins.orEmpty()
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getPlugins() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    val plugins = result.data.plugins.orEmpty()
                     _uiState.update { it.copy(isLoading = false, plugins = plugins) }
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = "Failed to load plugins: HTTP ${response.code()}",
+                            errorMessage = "Failed to load plugins: ${result.error.message}",
                         )
                     }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load plugins: ${e.message}") }
             }
         }
     }
@@ -67,80 +68,75 @@ class PluginsViewModel : ViewModel() {
         }
 
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        if (targetEnabled) {
-                            ApiClient.hermesApi.enablePlugin(plugin.name)
-                        } else {
-                            ApiClient.hermesApi.disablePlugin(plugin.name)
-                        }
+            val result =
+                withContext(Dispatchers.IO) {
+                    if (targetEnabled) {
+                        safeApiCall { ApiClient.hermesApi.enablePlugin(plugin.name) }
+                    } else {
+                        safeApiCall { ApiClient.hermesApi.disablePlugin(plugin.name) }
                     }
-                if (!response.isSuccessful) {
-                    revertPluginToggle(plugin.name, originalEnabled, "Failed to toggle plugin: HTTP ${response.code()}")
                 }
-            } catch (e: Exception) {
-                revertPluginToggle(plugin.name, originalEnabled, "Failed to toggle plugin: ${e.message}")
+            if (result is NetworkResult.Failure) {
+                revertPluginToggle(plugin.name, originalEnabled, "Failed to toggle plugin: ${result.error.message}")
             }
         }
     }
 
     fun installPlugin(name: String) {
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall {
                         ApiClient.hermesApi.installPlugin(
                             com.m57.hermescontrol.data.model
                                 .AgentPluginInstallBody(name),
                         )
                     }
-                if (response.isSuccessful) {
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update { it.copy(toastMessage = "Plugin installed successfully") }
                     loadPlugins()
-                } else {
-                    _uiState.update { it.copy(toastMessage = "Failed to install plugin: HTTP ${response.code()}") }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(toastMessage = "Failed to install plugin: ${e.message}") }
+                is NetworkResult.Failure -> {
+                    _uiState.update { it.copy(toastMessage = "Failed to install plugin: ${result.error.message}") }
+                }
             }
         }
     }
 
     fun uninstallPlugin(name: String) {
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.uninstallPlugin(name)
-                    }
-                if (response.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.uninstallPlugin(name) }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update { it.copy(toastMessage = "Plugin uninstalled successfully") }
                     loadPlugins()
-                } else {
-                    _uiState.update { it.copy(toastMessage = "Failed to uninstall plugin: HTTP ${response.code()}") }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(toastMessage = "Failed to uninstall plugin: ${e.message}") }
+                is NetworkResult.Failure -> {
+                    _uiState.update { it.copy(toastMessage = "Failed to uninstall plugin: ${result.error.message}") }
+                }
             }
         }
     }
 
     fun updatePlugin(name: String) {
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.updatePlugin(name)
-                    }
-                if (response.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.updatePlugin(name) }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update { it.copy(toastMessage = "Plugin updated successfully") }
                     loadPlugins()
-                } else {
-                    _uiState.update { it.copy(toastMessage = "Failed to update plugin: HTTP ${response.code()}") }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(toastMessage = "Failed to update plugin: ${e.message}") }
+                is NetworkResult.Failure -> {
+                    _uiState.update { it.copy(toastMessage = "Failed to update plugin: ${result.error.message}") }
+                }
             }
         }
     }

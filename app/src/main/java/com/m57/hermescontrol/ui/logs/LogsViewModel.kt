@@ -3,6 +3,8 @@ package com.m57.hermescontrol.ui.logs
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,25 +27,24 @@ class LogsViewModel : ViewModel() {
     fun loadLogs() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getLogs()
-                    }
-                if (response.isSuccessful) {
-                    val body = response.body()
-                    val logsList = body?.lines ?: body?.logs ?: emptyList()
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getLogs() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    val body = result.data
+                    val logsList = body.lines ?: body.logs ?: emptyList()
                     _uiState.update { it.copy(isLoading = false, logs = logsList) }
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = "Failed to load logs: HTTP ${response.code()}",
+                            errorMessage = "Failed to load logs: ${result.error.message}",
                         )
                     }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load logs: ${e.message}") }
             }
         }
     }

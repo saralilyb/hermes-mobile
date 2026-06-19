@@ -7,6 +7,8 @@ import com.m57.hermescontrol.BuildConfig
 import com.m57.hermescontrol.data.model.DoctorResponse
 import com.m57.hermescontrol.data.model.SystemStatsResponse
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,35 +36,28 @@ class SystemViewModel : ViewModel() {
     fun loadSystemData() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val statsResponse =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getSystemStats()
-                    }
-
-                if (statsResponse.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getSystemStats() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            stats = statsResponse.body(),
+                            stats = result.data,
                         )
                     }
                     // Doctor is optional; many servers do not expose it.
                     loadDoctorReport()
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = "Failed to load system stats: HTTP ${statsResponse.code()}",
+                            errorMessage = "Failed to load system stats: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to load system stats: ${e.message}",
-                    )
                 }
             }
         }
@@ -70,34 +65,31 @@ class SystemViewModel : ViewModel() {
 
     private fun loadDoctorReport() {
         viewModelScope.launch {
-            try {
-                val doctorResponse =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.runDoctor()
-                    }
-                if (doctorResponse.isSuccessful) {
-                    _uiState.update { it.copy(doctorReport = doctorResponse.body()) }
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.runDoctor() }
                 }
-            } catch (e: Exception) {
-                if (BuildConfig.DEBUG) Log.w(TAG, "doctor endpoint unavailable", e)
+            if (result is NetworkResult.Success) {
+                _uiState.update { it.copy(doctorReport = result.data) }
+            } else if (result is NetworkResult.Failure && BuildConfig.DEBUG) {
+                Log.w(TAG, "doctor endpoint unavailable: ${result.error.message}")
             }
         }
     }
 
     fun triggerBackup() {
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.triggerBackup()
-                    }
-                if (response.isSuccessful) {
-                    _uiState.update { it.copy(toastMessage = "Backup triggered successfully") }
-                } else {
-                    _uiState.update { it.copy(toastMessage = "Failed to trigger backup: HTTP ${response.code()}") }
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.triggerBackup() }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(toastMessage = "Failed to trigger backup: ${e.message}") }
+            when (result) {
+                is NetworkResult.Success -> {
+                    _uiState.update { it.copy(toastMessage = "Backup triggered successfully") }
+                }
+                is NetworkResult.Failure -> {
+                    _uiState.update { it.copy(toastMessage = "Failed to trigger backup: ${result.error.message}") }
+                }
             }
         }
     }

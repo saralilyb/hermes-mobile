@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.McpServer
 import com.m57.hermescontrol.data.model.McpServerToggleRequest
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,32 +30,26 @@ class McpServersViewModel : ViewModel() {
     fun loadServers() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getMcpServers()
-                    }
-                if (response.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getMcpServers() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            servers = response.body()?.servers.orEmpty(),
-                        )
-                    }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = "Failed to load MCP servers: HTTP ${response.code()}",
+                            servers = result.data.servers.orEmpty(),
                         )
                     }
                 }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to load MCP servers: ${e.message}",
-                    )
+                is NetworkResult.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "Failed to load MCP servers: ${result.error.message}",
+                        )
+                    }
                 }
             }
         }
@@ -73,22 +69,23 @@ class McpServersViewModel : ViewModel() {
         }
 
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall {
                         ApiClient.hermesApi.toggleMcpServer(server.name, McpServerToggleRequest(targetEnabled))
                     }
-                if (!response.isSuccessful) {
-                    revertToggle(server.name, originalEnabled, "Failed to toggle server: HTTP ${response.code()}")
-                } else {
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             toastMessage = "Server '${server.name}' ${if (targetEnabled) "enabled" else "disabled"}",
                         )
                     }
                 }
-            } catch (e: Exception) {
-                revertToggle(server.name, originalEnabled, "Failed to toggle server: ${e.message}")
+                is NetworkResult.Failure -> {
+                    revertToggle(server.name, originalEnabled, "Failed to toggle server: ${result.error.message}")
+                }
             }
         }
     }
@@ -96,32 +93,26 @@ class McpServersViewModel : ViewModel() {
     fun testServer(name: String) {
         _uiState.update { it.copy(isActionRunning = true) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.testMcpServer(name)
-                    }
-                if (response.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.testMcpServer(name) }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             isActionRunning = false,
                             toastMessage = "Server '$name' tested successfully",
                         )
                     }
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isActionRunning = false,
-                            toastMessage = "Server '$name' test failed: HTTP ${response.code()}",
+                            toastMessage = "Server '$name' test failed: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isActionRunning = false,
-                        toastMessage = "Server '$name' test failed: ${e.message}",
-                    )
                 }
             }
         }
@@ -130,12 +121,12 @@ class McpServersViewModel : ViewModel() {
     fun deleteServer(name: String) {
         _uiState.update { it.copy(isActionRunning = true) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.deleteMcpServer(name)
-                    }
-                if (response.isSuccessful) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.deleteMcpServer(name) }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update {
                         it.copy(
                             isActionRunning = false,
@@ -143,20 +134,14 @@ class McpServersViewModel : ViewModel() {
                         )
                     }
                     loadServers()
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isActionRunning = false,
-                            toastMessage = "Failed to delete server: HTTP ${response.code()}",
+                            toastMessage = "Failed to delete server: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isActionRunning = false,
-                        toastMessage = "Failed to delete server: ${e.message}",
-                    )
                 }
             }
         }

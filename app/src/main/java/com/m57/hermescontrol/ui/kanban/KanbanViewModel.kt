@@ -6,6 +6,8 @@ import com.m57.hermescontrol.data.model.KanbanBoard
 import com.m57.hermescontrol.data.model.KanbanColumn
 import com.m57.hermescontrol.data.model.KanbanTask
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,33 +33,27 @@ class KanbanViewModel : ViewModel() {
     fun loadBoards() {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getKanbanBoards()
-                    }
-                if (response.isSuccessful) {
-                    val boards = response.body()?.boards.orEmpty()
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getKanbanBoards() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    val boards = result.data.boards.orEmpty()
                     _uiState.update { it.copy(isLoading = false, boards = boards) }
-                    val currentSlug = response.body()?.current
+                    val currentSlug = result.data.current
                     val currentBoard = boards.find { it.id == currentSlug } ?: boards.firstOrNull()
                     if (currentBoard != null) {
                         selectBoard(currentBoard)
                     }
-                } else {
+                }
+                is NetworkResult.Failure -> {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = "Failed to load Kanban boards: HTTP ${response.code()}",
+                            errorMessage = "Failed to load Kanban boards: ${result.error.message}",
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to load Kanban boards: ${e.message}",
-                    )
                 }
             }
         }
@@ -66,40 +62,43 @@ class KanbanViewModel : ViewModel() {
     fun selectBoard(board: KanbanBoard) {
         _uiState.update { it.copy(selectedBoard = board, isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            try {
-                // Switch current board slug
+            val switchResult =
                 withContext(Dispatchers.IO) {
-                    ApiClient.hermesApi.switchKanbanBoard(board.id)
+                    safeApiCall { ApiClient.hermesApi.switchKanbanBoard(board.id) }
                 }
-
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.getKanbanBoard()
-                    }
-                if (response.isSuccessful) {
-                    val body = response.body()
-                    val allTasks = body?.columns?.flatMap { it.tasks }.orEmpty()
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            columns = body?.columns.orEmpty(),
-                            tasks = allTasks,
-                        )
-                    }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = "Failed to load Kanban tasks: HTTP ${response.code()}",
-                        )
-                    }
-                }
-            } catch (e: Exception) {
+            if (switchResult is NetworkResult.Failure) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        errorMessage = "Failed to load Kanban tasks: ${e.message}",
+                        errorMessage = "Failed to switch Kanban board: ${switchResult.error.message}",
                     )
+                }
+                return@launch
+            }
+
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getKanbanBoard() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    val body = result.data
+                    val allTasks = body.columns.flatMap { it.tasks }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            columns = body.columns,
+                            tasks = allTasks,
+                        )
+                    }
+                }
+                is NetworkResult.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "Failed to load Kanban tasks: ${result.error.message}",
+                        )
+                    }
                 }
             }
         }
@@ -112,9 +111,9 @@ class KanbanViewModel : ViewModel() {
     ) {
         val board = _uiState.value.selectedBoard ?: return
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall {
                         ApiClient.hermesApi.createKanbanTask(
                             board = board.id,
                             task =
@@ -124,14 +123,15 @@ class KanbanViewModel : ViewModel() {
                                 ),
                         )
                     }
-                if (response.isSuccessful) {
+                }
+            when (result) {
+                is NetworkResult.Success -> {
                     _uiState.update { it.copy(toastMessage = "Task created successfully") }
                     selectBoard(board)
-                } else {
-                    _uiState.update { it.copy(toastMessage = "Failed to create task: HTTP ${response.code()}") }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(toastMessage = "Failed to create task: ${e.message}") }
+                is NetworkResult.Failure -> {
+                    _uiState.update { it.copy(toastMessage = "Failed to create task: ${result.error.message}") }
+                }
             }
         }
     }
@@ -154,16 +154,12 @@ class KanbanViewModel : ViewModel() {
         }
 
         viewModelScope.launch {
-            try {
-                val response =
-                    withContext(Dispatchers.IO) {
-                        ApiClient.hermesApi.updateKanbanTask(task.id, mapOf("status" to newStatus))
-                    }
-                if (!response.isSuccessful) {
-                    revertTaskMove(task.id, originalStatus, "Failed to move task: HTTP ${response.code()}")
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.updateKanbanTask(task.id, mapOf("status" to newStatus)) }
                 }
-            } catch (e: Exception) {
-                revertTaskMove(task.id, originalStatus, "Failed to move task: ${e.message}")
+            if (result is NetworkResult.Failure) {
+                revertTaskMove(task.id, originalStatus, "Failed to move task: ${result.error.message}")
             }
         }
     }
