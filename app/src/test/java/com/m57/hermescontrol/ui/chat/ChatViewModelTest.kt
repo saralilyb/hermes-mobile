@@ -72,13 +72,19 @@ class ChatViewModelTest {
 
         // Default mock stubs for requests returning unique IDs
         var reqCount = 0
-        every { HermesWsClient.send(any(), any()) } answers {
+        every { HermesWsClient.send(any(), any(), any()) } answers {
             reqCount++
-            "req-id-$reqCount"
+            val id = "req-id-$reqCount"
+            val onSent = arg<((String) -> Unit)?>(2)
+            onSent?.invoke(id)
+            id
         }
-        every { HermesWsClient.sendMessage(any(), any()) } answers {
+        every { HermesWsClient.sendMessage(any(), any(), any()) } answers {
             reqCount++
-            "req-msg-$reqCount"
+            val id = "req-msg-$reqCount"
+            val onSent = arg<((String) -> Unit)?>(2)
+            onSent?.invoke(id)
+            id
         }
     }
 
@@ -115,16 +121,18 @@ class ChatViewModelTest {
             assertEquals(0, state.messages.size)
 
             // Verify that list sessions and create session requests are triggered
-            verify { HermesWsClient.send(WsMethods.SESSION_LIST) }
-            verify { HermesWsClient.send(WsMethods.SESSION_CREATE) }
+            verify { HermesWsClient.send(WsMethods.SESSION_LIST, any(), any()) }
+            verify { HermesWsClient.send(WsMethods.SESSION_CREATE, any(), any()) }
         }
 
     @Test
     fun testSessionCreateRpcResult() =
         runTest {
             var createReqId = ""
-            every { HermesWsClient.send(WsMethods.SESSION_CREATE, any()) } answers {
+            every { HermesWsClient.send(WsMethods.SESSION_CREATE, any(), any()) } answers {
                 createReqId = "custom-create-id"
+                val onSent = arg<((String) -> Unit)?>(2)
+                onSent?.invoke(createReqId)
                 createReqId
             }
 
@@ -151,8 +159,10 @@ class ChatViewModelTest {
     fun testSessionListRpcResult() =
         runTest {
             var listReqId = ""
-            every { HermesWsClient.send(WsMethods.SESSION_LIST, any()) } answers {
+            every { HermesWsClient.send(WsMethods.SESSION_LIST, any(), any()) } answers {
                 listReqId = "custom-list-id"
+                val onSent = arg<((String) -> Unit)?>(2)
+                onSent?.invoke(listReqId)
                 listReqId
             }
 
@@ -258,8 +268,10 @@ class ChatViewModelTest {
     fun testClarifyRequestAndRespond() =
         runTest {
             var createReqId = ""
-            every { HermesWsClient.send(WsMethods.SESSION_CREATE, any()) } answers {
+            every { HermesWsClient.send(WsMethods.SESSION_CREATE, any(), any()) } answers {
                 createReqId = "create-req-clarify"
+                val onSent = arg<((String) -> Unit)?>(2)
+                onSent?.invoke(createReqId)
                 createReqId
             }
 
@@ -302,8 +314,10 @@ class ChatViewModelTest {
 
             // Trigger GatewayReady -> triggers createSession -> feed result to set active session
             var createReqId = ""
-            every { HermesWsClient.send(WsMethods.SESSION_CREATE, any()) } answers {
+            every { HermesWsClient.send(WsMethods.SESSION_CREATE, any(), any()) } answers {
                 createReqId = "create-req"
+                val onSent = arg<((String) -> Unit)?>(2)
+                onSent?.invoke(createReqId)
                 createReqId
             }
             mockEventsFlow.emit(WsEvent.GatewayReady(null))
@@ -324,7 +338,7 @@ class ChatViewModelTest {
             assertEquals(MessageRole.USER, state.messages[1].role)
             assertTrue(state.isAgentTyping)
 
-            verify { HermesWsClient.sendMessage("session-123", "Hello Hermes") }
+            verify { HermesWsClient.sendMessage("session-123", "Hello Hermes", any()) }
         }
 
     @Test
@@ -348,15 +362,17 @@ class ChatViewModelTest {
             assertTrue("messages should be cleared by switchSession", state.messages.isEmpty())
             assertNotNull("errorMessage should be set on load failure", state.errorMessage)
 
-            verify { HermesWsClient.send(WsMethods.SESSION_RESUME, mapOf("session_id" to "session-456")) }
+            verify { HermesWsClient.send(WsMethods.SESSION_RESUME, mapOf("session_id" to "session-456"), any()) }
         }
 
     @Test
     fun testRpcErrorHandling() =
         runTest {
             var createReqId = ""
-            every { HermesWsClient.send(WsMethods.SESSION_CREATE, any()) } answers {
+            every { HermesWsClient.send(WsMethods.SESSION_CREATE, any(), any()) } answers {
                 createReqId = "create-req-err"
+                val onSent = arg<((String) -> Unit)?>(2)
+                onSent?.invoke(createReqId)
                 createReqId
             }
 
