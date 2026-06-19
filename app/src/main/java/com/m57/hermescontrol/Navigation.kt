@@ -193,7 +193,7 @@ fun MainNavigation() {
         NavigationController.updatePrimaryScreens(bottomNavKeys)
     }
 
-    val showBottomBar = currentScreen != ConnectScreen
+    val isPrimaryScreen = currentScreen in bottomNavKeys
     val gesturesEnabled = currentScreen in DRAWER_GESTURE_SCREENS
     val openDrawer = { scope.launch { drawerState.open() } }
 
@@ -293,7 +293,7 @@ fun MainNavigation() {
         Scaffold(
             contentWindowInsets = WindowInsets.navigationBars,
             bottomBar = {
-                if (showBottomBar) {
+                if (isPrimaryScreen) {
                     NavigationBar {
                         bottomNavItems.forEach { item ->
                             NavigationBarItem(

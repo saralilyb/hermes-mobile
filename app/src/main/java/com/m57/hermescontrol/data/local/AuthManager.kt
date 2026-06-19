@@ -57,7 +57,7 @@ object AuthManager {
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
                 )
-            
+
             _bottomNavItemsFlow.value = getBottomNavItems()
         }
     }
