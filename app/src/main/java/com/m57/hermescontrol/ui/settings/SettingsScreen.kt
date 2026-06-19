@@ -20,6 +20,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -241,16 +243,46 @@ fun SettingsScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
-                state.selectedNavItems.forEach { name ->
+                state.selectedNavItems.forEachIndexed { index, name ->
                     val label = viewModel.availableNavItems.firstOrNull { it.first == name }?.second ?: name
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(text = label, style = MaterialTheme.typography.bodyMedium)
-                        IconButton(onClick = { viewModel.removeNavItem(name) }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Remove $label")
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            IconButton(
+                                onClick = {
+                                    val list = state.selectedNavItems.toMutableList()
+                                    val temp = list[index]
+                                    list[index] = list[index - 1]
+                                    list[index - 1] = temp
+                                    viewModel.reorderNavItems(list)
+                                },
+                                enabled = index > 0,
+                            ) {
+                                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Move up")
+                            }
+                            IconButton(
+                                onClick = {
+                                    val list = state.selectedNavItems.toMutableList()
+                                    val temp = list[index]
+                                    list[index] = list[index + 1]
+                                    list[index + 1] = temp
+                                    viewModel.reorderNavItems(list)
+                                },
+                                enabled = index < state.selectedNavItems.lastIndex,
+                            ) {
+                                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Move down")
+                            }
+                            IconButton(onClick = { viewModel.removeNavItem(name) }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Remove $label")
+                            }
                         }
                     }
                 }
