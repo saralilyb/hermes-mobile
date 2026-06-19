@@ -137,6 +137,7 @@ jobs:
 
       - name: Create source archive
         run: |
+          mkdir -p release
           git archive --format=tar.gz \
             -o release/hermes-control-${{ steps.version.outputs.tag }}-source.tar.gz \
             --prefix=hermes-control-${{ steps.version.outputs.tag }}/ \
