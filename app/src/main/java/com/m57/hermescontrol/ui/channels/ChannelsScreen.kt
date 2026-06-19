@@ -68,6 +68,7 @@ fun ChannelsScreen(
             state.isLoading && state.platforms.isEmpty() -> {
                 LoadingState(modifier = Modifier.padding(paddingValues))
             }
+
             state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "",
@@ -75,6 +76,7 @@ fun ChannelsScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
+
             state.platforms.isEmpty() -> {
                 EmptyState(
                     title = "No channels configured",
@@ -82,6 +84,7 @@ fun ChannelsScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
+
             else -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().padding(paddingValues),

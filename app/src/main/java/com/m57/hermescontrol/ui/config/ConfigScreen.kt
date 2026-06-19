@@ -66,6 +66,7 @@ fun ConfigScreen(
             state.isLoading && state.yamlText == null -> {
                 LoadingState(modifier = Modifier.padding(paddingValues))
             }
+
             state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "",
@@ -73,7 +74,8 @@ fun ConfigScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
-            else ->
+
+            else -> {
                 Box(Modifier.fillMaxSize()) {
                     if (state.isLoading && state.yamlText == null) {
                         CircularProgressIndicator()
@@ -143,6 +145,7 @@ fun ConfigScreen(
                         }
                     }
                 }
+            }
         }
     }
 }

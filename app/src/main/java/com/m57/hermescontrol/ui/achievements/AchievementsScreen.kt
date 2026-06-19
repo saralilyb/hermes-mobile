@@ -54,6 +54,7 @@ fun AchievementsScreen(
             state.isLoading && state.achievements.isEmpty() -> {
                 LoadingState(modifier = Modifier.padding(paddingValues))
             }
+
             state.errorMessage != null && state.achievements.isEmpty() -> {
                 ErrorState(
                     message = state.errorMessage ?: "",
@@ -61,6 +62,7 @@ fun AchievementsScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
+
             state.achievements.isEmpty() -> {
                 EmptyState(
                     title = "No achievements yet",
@@ -69,6 +71,7 @@ fun AchievementsScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
+
             else -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().padding(paddingValues),

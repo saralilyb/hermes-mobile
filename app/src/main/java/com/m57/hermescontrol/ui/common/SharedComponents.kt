@@ -75,13 +75,26 @@ fun StatusBadge(
     val statusColors = LocalHermesStatusColors.current
     val (bgColor, fgColor) =
         when (status) {
-            StatusBadgeType.SUCCESS -> statusColors.successContainer to statusColors.success
-            StatusBadgeType.WARNING -> statusColors.warningContainer to statusColors.warning
-            StatusBadgeType.ERROR -> statusColors.errorContainer to statusColors.error
-            StatusBadgeType.INFO -> statusColors.infoContainer to statusColors.info
-            StatusBadgeType.NEUTRAL ->
+            StatusBadgeType.SUCCESS -> {
+                statusColors.successContainer to statusColors.success
+            }
+
+            StatusBadgeType.WARNING -> {
+                statusColors.warningContainer to statusColors.warning
+            }
+
+            StatusBadgeType.ERROR -> {
+                statusColors.errorContainer to statusColors.error
+            }
+
+            StatusBadgeType.INFO -> {
+                statusColors.infoContainer to statusColors.info
+            }
+
+            StatusBadgeType.NEUTRAL -> {
                 MaterialTheme.colorScheme.surfaceContainerHigh to
                     MaterialTheme.colorScheme.onSurfaceVariant
+            }
         }
     Surface(
         modifier = modifier,

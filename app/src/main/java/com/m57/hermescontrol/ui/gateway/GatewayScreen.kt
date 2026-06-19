@@ -71,6 +71,7 @@ fun GatewayScreen(
             state.isLoading && state.status == null -> {
                 LoadingState(modifier = Modifier.padding(paddingValues))
             }
+
             state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "",
@@ -78,7 +79,8 @@ fun GatewayScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
-            else ->
+
+            else -> {
                 Box(Modifier.fillMaxSize()) {
                     if (state.isLoading && state.status == null) {
                         CircularProgressIndicator()
@@ -285,6 +287,7 @@ fun GatewayScreen(
                         }
                     }
                 }
+            }
         }
     }
 }

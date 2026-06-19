@@ -71,6 +71,7 @@ fun ToolsetsScreen(
             state.isLoading && state.toolsets.isEmpty() -> {
                 LoadingState(modifier = Modifier.padding(paddingValues))
             }
+
             state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "",
@@ -78,7 +79,8 @@ fun ToolsetsScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
-            else ->
+
+            else -> {
                 Box(Modifier.fillMaxSize()) {
                     if (state.isLoading && state.toolsets.isEmpty()) {
                         CircularProgressIndicator()
@@ -171,6 +173,7 @@ fun ToolsetsScreen(
                         }
                     }
                 }
+            }
         }
     }
 }

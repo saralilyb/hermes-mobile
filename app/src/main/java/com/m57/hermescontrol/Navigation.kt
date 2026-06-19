@@ -128,7 +128,9 @@ private fun resolveBottomNavItems(names: List<String>): List<BottomNavItem> =
 
 // ── Drawer sections for secondary screens ──────────────────────────────
 
-private enum class DrawerSection(val title: String) {
+private enum class DrawerSection(
+    val title: String,
+) {
     CONVERSE("Converse"),
     AUTOMATE("Automate"),
     CONFIGURE("Configure"),
@@ -191,7 +193,7 @@ fun MainNavigation() {
         NavigationController.updatePrimaryScreens(bottomNavKeys)
     }
 
-    val isPrimaryScreen = currentScreen in bottomNavKeys
+    val showBottomBar = currentScreen != ConnectScreen
     val gesturesEnabled = currentScreen in DRAWER_GESTURE_SCREENS
     val openDrawer = { scope.launch { drawerState.open() } }
 
@@ -207,10 +209,14 @@ fun MainNavigation() {
                     val connectionStatus by HermesWsClient.connectionStatus.collectAsState()
                     val statusColor =
                         when (connectionStatus) {
-                            ConnectionStatus.CONNECTED -> Color(0xFF4CAF50) // green
+                            ConnectionStatus.CONNECTED -> Color(0xFF4CAF50)
+
+                            // green
                             ConnectionStatus.CONNECTING,
                             ConnectionStatus.RECONNECTING,
-                            -> Color(0xFFFFC107) // yellow
+                            -> Color(0xFFFFC107)
+
+                            // yellow
                             ConnectionStatus.DISCONNECTED -> Color(0xFFF44336) // red
                         }
                     Row(
@@ -287,7 +293,7 @@ fun MainNavigation() {
         Scaffold(
             contentWindowInsets = WindowInsets.navigationBars,
             bottomBar = {
-                if (isPrimaryScreen) {
+                if (showBottomBar) {
                     NavigationBar {
                         bottomNavItems.forEach { item ->
                             NavigationBarItem(

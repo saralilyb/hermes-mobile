@@ -76,9 +76,11 @@ class ChatNotificationService : Service() {
                                         .ifBlank { "New message" }
                                 showReplyNotification(preview)
                             }
+
                             is WsEvent.ClarifyRequest -> {
                                 showReplyNotification("Hermes needs a clarification")
                             }
+
                             else -> {}
                         }
                     }
