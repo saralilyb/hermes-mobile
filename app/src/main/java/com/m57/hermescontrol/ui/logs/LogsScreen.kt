@@ -65,13 +65,18 @@ fun LogsScreen(
         onRefresh = { viewModel.loadLogs() },
     ) {
         when {
-            state.isLoading && state.logs.isEmpty() -> LoadingState()
-            state.errorMessage != null ->
+            state.isLoading && state.logs.isEmpty() -> {
+                LoadingState()
+            }
+
+            state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "Unknown error",
                     onRetry = { viewModel.loadLogs() },
                 )
-            state.logs.isEmpty() ->
+            }
+
+            state.logs.isEmpty() -> {
                 // B5 (Jun 18 2026, kanban t_2322818d): proper empty-state using
                 // the shared EmptyState component instead of a bare Text.
                 EmptyState(
@@ -79,7 +84,9 @@ fun LogsScreen(
                     subtitle = "Log output from Hermes will appear here.",
                     icon = Icons.Filled.HistoryEdu,
                 )
-            else ->
+            }
+
+            else -> {
                 LazyColumn(
                     state = listState,
                     modifier =
@@ -105,6 +112,7 @@ fun LogsScreen(
                         )
                     }
                 }
+            }
         }
     }
 }

@@ -201,8 +201,7 @@ private fun AssistantBubble(
                             bottomStart = 16.dp,
                             bottomEnd = 16.dp,
                         ),
-                    )
-                    .pointerInput(message.content) {
+                    ).pointerInput(message.content) {
                         detectTapGestures(
                             onLongPress = {
                                 clipboardManager.setText(AnnotatedString(message.content))
@@ -459,8 +458,10 @@ private fun RichText(
         text = annotated,
         style = MaterialTheme.typography.bodyMedium.copy(color = textColor),
         onClick = { offset: Int ->
-            annotated.getStringAnnotations("URL", offset, offset)
-                .firstOrNull()?.let { uriHandler.openUri(it.item) }
+            annotated
+                .getStringAnnotations("URL", offset, offset)
+                .firstOrNull()
+                ?.let { uriHandler.openUri(it.item) }
         },
     )
 }

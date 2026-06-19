@@ -68,6 +68,7 @@ fun McpServersScreen(
             state.isLoading && state.servers.isEmpty() -> {
                 LoadingState(modifier = Modifier.padding(paddingValues))
             }
+
             state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "",
@@ -75,7 +76,8 @@ fun McpServersScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
-            else ->
+
+            else -> {
                 Box(Modifier.fillMaxSize()) {
                     if (state.isLoading && state.servers.isEmpty()) {
                         CircularProgressIndicator()
@@ -181,6 +183,7 @@ fun McpServersScreen(
                         }
                     }
                 }
+            }
         }
     }
 }

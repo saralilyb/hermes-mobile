@@ -71,18 +71,25 @@ fun SystemScreen(
         onRefresh = { viewModel.loadSystemData() },
     ) {
         when {
-            state.isLoading && state.stats == null && state.doctorReport == null -> LoadingState()
-            state.errorMessage != null ->
+            state.isLoading && state.stats == null && state.doctorReport == null -> {
+                LoadingState()
+            }
+
+            state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "Unknown error",
                     onRetry = { viewModel.loadSystemData() },
                 )
-            state.stats == null && state.doctorReport == null ->
+            }
+
+            state.stats == null && state.doctorReport == null -> {
                 EmptyState(
                     title = "No system data",
                     subtitle = "Tap refresh to load system diagnostics.",
                 )
-            else ->
+            }
+
+            else -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth(),
                     contentPadding =
@@ -200,6 +207,7 @@ fun SystemScreen(
                         }
                     }
                 }
+            }
         }
     }
 }

@@ -69,6 +69,7 @@ fun WebhooksScreen(
             state.isLoading && state.baseUrl == null -> {
                 LoadingState(modifier = Modifier.padding(paddingValues))
             }
+
             state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "",
@@ -76,7 +77,8 @@ fun WebhooksScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
-            else ->
+
+            else -> {
                 Box(Modifier.fillMaxSize()) {
                     if (state.isLoading && state.baseUrl == null) {
                         CircularProgressIndicator()
@@ -234,6 +236,7 @@ fun WebhooksScreen(
                         }
                     }
                 }
+            }
         }
     }
 }

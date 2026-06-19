@@ -64,6 +64,7 @@ fun HermesScaffold(
                                 )
                             }
                         }
+
                         onOpenDrawer != null -> {
                             IconButton(onClick = onOpenDrawer) {
                                 Icon(

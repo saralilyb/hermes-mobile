@@ -75,6 +75,7 @@ fun ModelScreen(
             state.isLoading && state.providers.isEmpty() -> {
                 LoadingState(modifier = Modifier.padding(paddingValues))
             }
+
             state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "",
@@ -82,7 +83,8 @@ fun ModelScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
-            else ->
+
+            else -> {
                 Box(Modifier.fillMaxSize()) {
                     if (state.isLoading && state.providers.isEmpty()) {
                         CircularProgressIndicator()
@@ -201,7 +203,8 @@ fun ModelScreen(
                                                                     containerColor =
                                                                         if (isActive) {
                                                                             MaterialTheme.colorScheme
-                                                                                .primaryContainer.copy(
+                                                                                .primaryContainer
+                                                                                .copy(
                                                                                     alpha = 0.3f,
                                                                                 )
                                                                         } else {
@@ -264,6 +267,7 @@ fun ModelScreen(
                         }
                     }
                 }
+            }
         }
     }
 }

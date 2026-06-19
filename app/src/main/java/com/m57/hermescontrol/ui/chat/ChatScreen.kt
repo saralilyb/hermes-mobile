@@ -116,10 +116,12 @@ fun ChatScreen(
                         NotificationHelper.setAppForeground(context, true)
                         NotificationHelper.stop(context)
                     }
+
                     androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
                         NotificationHelper.setAppForeground(context, false)
                         NotificationHelper.start(context)
                     }
+
                     else -> {}
                 }
             }

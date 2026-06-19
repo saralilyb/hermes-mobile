@@ -5,6 +5,9 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.m57.hermescontrol.theme.ThemePreference
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Singleton that manages encrypted storage of the Hermes dashboard token
@@ -29,6 +32,9 @@ object AuthManager {
     @Volatile
     private var prefs: SharedPreferences? = null
 
+    private val _bottomNavItemsFlow = MutableStateFlow<List<String>>(emptyList())
+    val bottomNavItemsFlow: StateFlow<List<String>> = _bottomNavItemsFlow.asStateFlow()
+
     /**
      * Initialise the encrypted preferences.
      * Call this once from Application.onCreate() or MainActivity.onCreate().
@@ -51,6 +57,8 @@ object AuthManager {
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
                 )
+
+            _bottomNavItemsFlow.value = getBottomNavItems()
         }
     }
 
@@ -134,5 +142,6 @@ object AuthManager {
     /** Persist the ordered list of bottom-nav item keys (max 5, data-object names). */
     fun setBottomNavItems(items: List<String>) {
         requirePrefs().edit().putString(KEY_BOTTOM_NAV_ITEMS, items.joinToString(",")).apply()
+        _bottomNavItemsFlow.value = items
     }
 }

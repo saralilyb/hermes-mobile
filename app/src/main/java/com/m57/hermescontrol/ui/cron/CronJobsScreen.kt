@@ -65,19 +65,26 @@ fun CronJobsScreen(
         onRefresh = { viewModel.loadCronJobs() },
     ) {
         when {
-            state.isLoading && state.jobs.isEmpty() -> LoadingState()
-            state.errorMessage != null ->
+            state.isLoading && state.jobs.isEmpty() -> {
+                LoadingState()
+            }
+
+            state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "Unknown error",
                     onRetry = { viewModel.loadCronJobs() },
                 )
-            state.jobs.isEmpty() ->
+            }
+
+            state.jobs.isEmpty() -> {
                 EmptyState(
                     title = "No cron jobs",
                     subtitle = "Scheduled tasks from Hermes will appear here.",
                     icon = Icons.Filled.Schedule,
                 )
-            else ->
+            }
+
+            else -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth(),
                     contentPadding = listContentPadding,
@@ -160,6 +167,7 @@ fun CronJobsScreen(
                         }
                     }
                 }
+            }
         }
     }
 }

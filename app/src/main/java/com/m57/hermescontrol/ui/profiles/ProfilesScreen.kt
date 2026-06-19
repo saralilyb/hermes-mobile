@@ -79,6 +79,7 @@ fun ProfilesScreen(
             state.isLoading && state.profiles.isEmpty() -> {
                 LoadingState(modifier = Modifier.padding(paddingValues))
             }
+
             state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "",
@@ -86,7 +87,8 @@ fun ProfilesScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
-            else ->
+
+            else -> {
                 Box(Modifier.fillMaxSize()) {
                     if (state.isLoading && state.profiles.isEmpty()) {
                         CircularProgressIndicator()
@@ -222,6 +224,7 @@ fun ProfilesScreen(
                         }
                     }
                 }
+            }
         }
     }
 }

@@ -78,19 +78,26 @@ fun SkillsScreen(
         onRefresh = { viewModel.loadSkills() },
     ) {
         when {
-            state.isLoading && state.skills.isEmpty() -> LoadingState()
-            state.errorMessage != null ->
+            state.isLoading && state.skills.isEmpty() -> {
+                LoadingState()
+            }
+
+            state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "Unknown error",
                     onRetry = { viewModel.loadSkills() },
                 )
-            state.skills.isEmpty() ->
+            }
+
+            state.skills.isEmpty() -> {
                 EmptyState(
                     title = "No skills found",
                     subtitle = "Skills loaded from Hermes will appear here.",
                     icon = Icons.Filled.Extension,
                 )
-            else ->
+            }
+
+            else -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth(),
                     contentPadding = listContentPadding,
@@ -162,6 +169,7 @@ fun SkillsScreen(
                         }
                     }
                 }
+            }
         }
     }
 }

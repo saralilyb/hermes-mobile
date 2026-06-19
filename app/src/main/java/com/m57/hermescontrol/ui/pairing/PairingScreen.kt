@@ -67,6 +67,7 @@ fun PairingScreen(
             state.isLoading && state.pairing == null -> {
                 LoadingState(modifier = Modifier.padding(paddingValues))
             }
+
             state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "",
@@ -74,7 +75,8 @@ fun PairingScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
-            else ->
+
+            else -> {
                 Box(Modifier.fillMaxSize()) {
                     if (state.isLoading && state.pairing == null) {
                         CircularProgressIndicator()
@@ -253,6 +255,7 @@ fun PairingScreen(
                         }
                     }
                 }
+            }
         }
     }
 }

@@ -80,6 +80,7 @@ fun KanbanScreen(
             state.isLoading && state.boards.isEmpty() -> {
                 LoadingState(modifier = Modifier.padding(paddingValues))
             }
+
             state.errorMessage != null -> {
                 ErrorState(
                     message = state.errorMessage ?: "",
@@ -87,7 +88,8 @@ fun KanbanScreen(
                     modifier = Modifier.padding(paddingValues),
                 )
             }
-            else ->
+
+            else -> {
                 Box(Modifier.fillMaxSize()) {
                     if (state.isLoading) {
                         CircularProgressIndicator()
@@ -189,6 +191,7 @@ fun KanbanScreen(
                         )
                     }
                 }
+            }
         }
     }
 }
