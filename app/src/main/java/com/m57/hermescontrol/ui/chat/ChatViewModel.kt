@@ -201,6 +201,10 @@ class ChatViewModel(
 
     private fun handleMessageStart(event: WsEvent.MessageStart) {
         if (!isCurrentSession(event.sessionId)) return
+
+        var orphanToPersist: ChatMessage? = null
+        val sessionId = _uiState.value.currentSessionId
+
         // Create the streaming message as a standalone state field.
         val msg =
             ChatMessage(
@@ -209,13 +213,30 @@ class ChatViewModel(
                 isStreaming = true,
             )
         streamingMessageId = msg.id
-        _uiState.update {
-            it.copy(
+
+        _uiState.update { state ->
+            val messages = state.messages.toMutableList()
+            val existing = state.streamingMessage
+            if (existing != null && existing.content.isNotEmpty()) {
+                val finalized = existing.copy(isStreaming = false)
+                messages.add(finalized)
+                orphanToPersist = finalized
+            }
+            state.copy(
+                messages = messages,
                 isAgentTyping = true,
                 streamingMessage = msg,
                 isThinking = false,
                 thinkingText = "",
             )
+        }
+
+        // Persist — OUTSIDE update{}
+        val orphan = orphanToPersist
+        if (orphan != null && sessionId != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                dao.upsert(orphan.toEntity(sessionId))
+            }
         }
     }
 
@@ -345,6 +366,9 @@ class ChatViewModel(
     // ── Tool events ──────────────────────────────────────────────────────
 
     private fun handleToolStart(event: WsEvent.ToolStart) {
+        var orphanToPersist: ChatMessage? = null
+        val sessionId = _uiState.value.currentSessionId
+
         val toolMessage =
             ChatMessage(
                 role = MessageRole.TOOL,
@@ -354,13 +378,27 @@ class ChatViewModel(
             )
 
         _uiState.update { state ->
-            state.copy(messages = state.messages + toolMessage)
+            val messages = state.messages.toMutableList()
+            val existing = state.streamingMessage
+            if (existing != null && existing.content.isNotEmpty()) {
+                val finalized = existing.copy(isStreaming = false)
+                messages.add(finalized)
+                orphanToPersist = finalized
+            }
+            messages.add(toolMessage)
+            state.copy(
+                messages = messages,
+                streamingMessage = null,
+            )
         }
 
         // Persist — OUTSIDE update{}
-        val sessionId = _uiState.value.currentSessionId
+        val orphan = orphanToPersist
         if (sessionId != null) {
             viewModelScope.launch(Dispatchers.IO) {
+                if (orphan != null) {
+                    dao.upsert(orphan.toEntity(sessionId))
+                }
                 dao.upsert(toolMessage.toEntity(sessionId))
             }
         }
