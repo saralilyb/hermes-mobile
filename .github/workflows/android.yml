@@ -1,7 +1,6 @@
 name: Android CI/CD
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   GRADLE_CACHE_ENCRYPTED_KEY: ${{ secrets.GRADLE_ENCRYPTED_KEY }}
 
 on:
