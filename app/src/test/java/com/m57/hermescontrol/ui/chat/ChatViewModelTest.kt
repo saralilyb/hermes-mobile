@@ -213,7 +213,8 @@ class ChatViewModelTest {
 
             var state = viewModel.uiState.value
             assertTrue(state.isAgentTyping)
-            assertEquals("", state.currentStreamingText)
+            assertNotNull(state.streamingMessage)
+            assertEquals("", state.streamingMessage?.content)
             assertFalse(state.isThinking)
             assertEquals("", state.thinkingText)
 
@@ -236,27 +237,25 @@ class ChatViewModelTest {
             advanceUntilIdle()
             state = viewModel.uiState.value
             assertFalse(state.isThinking)
-            assertEquals("Hello", state.currentStreamingText)
-            // System message was cleared when createNewSession() was called, so only Assistant streaming message is present
-            assertEquals(1, state.messages.size)
-            assertEquals("Hello", state.messages[0].content)
-            assertTrue(state.messages[0].isStreaming)
+            assertNotNull(state.streamingMessage)
+            assertEquals("Hello", state.streamingMessage?.content)
+            // Streaming message is not in the main messages list yet
+            assertEquals(0, state.messages.size)
 
             // Token 2
             mockEventsFlow.emit(WsEvent.MessageToken(" world", "session-123"))
             advanceUntilIdle()
             state = viewModel.uiState.value
-            assertEquals("Hello world", state.currentStreamingText)
-            assertEquals(1, state.messages.size)
-            assertEquals("Hello world", state.messages[0].content)
-            assertTrue(state.messages[0].isStreaming)
+            assertNotNull(state.streamingMessage)
+            assertEquals("Hello world", state.streamingMessage?.content)
+            assertEquals(0, state.messages.size)
 
             // Complete
             mockEventsFlow.emit(WsEvent.MessageComplete("Hello world!", "session-123"))
             advanceUntilIdle()
             state = viewModel.uiState.value
             assertFalse(state.isAgentTyping)
-            assertEquals("", state.currentStreamingText)
+            assertNull(state.streamingMessage)
             assertFalse(state.isThinking)
             assertEquals("", state.thinkingText)
             assertEquals(1, state.messages.size)
