@@ -413,4 +413,85 @@ class ChatViewModelTest {
             assertTrue(state.errorMessage!!.contains("Internal error during creation"))
             assertTrue(state.errorMessage.contains(WsMethods.SESSION_CREATE))
         }
+
+    @Test
+    fun testToolExecution_finalizesPreviousStreamingMessage() =
+        runTest {
+            val viewModel = ChatViewModel(app, startCleanup = false)
+            advanceUntilIdle()
+
+            // Setup active session
+            var createReqId = ""
+            every { HermesWsClient.send(WsMethods.SESSION_CREATE, any(), any()) } answers {
+                createReqId = "create-req-tool-test"
+                val onSent = arg<((String) -> Unit)?>(2)
+                onSent?.invoke(createReqId)
+                createReqId
+            }
+            mockEventsFlow.emit(WsEvent.GatewayReady(null))
+            advanceUntilIdle()
+            mockEventsFlow.emit(WsEvent.RpcResult(createReqId, mapOf("session_id" to "session-123")))
+            advanceUntilIdle()
+
+            // Start typing some text
+            mockEventsFlow.emit(WsEvent.MessageStart("session-123"))
+            mockEventsFlow.emit(WsEvent.MessageToken("Calculating sum", "session-123"))
+            advanceUntilIdle()
+
+            // Start tool call
+            mockEventsFlow.emit(WsEvent.ToolStart("calculator", mapOf("input" to "2+2")))
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            // Messages should be: 1. "Session created" 2. "Calculating sum" (finalized) 3. Tool bubble
+            assertEquals(3, state.messages.size)
+            assertEquals("Session created", state.messages[0].content)
+            assertEquals("Calculating sum", state.messages[1].content)
+            assertEquals(MessageRole.ASSISTANT, state.messages[1].role)
+            assertFalse(state.messages[1].isStreaming)
+            assertEquals(MessageRole.TOOL, state.messages[2].role)
+            assertNull(state.streamingMessage)
+        }
+
+    @Test
+    fun testMessageStart_finalizesPreviousStreamingMessage() =
+        runTest {
+            val viewModel = ChatViewModel(app, startCleanup = false)
+            advanceUntilIdle()
+
+            // Setup active session
+            var createReqId = ""
+            every { HermesWsClient.send(WsMethods.SESSION_CREATE, any(), any()) } answers {
+                createReqId = "create-req-msg-test"
+                val onSent = arg<((String) -> Unit)?>(2)
+                onSent?.invoke(createReqId)
+                createReqId
+            }
+            mockEventsFlow.emit(WsEvent.GatewayReady(null))
+            advanceUntilIdle()
+            mockEventsFlow.emit(WsEvent.RpcResult(createReqId, mapOf("session_id" to "session-123")))
+            advanceUntilIdle()
+
+            // Start typing message 1
+            mockEventsFlow.emit(WsEvent.MessageStart("session-123"))
+            mockEventsFlow.emit(WsEvent.MessageToken("First response segment", "session-123"))
+            advanceUntilIdle()
+
+            // Start typing message 2 without message 1 complete
+            mockEventsFlow.emit(WsEvent.MessageStart("session-123"))
+            mockEventsFlow.emit(WsEvent.MessageToken("Second response segment", "session-123"))
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            // Messages should contain: 1. "Session created" 2. "First response segment" (finalized)
+            assertEquals(2, state.messages.size)
+            assertEquals("Session created", state.messages[0].content)
+            assertEquals("First response segment", state.messages[1].content)
+            assertFalse(state.messages[1].isStreaming)
+
+            // Active streaming message should be the second segment
+            assertNotNull(state.streamingMessage)
+            assertEquals("Second response segment", state.streamingMessage?.content)
+            assertTrue(state.streamingMessage?.isStreaming == true)
+        }
 }
