@@ -64,6 +64,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.m57.hermescontrol.BuildConfig
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.theme.ThemePreference
+import com.m57.hermescontrol.theme.ThemePreset
 import com.m57.hermescontrol.ui.common.HermesScaffold
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -317,6 +318,88 @@ fun SettingsScreen(
                                     ThemePreference.SYSTEM -> stringResource(R.string.theme_system)
                                     ThemePreference.LIGHT -> stringResource(R.string.theme_light)
                                     ThemePreference.DARK -> stringResource(R.string.theme_dark)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.settings_item_use_dynamic_colors),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_desc_use_dynamic_colors),
+                            style =
+                                MaterialTheme.typography.bodySmall.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                        )
+                    }
+                    Switch(
+                        checked = state.useDynamicColors,
+                        onCheckedChange = viewModel::onUseDynamicColorsChange,
+                        colors =
+                            SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
+                            ),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = stringResource(R.string.settings_item_theme_preset),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                var presetsExpanded by remember { mutableStateOf(false) }
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { presetsExpanded = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            when (state.themePreset) {
+                                ThemePreset.DEFAULT -> stringResource(R.string.theme_preset_default)
+                                ThemePreset.MONOCHROME -> stringResource(R.string.theme_preset_monochrome)
+                                ThemePreset.GRUVBOX -> stringResource(R.string.theme_preset_gruvbox)
+                                ThemePreset.CATPPUCCIN -> stringResource(R.string.theme_preset_catppuccin)
+                                ThemePreset.AMOLED -> stringResource(R.string.theme_preset_amoled)
+                            },
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = presetsExpanded,
+                        onDismissRequest = { presetsExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.85f),
+                    ) {
+                        ThemePreset.entries.forEach { preset ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        when (preset) {
+                                            ThemePreset.DEFAULT -> stringResource(R.string.theme_preset_default)
+                                            ThemePreset.MONOCHROME -> stringResource(R.string.theme_preset_monochrome)
+                                            ThemePreset.GRUVBOX -> stringResource(R.string.theme_preset_gruvbox)
+                                            ThemePreset.CATPPUCCIN -> stringResource(R.string.theme_preset_catppuccin)
+                                            ThemePreset.AMOLED -> stringResource(R.string.theme_preset_amoled)
+                                        },
+                                    )
+                                },
+                                onClick = {
+                                    viewModel.onThemePresetChange(preset)
+                                    presetsExpanded = false
                                 },
                             )
                         }

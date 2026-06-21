@@ -8,6 +8,7 @@ import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.theme.ThemePreference
+import com.m57.hermescontrol.theme.ThemePreset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +23,8 @@ data class SettingsUiState(
     val token: String = "",
     val autoReconnect: Boolean = true,
     val themePreference: ThemePreference = ThemePreference.SYSTEM,
+    val useDynamicColors: Boolean = true,
+    val themePreset: ThemePreset = ThemePreset.DEFAULT,
     val isTesting: Boolean = false,
     val testResult: String? = null,
     val isSaved: Boolean = false,
@@ -53,6 +56,8 @@ class SettingsViewModel : ViewModel() {
                 // choice from persistent storage on init. Previously this slot
                 // was missing — always defaulted to ThemePreference.SYSTEM.
                 themePreference = AuthManager.getThemePreference(),
+                useDynamicColors = AuthManager.isUseDynamicColors(),
+                themePreset = AuthManager.getThemePreset(),
                 selectedNavItems = AuthManager.getBottomNavItems(),
                 typingEffectEnabled = AuthManager.isTypingEffectEnabled(),
                 typingEffectDelayMs = AuthManager.getTypingEffectDelayMs(),
@@ -122,6 +127,16 @@ class SettingsViewModel : ViewModel() {
         AuthManager.setThemePreference(theme)
     }
 
+    fun onUseDynamicColorsChange(enabled: Boolean) {
+        _uiState.update { it.copy(useDynamicColors = enabled, isSaved = false) }
+        AuthManager.setUseDynamicColors(enabled)
+    }
+
+    fun onThemePresetChange(preset: ThemePreset) {
+        _uiState.update { it.copy(themePreset = preset, isSaved = false) }
+        AuthManager.setThemePreset(preset)
+    }
+
     fun onTypingEffectEnabledChange(enabled: Boolean) {
         _uiState.update { it.copy(typingEffectEnabled = enabled, isSaved = false) }
     }
@@ -188,6 +203,8 @@ class SettingsViewModel : ViewModel() {
         // B6 (Jun 18 2026, kanban t_86e9be9b): persist theme choice so it
         // survives a cold start (was previously dropped on save()).
         AuthManager.setThemePreference(state.themePreference)
+        AuthManager.setUseDynamicColors(state.useDynamicColors)
+        AuthManager.setThemePreset(state.themePreset)
         AuthManager.setTypingEffectEnabled(state.typingEffectEnabled)
         AuthManager.setTypingEffectDelayMs(state.typingEffectDelayMs)
         ApiClient.rebuild()
