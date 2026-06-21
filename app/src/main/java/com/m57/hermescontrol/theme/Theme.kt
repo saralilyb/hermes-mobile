@@ -15,19 +15,13 @@ import androidx.compose.ui.platform.LocalContext
 
 enum class ThemePreference { SYSTEM, LIGHT, DARK }
 
+enum class ThemePreset { DEFAULT, MONOCHROME, GRUVBOX, CATPPUCCIN, AMOLED }
+
 val LocalThemePreference = compositionLocalOf { ThemePreference.SYSTEM }
+val LocalThemePreset = compositionLocalOf { ThemePreset.DEFAULT }
 
 /**
  * Set to true to opt into Material You dynamic color (Android 12+).
- *
- * On API 31+ the app derives its entire colour scheme from the user's
- * wallpaper — primary, secondary, tertiary, surfaces, the lot.  On older
- * devices the [HermesDarkColorScheme] / [HermesLightColorScheme] brand
- * palette is used instead.
- *
- * Semantic status colours (success / warning / error / info) and chat-bubble
- * colours are ALWAYS brand-defined regardless of dynamic colour — see
- * [Color.kt] and the `LocalHermesStatusColors` provider below.
  */
 private const val ENABLE_DYNAMIC_COLOR = true
 
@@ -97,10 +91,144 @@ private val HermesLightColorScheme =
         scrim = LightScrim,
     )
 
+private val MonochromeDarkColorScheme =
+    darkColorScheme(
+        primary = Color.White,
+        onPrimary = Color.Black,
+        primaryContainer = Color(0xFF2B2B2B),
+        onPrimaryContainer = Color.White,
+        secondary = Color(0xFFB0B0B0),
+        onSecondary = Color.Black,
+        secondaryContainer = Color(0xFF222222),
+        onSecondaryContainer = Color(0xFFE0E0E0),
+        background = Color(0xFF121212),
+        onBackground = Color(0xFFE0E0E0),
+        surface = Color(0xFF1E1E1E),
+        onSurface = Color(0xFFE0E0E0),
+        surfaceVariant = Color(0xFF2B2B2B),
+        onSurfaceVariant = Color(0xFFB0B0B0),
+        outline = Color(0xFF666666),
+    )
+
+private val MonochromeLightColorScheme =
+    lightColorScheme(
+        primary = Color.Black,
+        onPrimary = Color.White,
+        primaryContainer = Color(0xFFE0E0E0),
+        onPrimaryContainer = Color.Black,
+        secondary = Color(0xFF4A4A4A),
+        onSecondary = Color.White,
+        secondaryContainer = Color(0xFFF0F0F0),
+        onSecondaryContainer = Color(0xFF111111),
+        background = Color(0xFFFFFFFF),
+        onBackground = Color(0xFF111111),
+        surface = Color(0xFFF5F5F5),
+        onSurface = Color(0xFF111111),
+        surfaceVariant = Color(0xFFE0E0E0),
+        onSurfaceVariant = Color(0xFF4A4A4A),
+        outline = Color(0xFF888888),
+    )
+
+private val GruvboxDarkColorScheme =
+    darkColorScheme(
+        primary = Color(0xFFFE8019),
+        onPrimary = Color(0xFF282828),
+        primaryContainer = Color(0xFFD65D0E),
+        onPrimaryContainer = Color(0xFFFBF1C7),
+        secondary = Color(0xFFFABD2F),
+        onSecondary = Color(0xFF282828),
+        secondaryContainer = Color(0xFF3C3836),
+        onSecondaryContainer = Color(0xFFBDAE93),
+        background = Color(0xFF282828),
+        onBackground = Color(0xFFFBF1C7),
+        surface = Color(0xFF32302F),
+        onSurface = Color(0xFFFBF1C7),
+        surfaceVariant = Color(0xFF3C3836),
+        onSurfaceVariant = Color(0xFFBDAE93),
+        outline = Color(0xFF665C54),
+    )
+
+private val GruvboxLightColorScheme =
+    lightColorScheme(
+        primary = Color(0xFFD65D0E),
+        onPrimary = Color(0xFFFBF1C7),
+        primaryContainer = Color(0xFFFE8019),
+        onPrimaryContainer = Color(0xFF282828),
+        secondary = Color(0xFF458588),
+        onSecondary = Color(0xFFFBF1C7),
+        secondaryContainer = Color(0xFFEBDBB2),
+        onSecondaryContainer = Color(0xFF3C3836),
+        background = Color(0xFFFBF1C7),
+        onBackground = Color(0xFF282828),
+        surface = Color(0xFFF2E5BC),
+        onSurface = Color(0xFF282828),
+        surfaceVariant = Color(0xFFEBDBB2),
+        onSurfaceVariant = Color(0xFF7C6F64),
+        outline = Color(0xFFA89984),
+    )
+
+private val CatppuccinDarkColorScheme =
+    darkColorScheme(
+        primary = Color(0xFFCBA6F7),
+        onPrimary = Color(0xFF11111B),
+        primaryContainer = Color(0xFF585B70),
+        onPrimaryContainer = Color(0xFFF5E0DC),
+        secondary = Color(0xFF89B4FA),
+        onSecondary = Color(0xFF11111B),
+        secondaryContainer = Color(0xFF313244),
+        onSecondaryContainer = Color(0xFFBAC2DE),
+        background = Color(0xFF1E1E2E),
+        onBackground = Color(0xFFCDD6F4),
+        surface = Color(0xFF252538),
+        onSurface = Color(0xFFCDD6F4),
+        surfaceVariant = Color(0xFF313244),
+        onSurfaceVariant = Color(0xFFA6ADC8),
+        outline = Color(0xFF585B70),
+    )
+
+private val CatppuccinLightColorScheme =
+    lightColorScheme(
+        primary = Color(0xFF8839EF),
+        onPrimary = Color(0xFFEFF1F5),
+        primaryContainer = Color(0xFFCCD0DA),
+        onPrimaryContainer = Color(0xFF4C4F69),
+        secondary = Color(0xFF1E66F5),
+        onSecondary = Color(0xFFEFF1F5),
+        secondaryContainer = Color(0xFFE6E9EF),
+        onSecondaryContainer = Color(0xFF4C4F69),
+        background = Color(0xFFEFF1F5),
+        onBackground = Color(0xFF4C4F69),
+        surface = Color(0xFFE6E9EF),
+        onSurface = Color(0xFF4C4F69),
+        surfaceVariant = Color(0xFFCCD0DA),
+        onSurfaceVariant = Color(0xFF6C6F85),
+        outline = Color(0xFF9CA0B0),
+    )
+
+private val AmoledDarkColorScheme =
+    darkColorScheme(
+        primary = HermesPurple,
+        onPrimary = Color.White,
+        primaryContainer = Color(0xFF1A1040),
+        onPrimaryContainer = HermesPurpleOnContainer,
+        secondary = HermesAmber,
+        onSecondary = Color.Black,
+        secondaryContainer = Color(0xFF2A2000),
+        onSecondaryContainer = HermesAmberLight,
+        background = Color.Black,
+        onBackground = Color(0xFFE8E6EE),
+        surface = Color(0xFF08080A),
+        onSurface = Color(0xFFE8E6EE),
+        surfaceVariant = Color(0xFF121218),
+        onSurfaceVariant = Color(0xFFB6B2C4),
+        outline = Color(0xFF3A3A4A),
+    )
+
 @Composable
 fun HermesControlTheme(
     themePreference: ThemePreference = LocalThemePreference.current,
-    enableDynamicColor: Boolean = ENABLE_DYNAMIC_COLOR,
+    useDynamicColors: Boolean = true,
+    themePreset: ThemePreset = ThemePreset.DEFAULT,
     content: @Composable () -> Unit,
 ) {
     val darkTheme =
@@ -111,41 +239,101 @@ fun HermesControlTheme(
         }
 
     val context = LocalContext.current
-    val dynamicAvailable = enableDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val dynamicAvailable = useDynamicColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val colorScheme =
         when {
             dynamicAvailable && darkTheme -> dynamicDarkColorScheme(context)
             dynamicAvailable && !darkTheme -> dynamicLightColorScheme(context)
-            darkTheme -> HermesDarkColorScheme
-            else -> HermesLightColorScheme
+            else -> {
+                when (themePreset) {
+                    ThemePreset.DEFAULT -> if (darkTheme) HermesDarkColorScheme else HermesLightColorScheme
+                    ThemePreset.MONOCHROME -> if (darkTheme) MonochromeDarkColorScheme else MonochromeLightColorScheme
+                    ThemePreset.GRUVBOX -> if (darkTheme) GruvboxDarkColorScheme else GruvboxLightColorScheme
+                    ThemePreset.CATPPUCCIN -> if (darkTheme) CatppuccinDarkColorScheme else CatppuccinLightColorScheme
+                    ThemePreset.AMOLED -> if (darkTheme) AmoledDarkColorScheme else HermesLightColorScheme
+                }
+            }
         }
 
     val statusColors =
-        if (darkTheme) {
-            HermesStatusColors(
-                success = StatusGreen,
-                successContainer = StatusGreenContainer,
-                warning = StatusYellow,
-                warningContainer = StatusYellowContainer,
-                error = StatusRed,
-                errorContainer = StatusRedContainer,
-                info = StatusBlue,
-                infoContainer = StatusBlueContainer,
-            )
-        } else {
-            HermesStatusColors(
-                success = Color(0xFF1B873A),
-                successContainer = Color(0xFFD7F5E0),
-                warning = HermesAmberDark,
-                warningContainer = Color(0xFFFFEAB3),
-                error = Color(0xFFB3261E),
-                errorContainer = Color(0xFFF9DEDC),
-                info = Color(0xFF2E6FBD),
-                infoContainer = Color(0xFFD4E7FF),
-            )
+        when {
+            themePreset == ThemePreset.GRUVBOX && darkTheme -> {
+                HermesStatusColors(
+                    success = Color(0xFFB8BB26),
+                    successContainer = Color(0xFF32302F),
+                    warning = Color(0xFFFABD2F),
+                    warningContainer = Color(0xFF3C3836),
+                    error = Color(0xFFFB4934),
+                    errorContainer = Color(0xFF282828),
+                    info = Color(0xFF83A598),
+                    infoContainer = Color(0xFF3C3836),
+                )
+            }
+            themePreset == ThemePreset.GRUVBOX && !darkTheme -> {
+                HermesStatusColors(
+                    success = Color(0xFF98971A),
+                    successContainer = Color(0xFFEBDBB2),
+                    warning = Color(0xFFD79921),
+                    warningContainer = Color(0xFFEBDBB2),
+                    error = Color(0xFFCC241D),
+                    errorContainer = Color(0xFFEBDBB2),
+                    info = Color(0xFF458588),
+                    infoContainer = Color(0xFFEBDBB2),
+                )
+            }
+            themePreset == ThemePreset.CATPPUCCIN && darkTheme -> {
+                HermesStatusColors(
+                    success = Color(0xFFA6E3A1),
+                    successContainer = Color(0xFF313244),
+                    warning = Color(0xFFF9E2AF),
+                    warningContainer = Color(0xFF313244),
+                    error = Color(0xFFF38BA8),
+                    errorContainer = Color(0xFF313244),
+                    info = Color(0xFF89B4FA),
+                    infoContainer = Color(0xFF313244),
+                )
+            }
+            themePreset == ThemePreset.CATPPUCCIN && !darkTheme -> {
+                HermesStatusColors(
+                    success = Color(0xFF40A02B),
+                    successContainer = Color(0xFFE6E9EF),
+                    warning = Color(0xFFDF8E1D),
+                    warningContainer = Color(0xFFE6E9EF),
+                    error = Color(0xFFD20F39),
+                    errorContainer = Color(0xFFE6E9EF),
+                    info = Color(0xFF1E66F5),
+                    infoContainer = Color(0xFFE6E9EF),
+                )
+            }
+            darkTheme -> {
+                HermesStatusColors(
+                    success = StatusGreen,
+                    successContainer = StatusGreenContainer,
+                    warning = StatusYellow,
+                    warningContainer = StatusYellowContainer,
+                    error = StatusRed,
+                    errorContainer = StatusRedContainer,
+                    info = StatusBlue,
+                    infoContainer = StatusBlueContainer,
+                )
+            }
+            else -> {
+                HermesStatusColors(
+                    success = Color(0xFF1B873A),
+                    successContainer = Color(0xFFD7F5E0),
+                    warning = HermesAmberDark,
+                    warningContainer = Color(0xFFFFEAB3),
+                    error = Color(0xFFB3261E),
+                    errorContainer = Color(0xFFF9DEDC),
+                    info = Color(0xFF2E6FBD),
+                    infoContainer = Color(0xFFD4E7FF),
+                )
+            }
         }
 
     CompositionLocalProvider(
+        LocalThemePreference provides themePreference,
+        LocalThemePreset provides themePreset,
         LocalHermesStatusColors provides statusColors,
         LocalSpacing provides SpacingDefaults,
         LocalMotion provides MotionDefaults,

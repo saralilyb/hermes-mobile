@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.m57.hermescontrol.theme.ThemePreference
+import com.m57.hermescontrol.theme.ThemePreset
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +29,8 @@ object AuthManager {
     private const val KEY_TYPING_EFFECT_DELAY_MS = "typing_effect_delay_ms"
     private const val KEY_CONNECTION_PROFILES = "connection_profiles"
     private const val KEY_SELECTED_PROFILE_ID = "selected_profile_id"
+    private const val KEY_USE_DYNAMIC_COLORS = "use_dynamic_colors"
+    private const val KEY_THEME_PRESET = "theme_preset"
 
     private const val DEFAULT_HOST = "127.0.0.1"
     private const val DEFAULT_PORT = 9119
@@ -44,6 +47,11 @@ object AuthManager {
     private val _themePreferenceFlow = MutableStateFlow<ThemePreference>(ThemePreference.SYSTEM)
     val themePreferenceFlow: StateFlow<ThemePreference> = _themePreferenceFlow.asStateFlow()
 
+    private val _useDynamicColorsFlow = MutableStateFlow<Boolean>(true)
+    val useDynamicColorsFlow: StateFlow<Boolean> = _useDynamicColorsFlow.asStateFlow()
+
+    private val _themePresetFlow = MutableStateFlow<ThemePreset>(ThemePreset.DEFAULT)
+    val themePresetFlow: StateFlow<ThemePreset> = _themePresetFlow.asStateFlow()
     private val gson = com.google.gson.Gson()
 
     /**
@@ -71,6 +79,8 @@ object AuthManager {
 
             _bottomNavItemsFlow.value = getBottomNavItems()
             _themePreferenceFlow.value = getThemePreference()
+            _useDynamicColorsFlow.value = isUseDynamicColors()
+            _themePresetFlow.value = getThemePreset()
         }
     }
 
@@ -211,6 +221,23 @@ object AuthManager {
     fun setThemePreference(theme: ThemePreference) {
         requirePrefs().edit().putString(KEY_THEME_PREFERENCE, theme.name).apply()
         _themePreferenceFlow.value = theme
+    }
+
+    fun isUseDynamicColors(): Boolean = requirePrefs().getBoolean(KEY_USE_DYNAMIC_COLORS, true)
+
+    fun setUseDynamicColors(value: Boolean) {
+        requirePrefs().edit().putBoolean(KEY_USE_DYNAMIC_COLORS, value).apply()
+        _useDynamicColorsFlow.value = value
+    }
+
+    fun getThemePreset(): ThemePreset =
+        requirePrefs().getString(KEY_THEME_PRESET, ThemePreset.DEFAULT.name)?.let { name ->
+            runCatching { ThemePreset.valueOf(name) }.getOrNull()
+        } ?: ThemePreset.DEFAULT
+
+    fun setThemePreset(preset: ThemePreset) {
+        requirePrefs().edit().putString(KEY_THEME_PRESET, preset.name).apply()
+        _themePresetFlow.value = preset
     }
 
     /** Convenience: build the base URL from current host + port.

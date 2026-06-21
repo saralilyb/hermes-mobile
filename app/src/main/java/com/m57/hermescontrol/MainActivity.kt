@@ -24,7 +24,13 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val themePreference by AuthManager.themePreferenceFlow.collectAsState()
-            HermesControlTheme(themePreference = themePreference) {
+            val useDynamicColors by AuthManager.useDynamicColorsFlow.collectAsState()
+            val themePreset by AuthManager.themePresetFlow.collectAsState()
+            HermesControlTheme(
+                themePreference = themePreference,
+                useDynamicColors = useDynamicColors,
+                themePreset = themePreset,
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
