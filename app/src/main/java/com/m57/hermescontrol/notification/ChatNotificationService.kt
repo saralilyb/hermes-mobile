@@ -159,7 +159,7 @@ class ChatNotificationService : Service() {
                 if (!sessionId.isNullOrBlank()) {
                     putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
                 }
-        }
+            }
         return PendingIntent.getActivity(
             this,
             sessionId?.hashCode() ?: 0,

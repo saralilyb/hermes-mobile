@@ -62,10 +62,11 @@ class ChannelsViewModel : ViewModel() {
                 }
             when (result) {
                 is NetworkResult.Success -> {
+                    val message = "$platformId configured successfully — restart the gateway for changes to take effect"
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            toastMessage = "$platformId configured successfully — restart the gateway for changes to take effect",
+                            toastMessage = message,
                         )
                     }
                     loadPlatforms()
