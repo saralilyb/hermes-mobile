@@ -1,5 +1,6 @@
 package com.m57.hermescontrol
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,17 +10,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.notification.NotificationReplyReceiver
 import com.m57.hermescontrol.theme.HermesControlTheme
 
 class MainActivity : ComponentActivity() {
+    // Observable state so both onCreate and onNewIntent updates flow to Compose
+    private var notificationSessionId by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         // Read notification tap sessionId (if any) from the intent that launched us
-        val notificationSessionId = intent?.getStringExtra(NotificationReplyReceiver.EXTRA_SESSION_ID)
+        notificationSessionId = intent?.getStringExtra(NotificationReplyReceiver.EXTRA_SESSION_ID)
 
         enableEdgeToEdge()
         setContent {
@@ -39,5 +44,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // When a notification tap arrives while the app is already running
+        // (task exists in background), Android delivers the intent here instead
+        // of onCreate. Update the observable state so Compose recomposes
+        // and ChatScreen's LaunchedEffect switches to the correct session.
+        notificationSessionId = intent.getStringExtra(NotificationReplyReceiver.EXTRA_SESSION_ID)
     }
 }
