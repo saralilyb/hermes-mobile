@@ -228,4 +228,31 @@
     <string name="history_empty_desc">Previous chat sessions from Hermes will appear here.</string>
     <string name="history_untitled">Untitled</string>
     <string name="history_message_count">%1$d messages</string>
+
+    <!-- Toolsets Screen -->
+    <string name="toolsets_empty_title">No toolsets reported</string>
+    <string name="toolsets_empty_desc">Verify configuration or retry</string>
+
+    <!-- Webhooks Screen -->
+    <string name="webhooks_sec_status">Global Webhooks Status</string>
+    <string name="webhooks_sec_subscriptions">Subscriptions</string>
+    <string name="webhooks_empty_desc">No webhook subscriptions configured.</string>
+    <string name="webhooks_label_target">Target URL:</string>
+    <string name="webhooks_label_events">Events Subscribed:</string>
+
+    <!-- Pairing Screen -->
+    <string name="pairing_screen_title">Device Pairing</string>
+    <string name="pairing_sec_pending">Pending Approvals</string>
+    <string name="pairing_action_clear_all">Clear All</string>
+    <string name="pairing_action_approve">Approve</string>
+    <string name="pairing_sec_approved">Approved Devices</string>
+    <string name="pairing_empty_approved">No approved devices paired yet.</string>
+    <string name="pairing_label_user_id">User ID: %1$s</string>
+    <string name="pairing_action_revoke">Revoke</string>
+
+    <!-- Config Screen -->
+    <string name="config_screen_title">Configuration</string>
+    <string name="config_placeholder_yaml">YAML Config...</string>
+    <string name="config_action_reset">Reset</string>
+    <string name="config_action_save">Save Config</string>
 </resources>
