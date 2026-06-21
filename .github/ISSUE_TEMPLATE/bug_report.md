@@ -3,7 +3,6 @@ name: 🐛 Bug report
 description: Report a bug or unexpected behaviour
 title: '[bug] '
 labels: bug
-assignees: ''
 ---
 
 ## Describe the bug

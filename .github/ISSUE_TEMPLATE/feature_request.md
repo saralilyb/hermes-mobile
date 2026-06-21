@@ -3,7 +3,6 @@ name: ✨ Feature request
 description: Suggest an idea, enhancement, UX improvement, or refactor
 title: '[enhancement] '
 labels: enhancement
-assignees: ''
 ---
 
 ## Problem / motivation
