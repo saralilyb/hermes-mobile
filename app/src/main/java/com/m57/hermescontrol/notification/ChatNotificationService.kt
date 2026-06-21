@@ -154,6 +154,7 @@ class ChatNotificationService : Service() {
 
     private fun buildContentIntent(sessionId: String?): PendingIntent {
         val intent = Intent(this, MainActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         if (!sessionId.isNullOrBlank()) {
             intent.putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
         }

@@ -915,7 +915,10 @@ class E2eIntegrationTest {
             viewModel.configurePlatform("telegram", mapOf("bot_token" to "xyz"))
             advanceUntilIdle()
 
-            assertEquals("telegram configured successfully", viewModel.uiState.value.toastMessage)
+            assertEquals(
+                "telegram configured successfully — restart the gateway for changes to take effect",
+                viewModel.uiState.value.toastMessage,
+            )
         }
 
     @Test
