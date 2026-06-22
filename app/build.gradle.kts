@@ -79,7 +79,13 @@ android {
 
     packaging {
       resources {
-        excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        pickFirsts += "META-INF/AL2.0"
+        pickFirsts += "META-INF/LGPL2.1"
+        pickFirsts += "META-INF/LICENSE"
+        pickFirsts += "META-INF/LICENSE.md"
+        pickFirsts += "META-INF/LICENSE-notice.md"
+        pickFirsts += "META-INF/NOTICE"
+        pickFirsts += "META-INF/NOTICE.md"
       }
     }
 }
@@ -148,6 +154,7 @@ dependencies {
   androidTestImplementation(libs.androidx.test.ext.junit)
   androidTestImplementation(libs.androidx.test.runner)
   androidTestImplementation(libs.androidx.test.espresso.core)
+  androidTestImplementation(libs.mockk.android)
 
   // Navigation
   implementation(libs.androidx.navigation3.ui)
