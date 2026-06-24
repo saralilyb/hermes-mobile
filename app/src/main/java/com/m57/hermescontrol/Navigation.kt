@@ -50,6 +50,7 @@ import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.ws.ConnectionStatus
 import com.m57.hermescontrol.data.ws.HermesWsClient
 import com.m57.hermescontrol.theme.BottomNavDisplayMode
+import com.m57.hermescontrol.theme.LocalHermesStatusColors
 import kotlinx.coroutines.launch
 import com.m57.hermescontrol.ui.authlogin.AuthLoginScreen as AuthLoginScreenContent
 import com.m57.hermescontrol.ui.landing.LandingScreen as LandingScreenContent
@@ -137,13 +138,13 @@ fun MainNavigation(sessionId: String? = null) {
                     val connectionStatus by HermesWsClient.connectionStatus.collectAsState()
                     val statusColor =
                         when (connectionStatus) {
-                            ConnectionStatus.CONNECTED -> Color(0xFF4CAF50)
+                            ConnectionStatus.CONNECTED -> LocalHermesStatusColors.current.success
 
                             ConnectionStatus.CONNECTING,
                             ConnectionStatus.RECONNECTING,
-                            -> Color(0xFFFFC107)
+                            -> LocalHermesStatusColors.current.warning
 
-                            ConnectionStatus.DISCONNECTED -> Color(0xFFF44336)
+                            ConnectionStatus.DISCONNECTED -> LocalHermesStatusColors.current.error
                         }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,

@@ -109,6 +109,7 @@ import com.m57.hermescontrol.notification.NotificationHelper
 import com.m57.hermescontrol.theme.StatusRed
 import com.m57.hermescontrol.ui.common.EmptyState
 import com.m57.hermescontrol.ui.common.HermesScaffold
+import com.m57.hermescontrol.ui.common.NavIcon
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -296,7 +297,7 @@ fun ChatScreen(
                 }
             }
         },
-        onOpenDrawer = onOpenDrawer,
+        navigationIcon = onOpenDrawer?.let { NavIcon.Menu(it) },
         snackbarHost = {
             SnackbarHost(snackbarHostState) { data ->
                 Snackbar(
