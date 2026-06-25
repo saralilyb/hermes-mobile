@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 /**
@@ -341,7 +341,7 @@ class AuthLoginViewModel(private val app: Application) : ViewModel() {
                 Request.Builder()
                     .url("$baseUrl/auth/password-login")
                     .header("Content-Type", "application/json")
-                    .post(RequestBody.create(null, jsonBody))
+                    .post(jsonBody.toRequestBody())
                     .build()
             val loginResp = loginClient.newCall(loginReq).execute()
 
@@ -389,7 +389,7 @@ class AuthLoginViewModel(private val app: Application) : ViewModel() {
                 Request.Builder()
                     .url("$baseUrl/api/auth/ws-ticket")
                     .header("Cookie", cookieHeader)
-                    .post(RequestBody.create(null, "{}"))
+                    .post("{}".toRequestBody())
                     .build()
             val ticketResp = ticketClient.newCall(ticketReq).execute()
 

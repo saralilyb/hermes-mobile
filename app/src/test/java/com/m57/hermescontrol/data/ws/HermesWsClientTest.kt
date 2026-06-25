@@ -60,10 +60,11 @@ class HermesWsClientTest {
     fun tearDown() {
         HermesWsClient.disconnect()
         // Wait a bit to allow internal OkHttp coroutines to clean up before shutting down MockWebServer
-        Thread.sleep(100)
+        // Increased from 100ms for OkHttp 5.x — needs more time for the WS close handshake
+        Thread.sleep(500)
         try {
             mockWebServer.shutdown()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
         unmockkAll()
