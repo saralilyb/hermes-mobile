@@ -25,7 +25,9 @@ import kotlinx.coroutines.launch
 import okhttp3.CertificatePinner
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -166,7 +168,7 @@ object HermesWsClient {
                 Request.Builder()
                     .url("http://${AuthManager.getHost()}:${AuthManager.getPort()}/api/auth/ws-ticket")
                     .header("Cookie", "hermes_session_at=$sessionCookie")
-                    .post(RequestBody.create(null, "{}"))
+                    .post("{}".toRequestBody())
                     .build()
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
