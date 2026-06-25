@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
 
       - name: Ensure label exists
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const LABEL = 'has-conflicts';
@@ -46,7 +46,7 @@ jobs:
             }
 
       - name: Check PRs and label conflicts
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const LABEL = 'has-conflicts';
