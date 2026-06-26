@@ -15,7 +15,6 @@ class NetworkResultTest {
         val codesAndExpectedMessages =
             mapOf(
                 400 to "Bad Request (HTTP 400): The server could not understand the request.",
-                401 to "Unauthorized (HTTP 401): Authentication token is invalid or expired.",
                 403 to "Forbidden (HTTP 403): You do not have permission to access this resource.",
                 404 to "Not Found (HTTP 404): The requested resource could not be found.",
                 405 to "Method Not Allowed (HTTP 405).",
@@ -36,12 +35,37 @@ class NetworkResultTest {
     }
 
     @Test
+    fun testMapHttpError_authExpired() {
+        val error = mapHttpError(401)
+        assertTrue(error is NetworkError.AuthExpired)
+        assertEquals("Authentication token has expired. Please log in again.", error.message)
+    }
+
+    @Test
     fun testMapHttpError_unknownCode() {
         val error = mapHttpError(418)
         assertTrue(error is NetworkError.Http)
         error as NetworkError.Http
         assertEquals(418, error.code)
         assertEquals("HTTP Error 418: Unexpected server response.", error.message)
+    }
+
+    @Test
+    fun testIsRetryable() {
+        assertTrue(!isRetryable(java.net.UnknownHostException("Host not found")))
+        assertTrue(!isRetryable(javax.net.ssl.SSLException("SSL failed")))
+        assertTrue(isRetryable(java.net.ConnectException("Connection refused")))
+        assertTrue(isRetryable(java.net.SocketTimeoutException("Timeout")))
+        assertTrue(isRetryable(IOException("Generic IO error")))
+    }
+
+    @Test
+    fun testJitteredBackoff() {
+        val baseMs = 1000L
+        for (i in 0..100) {
+            val backoff = jitteredBackoff(baseMs)
+            assertTrue(backoff in 750..1250)
+        }
     }
 
     @Test
