@@ -85,6 +85,10 @@ android {
         shaders = false
     }
 
+    dependenciesInfo {
+        includeInApk = false
+    }
+
     packaging {
         resources {
             pickFirsts += "META-INF/AL2.0"
