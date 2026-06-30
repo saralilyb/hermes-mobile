@@ -43,7 +43,9 @@ private const val TAG = "ChatViewModel"
 private const val PENDING_REQUEST_TIMEOUT_MS = 30_000L
 
 /** Thrown when an awaited RPC returns an error response. */
-private class RpcCallException(message: String) : Exception(message)
+private class RpcCallException(
+    message: String,
+) : Exception(message)
 
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
@@ -140,33 +142,6 @@ class ChatViewModel(
             _uiState.value,
         )
 
-    init {
-        refreshSettings()
-        connectWebSocket()
-        viewModelScope.launch {
-            wsClient.events.collect { event ->
-                handleWsEvent(event)
-            }
-        }
-        if (startCleanup) {
-            startPendingRequestCleanup()
-        }
-    }
-
-    // ── Connection ───────────────────────────────────────────────────────
-
-    private fun connectWebSocket() {
-        val token = AuthManager.getToken() ?: return
-
-        _uiState.update { it.copy(isLoading = true) }
-
-        viewModelScope.launch(Dispatchers.IO) {
-            wsClient.connect()
-        }
-    }
-
-    // ── WS Event Handling ────────────────────────────────────────────────
-
     /**
      * Session ID to resume when the WebSocket connects. Set synchronously by
      * [ChatScreen] via `SideEffect` during composition — before any WS event
@@ -176,6 +151,89 @@ class ChatViewModel(
      * notification session (issue #240).
      */
     var initialSessionId: String? = null
+
+    init {
+        refreshSettings()
+
+        connectWebSocket(setLoading = false)
+        viewModelScope.launch {
+            wsClient.events.collect { event ->
+                handleWsEvent(event)
+            }
+        }
+        // B7 (Jun 30 2026, kanban t_connection_loading): clear loading state on connection failure or status change
+        viewModelScope.launch {
+            wsClient.connectionStatus.collect { status ->
+                if (status == ConnectionStatus.DISCONNECTED ||
+                    status == ConnectionStatus.RECONNECTING ||
+                    status == ConnectionStatus.NO_NETWORK ||
+                    status == ConnectionStatus.AUTH_EXPIRED
+                ) {
+                    _uiState.update { it.copy(isLoading = false) }
+                }
+            }
+        }
+        if (startCleanup) {
+            startPendingRequestCleanup()
+        }
+
+        // B7 (Jun 30 2026, kanban t_connection_loading): if already connected on launch, trigger setup immediately
+        if (wsClient.connectionStatus.value == ConnectionStatus.CONNECTED) {
+            handleGatewayReady()
+        }
+    }
+
+    // ── Connection ───────────────────────────────────────────────────────
+
+    private fun connectWebSocket(setLoading: Boolean = false) {
+        val token = AuthManager.getToken() ?: return
+
+        if (setLoading) {
+            _uiState.update { it.copy(isLoading = true) }
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            wsClient.connect()
+        }
+
+        // B7 (Jun 30 2026, kanban t_connection_loading): safety timeout to clear spinner if connection hangs
+        if (!isTestEnvironment()) {
+            viewModelScope.launch {
+                delay(10_000L)
+                if (_uiState.value.isLoading) {
+                    _uiState.update { it.copy(isLoading = false) }
+                }
+            }
+        }
+    }
+
+    // ── WS Event Handling ────────────────────────────────────────────────
+
+    private fun handleGatewayReady() {
+        _uiState.update { it.copy(isLoading = false) }
+        addSystemMessage("Connected to Hermes")
+        loadSessions()
+        fetchCommandCatalog()
+        val currentId = _uiState.value.currentSessionId
+        if (currentId != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                wsClient.send(
+                    WsMethods.SESSION_RESUME,
+                    mapOf("session_id" to currentId),
+                    onSent = { id -> trackRequest(id, WsMethods.SESSION_RESUME) },
+                )
+            }
+            loadSessionMessages(currentId)
+        } else {
+            val initial = initialSessionId
+            if (!initial.isNullOrBlank()) {
+                initialSessionId = null
+                switchSession(initial)
+            } else {
+                createNewSession(setLoading = false)
+            }
+        }
+    }
 
     private fun handleWsEvent(event: WsEvent) {
         // First, let the reducer compute the new state and any effects
@@ -217,19 +275,7 @@ class ChatViewModel(
         // Handle complex events that need ViewModel-specific context
         when (event) {
             is WsEvent.GatewayReady -> {
-                _uiState.update { it.copy(isLoading = false) }
-                addSystemMessage("Connected to Hermes")
-                loadSessions()
-                fetchCommandCatalog()
-                if (_uiState.value.currentSessionId == null) {
-                    val initial = initialSessionId
-                    if (!initial.isNullOrBlank()) {
-                        initialSessionId = null
-                        switchSession(initial)
-                    } else {
-                        createNewSession()
-                    }
-                }
+                handleGatewayReady()
             }
 
             is WsEvent.MessageToken -> {
@@ -653,8 +699,8 @@ class ChatViewModel(
     }
 
     /** Read bytes from a `content://` or `file://` URI via ContentResolver. */
-    private fun readContentUriBytes(uriString: String): ByteArray? {
-        return try {
+    private fun readContentUriBytes(uriString: String): ByteArray? =
+        try {
             val context = getApplication<Application>()
             val uri = Uri.parse(uriString)
             context.contentResolver.openInputStream(uri)?.use { stream -> stream.readBytes() }
@@ -662,7 +708,6 @@ class ChatViewModel(
             Log.e(TAG, "Failed to read attachment bytes: ${e.message}", e)
             null
         }
-    }
 
     /**
      * Send a JSON-RPC call and suspend until the response arrives.
@@ -899,10 +944,10 @@ class ChatViewModel(
         }
     }
 
-    fun createNewSession() {
+    fun createNewSession(setLoading: Boolean = true) {
         _uiState.update {
             it.copy(
-                isLoading = true,
+                isLoading = setLoading,
                 messages = emptyList(),
                 chatTitle = "Hermes",
             )
@@ -1204,7 +1249,7 @@ class ChatViewModel(
         }
         viewModelScope.launch {
             delay(500)
-            connectWebSocket()
+            connectWebSocket(setLoading = true)
         }
     }
 
