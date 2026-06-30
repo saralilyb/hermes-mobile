@@ -445,6 +445,11 @@
     <string name="landing_action_auth_login">Auth Login</string>
     <string name="landing_action_pairing_login">Pairing Login</string>
 
+    <!-- Pairing Code Entry Screen -->
+    <string name="pairing_code_entry_title">Pairing Login</string>
+    <string name="pairing_code_entry_manual_desc">Paste the pairing string from your Hermes dashboard below.</string>
+    <string name="pairing_code_entry_code_label">Pairing Code</string>
+
     <!-- Loading State -->
     <string name="loading_state_subtitle_default">Loading…</string>
     <string name="loading_state_subtitle_models">Fetching model providers…</string>
