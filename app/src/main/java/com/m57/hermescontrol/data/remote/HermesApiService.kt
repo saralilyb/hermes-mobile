@@ -73,6 +73,11 @@ import com.m57.hermescontrol.data.model.SkillHubUninstallRequest
 import com.m57.hermescontrol.data.model.SkillScanResponse
 import com.m57.hermescontrol.data.model.StatusResponse
 import com.m57.hermescontrol.data.model.SystemStatsResponse
+import com.m57.hermescontrol.data.model.TelegramOnboardingApplyRequest
+import com.m57.hermescontrol.data.model.TelegramOnboardingApplyResponse
+import com.m57.hermescontrol.data.model.TelegramOnboardingStartRequest
+import com.m57.hermescontrol.data.model.TelegramOnboardingStartResponse
+import com.m57.hermescontrol.data.model.TelegramOnboardingStatusResponse
 import com.m57.hermescontrol.data.model.ToggleSkillRequest
 import com.m57.hermescontrol.data.model.Toolset
 import com.m57.hermescontrol.data.model.ToolsetToggleRequest
@@ -498,6 +503,32 @@ interface HermesApiService {
     suspend fun testMessagingPlatform(
         @Path("platform_id") platformId: String,
     ): Response<MessagingPlatformTestResult>
+
+    @DELETE("api/messaging/platforms/{platform_id}")
+    suspend fun removeMessagingPlatform(
+        @Path("platform_id") platformId: String,
+    ): Response<Unit>
+
+    @POST("api/messaging/telegram/onboarding/start")
+    suspend fun startTelegramOnboarding(
+        @Body body: TelegramOnboardingStartRequest,
+    ): Response<TelegramOnboardingStartResponse>
+
+    @GET("api/messaging/telegram/onboarding/{pairing_id}")
+    suspend fun getTelegramOnboardingStatus(
+        @Path("pairing_id") pairingId: String,
+    ): Response<TelegramOnboardingStatusResponse>
+
+    @POST("api/messaging/telegram/onboarding/{pairing_id}/apply")
+    suspend fun applyTelegramOnboarding(
+        @Path("pairing_id") pairingId: String,
+        @Body body: TelegramOnboardingApplyRequest,
+    ): Response<TelegramOnboardingApplyResponse>
+
+    @HTTP(method = "DELETE", path = "api/messaging/telegram/onboarding/{pairing_id}", hasBody = false)
+    suspend fun cancelTelegramOnboarding(
+        @Path("pairing_id") pairingId: String,
+    ): Response<Unit>
 
     @GET("api/env")
     suspend fun getEnvVars(): Response<Map<String, EnvVarConfig>>
