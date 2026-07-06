@@ -1284,7 +1284,7 @@ class E2eIntegrationTest {
             val provider = ModelProvider("ollama", "Ollama", false, true, listOf("llama3"), 1, null, true, null, null)
             val profile = ProfileInfo("default", null, true, "llama3", "ollama", null, null, null, null)
 
-            coEvery { mockApiService.getModelOptions() } returns
+            coEvery { mockApiService.getModelOptions(any()) } returns
                 Response.success(ModelOptionsResponse(listOf(provider)))
             coEvery { mockApiService.getActiveProfile() } returns
                 Response.success(ActiveProfileResponse("default", null))
@@ -1331,6 +1331,53 @@ class E2eIntegrationTest {
 
             coVerify { mockApiService.updateProfileModel("default", any()) }
             assertEquals("Successfully set profile model to llama3", viewModel.uiState.value.toastMessage)
+        }
+
+    @Test
+    fun testModelOptions_refreshFlagPropagation() =
+        runTest {
+            val provider = ModelProvider("ollama", "Ollama", false, true, listOf("llama3"), 1, null, true, null, null)
+            val profile = ProfileInfo("default", null, true, "llama3", "ollama", null, null, null, null)
+
+            coEvery { mockApiService.getModelOptions(any()) } returns
+                Response.success(ModelOptionsResponse(listOf(provider)))
+            coEvery { mockApiService.getActiveProfile() } returns
+                Response.success(ActiveProfileResponse("default", null))
+            coEvery { mockApiService.getProfiles() } returns Response.success(ProfilesResponse(listOf(profile)))
+            coEvery { mockApiService.getAuxiliaryModels() } returns
+                Response.success(
+                    AuxiliaryModelsResponse(
+                        tasks = emptyList(),
+                        main = MainModelAssignment("openai", "gpt-4"),
+                    ),
+                )
+            coEvery { mockApiService.getMoaModels() } returns
+                Response.success<MoaConfigResponse>(
+                    MoaConfigResponse(
+                        presets = emptyMap(),
+                        default_preset = "",
+                        reference_models = emptyList(),
+                        aggregator = MoaModelSlot("openai", "gpt-4"),
+                        max_tokens = 4096,
+                    ),
+                )
+
+            val capturedRefresh = mutableListOf<Boolean>()
+            coEvery { mockApiService.getModelOptions(any()) } answers {
+                capturedRefresh.add(firstArg())
+                Response.success(ModelOptionsResponse(listOf(provider)))
+            }
+
+            // Default loadAll() must call getModelOptions with refresh = false
+            val viewModel = ModelViewModel()
+            viewModel.loadAll()
+            advanceUntilIdle()
+
+            // Pull-to-refresh path must call getModelOptions with refresh = true
+            viewModel.loadAll(refresh = true)
+            advanceUntilIdle()
+
+            assertEquals(listOf(false, true), capturedRefresh)
         }
 
     @Test
