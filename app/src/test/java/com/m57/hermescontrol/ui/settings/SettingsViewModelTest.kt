@@ -1,7 +1,7 @@
 package com.m57.hermescontrol.ui.settings
 
+import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.local.AuthManager
-import com.m57.hermescontrol.data.model.ConnectionProfile
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.theme.BottomNavDisplayMode
 import com.m57.hermescontrol.theme.ThemePreference
@@ -217,5 +217,26 @@ class SettingsViewModelTest {
         // Selected profile (prof-1) was NOT deleted — should NOT clear selection
         verify(exactly = 0) { AuthManager.setSelectedProfileId(null) }
         verify { ApiClient.rebuild() }
+    }
+
+    @Test
+    fun testSaveProfileFromDialog_addsNewProfileAndTriggersLoginRedirection() {
+        every { AuthManager.getConnectionProfiles() } returns emptyList()
+        val viewModel = createViewModel()
+
+        viewModel.openAddProfile()
+        viewModel.onDialogProfileNameChange("Test Profile")
+        viewModel.onDialogProfileHostChange("192.168.1.100")
+        viewModel.onDialogProfilePortChange("9999")
+
+        viewModel.saveProfileFromDialog()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        verify { AuthManager.saveConnectionProfiles(any()) }
+        verify { AuthManager.setSelectedProfileId(any()) }
+        assertEquals(true, viewModel.uiState.value.navigateToLogin)
+
+        viewModel.clearNavigateToLogin()
+        assertEquals(false, viewModel.uiState.value.navigateToLogin)
     }
 }
