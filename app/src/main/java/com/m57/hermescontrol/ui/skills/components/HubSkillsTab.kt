@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.ui.skills.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +32,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +44,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.HubSkill
+import com.m57.hermescontrol.ui.common.DetailDialog
+import com.m57.hermescontrol.ui.common.DetailRow
 import com.m57.hermescontrol.ui.common.EmptyState
 import com.m57.hermescontrol.ui.common.ErrorState
 import com.m57.hermescontrol.ui.common.LoadingState
@@ -56,9 +61,12 @@ internal fun HubBrowseView(
     onSearch: (String) -> Unit,
     onClearSearch: () -> Unit,
     onInstall: (String) -> Unit,
+    onPreviewHubSkill: (String) -> Unit,
     isInstalling: Boolean,
     installingSkillName: String?,
 ) {
+    var showDetail by remember { mutableStateOf<HubSkill?>(null) }
+
     Column(modifier = Modifier.fillMaxSize()) {
         OutlinedTextField(
             value = hubQuery,
@@ -139,6 +147,10 @@ internal fun HubBrowseView(
                             hubSkill = hubSkill,
                             onInstall = { onInstall(hubSkill.name) },
                             isInstalling = isInstalling && installingSkillName == hubSkill.name,
+                            onClick = {
+                                showDetail = hubSkill
+                                hubSkill.identifier?.let { onPreviewHubSkill(it) }
+                            },
                         )
                     }
                 }
@@ -152,6 +164,34 @@ internal fun HubBrowseView(
             }
         }
     }
+
+    showDetail?.let { hubSkill ->
+        val previewReady = state.hubPreviewIdentifier == hubSkill.identifier
+        val fullContent =
+            if (previewReady) {
+                state.hubPreviewContent ?: hubSkill.description
+            } else {
+                hubSkill.description
+            }
+        DetailDialog(
+            title = hubSkill.name,
+            rows =
+                listOf(
+                    DetailRow(stringResource(R.string.detail_dialog_category), hubSkill.category),
+                    DetailRow(stringResource(R.string.detail_dialog_source), hubSkill.source),
+                    DetailRow(stringResource(R.string.detail_dialog_description), fullContent),
+                    DetailRow(stringResource(R.string.detail_dialog_tags), hubSkill.tags.orEmpty().joinToString(", ")),
+                    DetailRow(stringResource(R.string.detail_dialog_trust_level), hubSkill.trustLevel),
+                ),
+            actions =
+                if (previewReady && state.isHubPreviewing) {
+                    { CircularProgressIndicator(modifier = Modifier.padding(top = 8.dp)) }
+                } else {
+                    null
+                },
+            onDismiss = { showDetail = null },
+        )
+    }
 }
 
 @Composable
@@ -159,9 +199,10 @@ private fun HubSkillCard(
     hubSkill: HubSkill,
     onInstall: () -> Unit,
     isInstalling: Boolean,
+    onClick: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable(onClick = onClick),
         colors =
             CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,

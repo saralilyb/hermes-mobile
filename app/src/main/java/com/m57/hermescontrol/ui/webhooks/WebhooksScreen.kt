@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.ui.webhooks
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -48,6 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.WebhookSubscription
+import com.m57.hermescontrol.ui.common.DetailDialog
 import com.m57.hermescontrol.ui.common.EmptyState
 import com.m57.hermescontrol.ui.common.ErrorState
 import com.m57.hermescontrol.ui.common.HermesScaffold
@@ -59,6 +61,7 @@ import com.m57.hermescontrol.ui.common.StatusBadgeType
 import com.m57.hermescontrol.ui.common.ToastEffect
 import com.m57.hermescontrol.ui.common.listContentPadding
 import com.m57.hermescontrol.ui.common.listItemSpacing
+import com.m57.hermescontrol.ui.common.toDetailRows
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,6 +73,7 @@ fun WebhooksScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     var query by remember { mutableStateOf("") }
+    var showDetail by remember { mutableStateOf<WebhookSubscription?>(null) }
 
     val filteredSubscriptions =
         remember(query, state.subscriptions) {
@@ -356,12 +360,21 @@ fun WebhooksScreen(
                                 isToggling = state.togglingName == sub.name,
                                 onToggle = { enabled -> viewModel.toggleSubscription(sub.name, enabled) },
                                 onDelete = { viewModel.promptDeleteSubscription(sub) },
+                                onClick = { showDetail = sub },
                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    showDetail?.let { sub ->
+        DetailDialog(
+            title = sub.name,
+            rows = sub.toDetailRows(),
+            onDismiss = { showDetail = null },
+        )
     }
 }
 
@@ -371,11 +384,12 @@ private fun SubscriptionCard(
     isToggling: Boolean,
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit,
+    onClick: () -> Unit,
 ) {
     val isEnabled = sub.enabled ?: true
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         colors =
             CardDefaults.cardColors(
                 containerColor =

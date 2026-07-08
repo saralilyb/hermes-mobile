@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.ui.toolsets
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.m57.hermescontrol.R
+import com.m57.hermescontrol.data.model.Toolset
+import com.m57.hermescontrol.ui.common.DetailDialog
 import com.m57.hermescontrol.ui.common.EmptyState
 import com.m57.hermescontrol.ui.common.ErrorState
 import com.m57.hermescontrol.ui.common.HermesScaffold
@@ -47,6 +50,7 @@ import com.m57.hermescontrol.ui.common.SearchBar
 import com.m57.hermescontrol.ui.common.ToastEffect
 import com.m57.hermescontrol.ui.common.listContentPadding
 import com.m57.hermescontrol.ui.common.listItemSpacing
+import com.m57.hermescontrol.ui.common.toDetailRows
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,6 +62,7 @@ fun ToolsetsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     var query by remember { mutableStateOf("") }
+    var showDetail by remember { mutableStateOf<Toolset?>(null) }
 
     val filteredToolsets =
         remember(query, state.toolsets) {
@@ -136,7 +141,7 @@ fun ToolsetsScreen(
                             }
                             items(filteredToolsets, key = { it.name }) { toolset ->
                                 Card(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.fillMaxWidth().clickable(onClick = { showDetail = toolset }),
                                     colors =
                                         CardDefaults.cardColors(
                                             containerColor =
@@ -207,6 +212,14 @@ fun ToolsetsScreen(
                     }
                 }
             }
+        }
+
+        showDetail?.let { toolset ->
+            DetailDialog(
+                title = toolset.label ?: toolset.name,
+                rows = toolset.toDetailRows(),
+                onDismiss = { showDetail = null },
+            )
         }
     }
 }

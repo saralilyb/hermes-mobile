@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.ui.skills
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,6 +65,8 @@ import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.HubSkill
 import com.m57.hermescontrol.data.model.Skill
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
+import com.m57.hermescontrol.ui.common.DetailDialog
+import com.m57.hermescontrol.ui.common.DetailRow
 import com.m57.hermescontrol.ui.common.EmptyState
 import com.m57.hermescontrol.ui.common.ErrorState
 import com.m57.hermescontrol.ui.common.FilterChipRow
@@ -74,6 +77,7 @@ import com.m57.hermescontrol.ui.common.SearchBar
 import com.m57.hermescontrol.ui.common.ToastEffect
 import com.m57.hermescontrol.ui.common.listContentPadding
 import com.m57.hermescontrol.ui.common.listItemSpacing
+import com.m57.hermescontrol.ui.common.toDetailRows
 
 internal const val CATEGORY_ALL = "All"
 
@@ -156,6 +160,7 @@ fun SkillsScreen(
                         onSearch = viewModel::searchHub,
                         onClearSearch = viewModel::clearHubSearch,
                         onInstall = viewModel::installSkill,
+                        onPreviewHubSkill = viewModel::previewHubSkill,
                         isInstalling = state.isInstalling,
                         installingSkillName = state.installingSkillName,
                     )
@@ -214,6 +219,8 @@ private fun InstalledSkillsView(
     uninstallingSkillName: String?,
     onRefresh: () -> Unit,
 ) {
+    var showDetail by remember { mutableStateOf<Skill?>(null) }
+
     val categories =
         remember(state.skills) {
             state.skills
@@ -347,11 +354,20 @@ private fun InstalledSkillsView(
                                     null
                                 },
                             isUninstalling = isUninstalling && uninstallingSkillName == skill.name,
+                            onClick = { showDetail = skill },
                         )
                     }
                 }
             }
         }
+    }
+
+    showDetail?.let { skill ->
+        DetailDialog(
+            title = skill.name,
+            rows = skill.toDetailRows(),
+            onDismiss = { showDetail = null },
+        )
     }
 }
 
@@ -364,9 +380,10 @@ private fun SkillCard(
     onAction: () -> Unit,
     onUninstall: (() -> Unit)?,
     isUninstalling: Boolean,
+    onClick: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable(onClick = onClick),
         colors =
             CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -514,9 +531,12 @@ private fun HubBrowseView(
     onSearch: (String) -> Unit,
     onClearSearch: () -> Unit,
     onInstall: (String) -> Unit,
+    onPreviewHubSkill: (String) -> Unit,
     isInstalling: Boolean,
     installingSkillName: String?,
 ) {
+    var hubShowDetail by remember { mutableStateOf<HubSkill?>(null) }
+
     Column(modifier = Modifier.fillMaxSize()) {
         OutlinedTextField(
             value = hubQuery,
@@ -597,6 +617,10 @@ private fun HubBrowseView(
                             hubSkill = hubSkill,
                             onInstall = { onInstall(hubSkill.name) },
                             isInstalling = isInstalling && installingSkillName == hubSkill.name,
+                            onClick = {
+                                hubShowDetail = hubSkill
+                                hubSkill.identifier?.let { onPreviewHubSkill(it) }
+                            },
                         )
                     }
                 }
@@ -610,6 +634,34 @@ private fun HubBrowseView(
             }
         }
     }
+
+    hubShowDetail?.let { hubSkill ->
+        val previewReady = state.hubPreviewIdentifier == hubSkill.identifier
+        val fullContent =
+            if (previewReady) {
+                state.hubPreviewContent ?: hubSkill.description
+            } else {
+                hubSkill.description
+            }
+        DetailDialog(
+            title = hubSkill.name,
+            rows =
+                listOf(
+                    DetailRow(stringResource(R.string.detail_dialog_category), hubSkill.category),
+                    DetailRow(stringResource(R.string.detail_dialog_source), hubSkill.source),
+                    DetailRow(stringResource(R.string.detail_dialog_description), fullContent),
+                    DetailRow(stringResource(R.string.detail_dialog_tags), hubSkill.tags.orEmpty().joinToString(", ")),
+                    DetailRow(stringResource(R.string.detail_dialog_trust_level), hubSkill.trustLevel),
+                ),
+            actions =
+                if (previewReady && state.isHubPreviewing) {
+                    { CircularProgressIndicator(modifier = Modifier.padding(top = 8.dp)) }
+                } else {
+                    null
+                },
+            onDismiss = { hubShowDetail = null },
+        )
+    }
 }
 
 // ── Hub Skill Card ─────────────────────────────────────────────────────
@@ -619,9 +671,10 @@ private fun HubSkillCard(
     hubSkill: HubSkill,
     onInstall: () -> Unit,
     isInstalling: Boolean,
+    onClick: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable(onClick = onClick),
         colors =
             CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,

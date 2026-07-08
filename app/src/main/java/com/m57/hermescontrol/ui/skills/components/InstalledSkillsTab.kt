@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.ui.skills.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -44,6 +46,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.Skill
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
+import com.m57.hermescontrol.ui.common.DetailDialog
 import com.m57.hermescontrol.ui.common.EmptyState
 import com.m57.hermescontrol.ui.common.ErrorState
 import com.m57.hermescontrol.ui.common.FilterChipRow
@@ -53,6 +56,7 @@ import com.m57.hermescontrol.ui.common.NavIcon
 import com.m57.hermescontrol.ui.common.SearchBar
 import com.m57.hermescontrol.ui.common.listContentPadding
 import com.m57.hermescontrol.ui.common.listItemSpacing
+import com.m57.hermescontrol.ui.common.toDetailRows
 import com.m57.hermescontrol.ui.skills.CATEGORY_ALL
 import com.m57.hermescontrol.ui.skills.SkillFilter
 import com.m57.hermescontrol.ui.skills.SkillsUiState
@@ -75,6 +79,8 @@ internal fun InstalledSkillsView(
     uninstallingSkillName: String?,
     onRefresh: () -> Unit,
 ) {
+    var showDetail by remember { mutableStateOf<Skill?>(null) }
+
     val categories =
         remember(state.skills) {
             state.skills
@@ -208,11 +214,22 @@ internal fun InstalledSkillsView(
                                     null
                                 },
                             isUninstalling = isUninstalling && uninstallingSkillName == skill.name,
+                            onClick = {
+                                showDetail = skill
+                            },
                         )
                     }
                 }
             }
         }
+    }
+
+    showDetail?.let { skill ->
+        DetailDialog(
+            title = skill.name,
+            rows = skill.toDetailRows(),
+            onDismiss = { showDetail = null },
+        )
     }
 }
 
@@ -223,9 +240,10 @@ private fun SkillCard(
     onAction: () -> Unit,
     onUninstall: (() -> Unit)?,
     isUninstalling: Boolean,
+    onClick: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable(onClick = onClick),
         colors =
             CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,
