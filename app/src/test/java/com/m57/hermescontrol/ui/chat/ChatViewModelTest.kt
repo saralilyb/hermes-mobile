@@ -888,4 +888,33 @@ class ChatViewModelTest {
             assertNotNull(msgAfter)
             assertNull(msgAfter!!.approvalInfo)
         }
+
+    // ── Settings ─────────────────────────────────────────────────────────────
+
+    @Test
+    fun testRefreshSettings_updatesUiState() =
+        runTest {
+            // Given the default setup, init{} already calls refreshSettings() once,
+            // so the initial state reflects the setUp defaults (typingEffectEnabled=true,
+            // typingEffectDelayMs=30).
+            val viewModel = createViewModel()
+            advanceUntilIdle()
+            with(viewModel.uiState.value) {
+                assertTrue(typingEffectEnabled)
+                assertEquals(30, typingEffectDelayMs)
+            }
+
+            // When settings change after construction and refreshSettings() is re-invoked,
+            // the UI state must reflect the NEW values — this proves refreshSettings()
+            // re-reads AuthManager live (the real regression scenario).
+            every { AuthManager.isTypingEffectEnabled() } returns false
+            every { AuthManager.getTypingEffectDelayMs() } returns 50
+            viewModel.refreshSettings()
+            advanceUntilIdle()
+
+            // Then
+            val state = viewModel.uiState.value
+            assertFalse(state.typingEffectEnabled)
+            assertEquals(50, state.typingEffectDelayMs)
+        }
 }
