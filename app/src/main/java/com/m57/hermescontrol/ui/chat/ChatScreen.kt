@@ -1588,20 +1588,41 @@ private fun ChatLifecycleEffects(
         }
     }
 
-    // Auto-scroll to bottom on new messages
-    LaunchedEffect(messages.size, streamingMessage?.content?.length, isThinking) {
-        val totalItems =
-            messages.size +
-                (if (streamingMessage != null) 1 else 0) +
-                (if (isThinking) 1 else 0)
-        if (totalItems > 0) {
-            val isSessionSwitch = currentSessionId != lastSessionId
+    // Auto-scroll to bottom on new messages + session switch (issues #584/#583)
+    //
+    // IMPORTANT (m57, #584 follow-up): while an assistant message is STREAMING
+    // the scroll is left completely FREE — no auto-follow of the streaming
+    // message — so the user can scroll up/down to read while it generates.
+    // Auto-scroll only happens on explicit actions (send / FAB / session
+    // switch, handled elsewhere) and when a discrete non-streaming message
+    // lands while the user is already pinned to the bottom.
+    //
+    // The effect runs once (Unit), so we mirror the params through
+    // rememberUpdatedState and read them live inside the flow/collect — that
+    // keeps the lambda bound to the latest values instead of first-composition
+    // closure captures. streamingMessage is intentionally NOT a flow key, so
+    // the flow doesn't churn per token; we just read it live to gate scrolling.
+    val latestMessages by rememberUpdatedState(messages)
+    val latestStreaming by rememberUpdatedState(streamingMessage)
+    val latestIsThinking by rememberUpdatedState(isThinking)
+    val latestSessionId by rememberUpdatedState(currentSessionId)
+    LaunchedEffect(Unit) {
+        snapshotFlow {
+            Pair(latestMessages.size, latestIsThinking)
+        }.collectLatest { (msgCount, thinking) ->
+            val totalItems = msgCount + (if (thinking) 1 else 0)
+            if (totalItems <= 0) return@collectLatest
+            // While a message is streaming, leave scrolling free (no auto-follow).
+            if (latestStreaming != null) return@collectLatest
+            val isSessionSwitch = latestSessionId != lastSessionId
             if (isSessionSwitch) {
-                lastSessionId = currentSessionId
+                lastSessionId = latestSessionId
                 listState.scrollToBottom(animated = false)
-            } else if (listState.isAtBottom()) {
-                listState.scrollToBottom(animated = true)
+                return@collectLatest
             }
+            if (!listState.isAtBottom()) return@collectLatest
+            // Discrete new message while pinned to the bottom — follow it.
+            listState.scrollToBottom(animated = true)
         }
     }
 
