@@ -18,6 +18,7 @@ import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.OkHttpProvider
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.data.session.ActiveSessionHolder
+import com.m57.hermescontrol.data.ws.CommandBlocklist
 import com.m57.hermescontrol.data.ws.CommandCatalog
 import com.m57.hermescontrol.data.ws.ConnectionStatus
 import com.m57.hermescontrol.data.ws.HermesWsClient
@@ -855,6 +856,17 @@ class ChatViewModel(
             }
         }
 
+        // Block desktop/CLI-only + TUI-only commands that don't function on
+        // mobile (issue #576, deliverable #3). These are also hidden from the
+        // suggestion menu, but a user can still type one — intercept it here
+        // (before any RPC fires) with a clear message instead of a doomed call.
+        if (CommandBlocklist.contains(command)) {
+            addAssistantMessage(
+                "⚠️ ${command.split(" ", limit = 2)[0]} is not supported on mobile",
+            )
+            return
+        }
+
         when (val result = slashDispatcher.dispatch(command)) {
             is SlashResult.Interrupt -> {
                 interruptSession()
@@ -912,11 +924,47 @@ class ChatViewModel(
         val name = parts[0].lowercase().removePrefix("/")
         val arg = parts.getOrElse(1) { "" }
         viewModelScope.launch(Dispatchers.IO) {
-            wsClient.send(
-                WsMethods.COMMAND_DISPATCH,
-                mapOf("name" to name, "arg" to arg, "session_id" to sessionId),
-                onSent = { id -> trackRequest(id, WsMethods.COMMAND_DISPATCH) },
-            )
+            try {
+                // Primary path: command.dispatch handles quick/plugin/bundle/
+                // skill commands + a few hardcoded ones. It returns a hard 4018
+                // "not a ... command" for everything that lives only in the TUI
+                // slash worker (the 29 commands that 4018'd on mobile — issue
+                // #576). For those we fall back to slash.exec, which runs the
+                // full COMMAND_REGISTRY through the worker.
+                val result =
+                    wsClient.request(
+                        WsMethods.COMMAND_DISPATCH,
+                        mapOf("name" to name, "arg" to arg, "session_id" to sessionId),
+                    ).await()
+                handleDispatchResult(result)
+            } catch (e: HermesWsClient.HermesRpcException) {
+                val msg = e.message.orEmpty()
+                // Registry miss on command.dispatch: the backend emits exactly
+                // "not a quick/plugin/bundle/skill command: <name>" (tui_gateway
+                // server.py L12408). Match that precise phrase so unrelated
+                // errors can't accidentally trigger the slash.exec fallback.
+                if (msg.contains("not a quick/plugin/bundle/skill command")) {
+                    // Registry miss on command.dispatch -> retry via slash.exec,
+                    // which routes the full CLI command set through the worker.
+                    try {
+                        val result =
+                            wsClient.request(
+                                WsMethods.SLASH_EXEC,
+                                mapOf(
+                                    "command" to "/$name${if (arg.isNotEmpty()) " $arg" else ""}",
+                                    "session_id" to sessionId,
+                                ),
+                            ).await()
+                        val output = (result as? Map<*, *>)?.get("output") as? String
+                        if (!output.isNullOrBlank()) addAssistantMessage(output)
+                    } catch (e2: HermesWsClient.HermesRpcException) {
+                        addAssistantMessage("⚠️ /$name: ${e2.message}")
+                    }
+                } else {
+                    // Legit error from command.dispatch (busy, no history, etc.)
+                    addAssistantMessage("⚠️ /$name: ${e.message}")
+                }
+            }
         }
     }
 

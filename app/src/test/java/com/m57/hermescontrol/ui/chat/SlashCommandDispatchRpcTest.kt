@@ -15,6 +15,7 @@ import io.mockk.mockkObject
 import io.mockk.mockkStatic
 import io.mockk.slot
 import io.mockk.unmockkAll
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -129,20 +130,17 @@ class SlashCommandDispatchRpcTest {
             val paramsSlot = slot<Map<String, Any>>()
             var captured = false
             every {
-                HermesWsClient.send(capture(methodSlot), capture(paramsSlot), any())
+                HermesWsClient.request(capture(methodSlot), capture(paramsSlot), any())
             } answers {
                 captured = true
-                reqCount++
-                val id = "req-dispatch-$reqCount"
-                arg<((String) -> Unit)?>(2)?.invoke(id)
-                id
+                CompletableDeferred<Any?>(Unit)
             }
 
             // /help is NOT client-special-cased -> RpcDispatch
             vm.sendMessage("/help")
             advanceUntilIdle()
 
-            assertTrue("expected a COMMAND_DISPATCH send", captured)
+            assertTrue("expected a COMMAND_DISPATCH request", captured)
             assertEquals(WsMethods.COMMAND_DISPATCH, methodSlot.captured)
             val params = paramsSlot.captured
             assertEquals("help", params["name"])
@@ -158,12 +156,9 @@ class SlashCommandDispatchRpcTest {
             val methodSlot = slot<String>()
             val paramsSlot = slot<Map<String, Any>>()
             every {
-                HermesWsClient.send(capture(methodSlot), capture(paramsSlot), any())
+                HermesWsClient.request(capture(methodSlot), capture(paramsSlot), any())
             } answers {
-                reqCount++
-                val id = "req-dispatch-$reqCount"
-                arg<((String) -> Unit)?>(2)?.invoke(id)
-                id
+                CompletableDeferred<Any?>(Unit)
             }
 
             vm.sendMessage("/queue do the thing")
@@ -177,41 +172,161 @@ class SlashCommandDispatchRpcTest {
         }
 
     @Test
-    fun `client-special-cased commands do NOT hit COMMAND_DISPATCH`() =
+    fun `non-registry-miss backend error is surfaced directly (no fallback)`() =
         runTest {
             val (vm, _) = createViewModelWithSession()
 
-            val dispatched = mutableListOf<String>()
             every {
-                HermesWsClient.send(any(), any(), any())
+                HermesWsClient.request(any(), any(), any())
             } answers {
-                // track method via the captured value isn't possible here; re-stub below
-                reqCount++
-                val id = "req-id-$reqCount"
-                arg<((String) -> Unit)?>(2)?.invoke(id)
-                id
-            }
-            // Narrow stub to record COMMAND_DISPATCH calls
-            val seen = mutableListOf<String>()
-            every {
-                HermesWsClient.send(WsMethods.COMMAND_DISPATCH, any(), any())
-            } answers {
-                seen.add("dispatch")
-                reqCount++
-                val id = "req-id-$reqCount"
-                arg<((String) -> Unit)?>(2)?.invoke(id)
-                id
+                val d = CompletableDeferred<Any?>()
+                d.completeExceptionally(
+                    // A real, actionable error (not the "not a command" 4018
+                    // that triggers the slash.exec fallback).
+                    HermesWsClient.HermesRpcException("session busy — /interrupt first"),
+                )
+                d
             }
 
-            vm.sendMessage("/stop")
-            advanceUntilIdle()
-            vm.sendMessage("/new")
+            vm.sendMessage("/help")
             advanceUntilIdle()
 
-            // /stop -> Interrupt, /new -> NewSession: neither should RpcDispatch.
+            val last = vm.uiState.value.messages.lastOrNull()
+            assertEquals("⚠️ /help: session busy — /interrupt first", last?.content)
+        }
+
+    @Test
+    fun `registry-miss 4018 on command dispatch falls back to slash_exec and surfaces output`() =
+        runTest {
+            val (vm, sessionId) = createViewModelWithSession()
+
+            val methodSlot = slot<String>()
+            val paramsSlot = slot<Map<String, Any>>()
+            every {
+                HermesWsClient.request(capture(methodSlot), capture(paramsSlot), any())
+            } answers {
+                val m = methodSlot.captured
+                val d = CompletableDeferred<Any?>()
+                if (m == WsMethods.COMMAND_DISPATCH) {
+                    // Backend rejects /status with the registry-miss 4018 (issue #576).
+                    d.completeExceptionally(
+                        HermesWsClient.HermesRpcException(
+                            "not a quick/plugin/bundle/skill command: status",
+                        ),
+                    )
+                } else {
+                    // slash.exec runs the full COMMAND_REGISTRY and returns output.
+                    d.complete(mapOf("output" to "STATUS: gateway reachable"))
+                }
+                d
+            }
+
+            vm.sendMessage("/status")
+            advanceUntilIdle()
+
+            // The fallback must have hit slash.exec with the full command string.
+            // (methodSlot/paramsSlot hold the LAST call = slash.exec.)
+            assertEquals(WsMethods.SLASH_EXEC, methodSlot.captured)
+            val params = paramsSlot.captured
+            assertEquals("/status", params["command"])
+            assertEquals(sessionId, params["session_id"])
+
+            // And the slash.exec output must be surfaced to the user.
+            val last = vm.uiState.value.messages.lastOrNull()
+            assertEquals("STATUS: gateway reachable", last?.content)
+        }
+
+    @Test
+    fun `blocklisted cli_only or TUI-only command is rejected with friendly message and no RPC`() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+
+            var rpcCalls = 0
+            every {
+                HermesWsClient.request(any(), any(), any())
+            } answers {
+                rpcCalls++
+                CompletableDeferred<Any?>(Unit)
+            }
+
+            // /redraw is TUI-only (issue #574) — hidden from suggestions but a
+            // user can still type it. It must be blocked before any RPC fires.
+            vm.sendMessage("/redraw")
+            advanceUntilIdle()
+
+            val last = vm.uiState.value.messages.lastOrNull()
             assertTrue(
-                "client-handled commands must not be forwarded to the backend",
-                seen.isEmpty(),
+                "expected a 'not supported on mobile' message, got: ${last?.content}",
+                last?.content?.contains("not supported on mobile") == true,
             )
+            assertEquals("no RPC should fire for a blocklisted command", 0, rpcCalls)
+        }
+
+    @Test
+    fun `slash_exec double-fault surfaces the secondary error`() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+
+            every {
+                HermesWsClient.request(any(), any(), any())
+            } answers {
+                val m = arg<String>(0)
+                val d = CompletableDeferred<Any?>()
+                if (m == WsMethods.COMMAND_DISPATCH) {
+                    // Registry miss -> triggers the slash.exec fallback.
+                    d.completeExceptionally(
+                        HermesWsClient.HermesRpcException(
+                            "not a quick/plugin/bundle/skill command: status",
+                        ),
+                    )
+                } else {
+                    // slash.exec ALSO fails (e.g. worker can't start).
+                    d.completeExceptionally(
+                        HermesWsClient.HermesRpcException("slash worker start failed: boom"),
+                    )
+                }
+                d
+            }
+
+            vm.sendMessage("/status")
+            advanceUntilIdle()
+
+            // Both RPCs fail -> the secondary slash.exec error must surface.
+            val last = vm.uiState.value.messages.lastOrNull()
+            assertEquals("⚠️ /status: slash worker start failed: boom", last?.content)
+        }
+
+    @Test
+    fun `slash_exec blank output appends no assistant message`() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+
+            every {
+                HermesWsClient.request(any(), any(), any())
+            } answers {
+                val m = arg<String>(0)
+                val d = CompletableDeferred<Any?>()
+                if (m == WsMethods.COMMAND_DISPATCH) {
+                    d.completeExceptionally(
+                        HermesWsClient.HermesRpcException(
+                            "not a quick/plugin/bundle/skill command: status",
+                        ),
+                    )
+                } else {
+                    // slash.exec succeeded but returned no/empty output.
+                    d.complete(mapOf("output" to ""))
+                }
+                d
+            }
+
+            val before = vm.uiState.value.messages.size
+            vm.sendMessage("/status")
+            advanceUntilIdle()
+
+            // The user's "/status" message is added, but blank slash.exec output
+            // must NOT append an assistant bubble — so the last message is still
+            // the user's own command, and only one message was added.
+            assertEquals(before + 1, vm.uiState.value.messages.size)
+            assertEquals("/status", vm.uiState.value.messages.lastOrNull()?.content)
         }
 }
