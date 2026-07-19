@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.ui.analytics
 
+import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,8 +61,9 @@ private val DAY_OPTIONS = listOf(7, 30, 90)
 fun AnalyticsScreen(
     modifier: Modifier = Modifier,
     onOpenDrawer: (() -> Unit)? = null,
-    viewModel: AnalyticsViewModel = viewModel { AnalyticsViewModel() },
 ) {
+    val application = LocalContext.current.applicationContext as Application
+    val viewModel: AnalyticsViewModel = viewModel { AnalyticsViewModel(application) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
@@ -75,18 +78,18 @@ fun AnalyticsScreen(
         modifier = modifier,
     ) {
         when {
-            state.isLoading && state.usage == null -> {
+            state.isLoading && state.usage == null && state.models == null -> {
                 SkeletonListState()
             }
 
-            state.errorMessage != null && state.usage == null -> {
+            state.errorMessage != null && state.usage == null && state.models == null -> {
                 ErrorState(
                     message = state.errorMessage ?: stringResource(R.string.error_unknown),
                     onRetry = { viewModel.load() },
                 )
             }
 
-            state.usage == null -> {
+            state.usage == null && state.models == null -> {
                 EmptyState(
                     title = stringResource(R.string.analytics_empty_title),
                     subtitle = stringResource(R.string.analytics_empty_desc),
@@ -111,7 +114,7 @@ private fun AnalyticsContent(
     state: AnalyticsUiState,
     onDaysSelected: (Int) -> Unit,
 ) {
-    val usage = state.usage ?: return
+    val usage = state.usage
     val models = state.models
 
     var selectedSectionTab by remember { mutableStateOf(0) }
@@ -128,11 +131,36 @@ private fun AnalyticsContent(
             )
         }
 
-        item { TotalsCard(usage.totals) }
-
-        if (usage.daily.isNotEmpty()) {
-            item { SectionTitle(stringResource(R.string.analytics_daily_cost)) }
-            item { DailyCostChart(entries = usage.daily) }
+        // TotalsCard + daily chart come from the slow /usage call. While it
+        // loads (usageLoading) show a slim placeholder instead of blanking the
+        // whole tab — the fast /models half already rendered above.
+        if (usage != null) {
+            item { TotalsCard(usage.totals) }
+            if (usage.daily.isNotEmpty()) {
+                item { SectionTitle(stringResource(R.string.analytics_daily_cost)) }
+                item { DailyCostChart(entries = usage.daily) }
+            }
+        } else if (state.usageLoading) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(140.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.analytics_loading_usage),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
 
         item {
@@ -181,8 +209,13 @@ private fun AnalyticsContent(
                 itemsIndexed(models.models, key = { index, it -> "model_${it.model}_$index" }) { _, model ->
                     ModelRow(model = model)
                 }
-            } else if (usage.by_model.isNotEmpty()) {
-                itemsIndexed(usage.by_model, key = { index, it -> "usage_${it.model}_$index" }) { _, entry ->
+            } else if ((usage?.by_model ?: emptyList()).isNotEmpty()) {
+                itemsIndexed(usage?.by_model ?: emptyList(), key = {
+                        index,
+                        it,
+                    ->
+                    "usage_${it.model}_$index"
+                }) { _, entry ->
                     ModelEntryRow(entry = entry)
                 }
             } else {
@@ -198,8 +231,13 @@ private fun AnalyticsContent(
         }
 
         if (selectedSectionTab == 1) {
-            if (usage.skills.top_skills.isNotEmpty()) {
-                itemsIndexed(usage.skills.top_skills, key = { index, it -> "skill_${it.skill}_$index" }) { _, skill ->
+            if ((usage?.skills?.top_skills ?: emptyList()).isNotEmpty()) {
+                itemsIndexed(usage?.skills?.top_skills ?: emptyList(), key = {
+                        index,
+                        it,
+                    ->
+                    "skill_${it.skill}_$index"
+                }) { _, skill ->
                     SkillRow(skill = skill)
                 }
             } else {
@@ -215,8 +253,8 @@ private fun AnalyticsContent(
         }
 
         if (selectedSectionTab == 2) {
-            if (usage.tools.isNotEmpty()) {
-                itemsIndexed(usage.tools, key = { index, it -> "tool_${it.tool}_$index" }) { _, tool ->
+            if ((usage?.tools ?: emptyList()).isNotEmpty()) {
+                itemsIndexed(usage?.tools ?: emptyList(), key = { index, it -> "tool_${it.tool}_$index" }) { _, tool ->
                     ToolRow(tool = tool)
                 }
             } else {
