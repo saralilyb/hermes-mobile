@@ -26,6 +26,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Set up JDK 21
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
@@ -84,6 +86,8 @@ jobs:
       release_tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Set up JDK 21
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
@@ -128,12 +132,14 @@ jobs:
             echo "Calculated Android version code is out of range" >&2
             exit 1
           fi
+          COMMIT=$(git rev-parse HEAD)
           {
             echo "tag=$TAG"
             echo "version=$VERSION"
             echo "code=$CODE"
+            echo "commit=$COMMIT"
           } >> "$GITHUB_OUTPUT"
-          echo "Release version=$VERSION code=$CODE"
+          echo "Release version=$VERSION code=$CODE commit=$COMMIT"
 
       - name: Decode release keystore
         env:
@@ -170,13 +176,51 @@ jobs:
           fi
           "$APKSIGNER" verify --verbose --print-certs "$OUT" |
             tee release/apksigner-verification.txt
-          sha256sum "$OUT" > "$OUT.sha256"
+
+          EXPECTED_CERT=$(
+            openssl x509 \
+              -in signing/hermes-mobile-release-certificate.pem \
+              -noout \
+              -fingerprint \
+              -sha256
+          )
+          EXPECTED_CERT=${EXPECTED_CERT#*=}
+          EXPECTED_CERT=$(
+            printf '%s' "$EXPECTED_CERT" |
+              tr -d ':' |
+              tr '[:upper:]' '[:lower:]'
+          )
+
+          ACTUAL_CERT=
+          SIGNER_COUNT=
+          while IFS= read -r line; do
+            case "$line" in
+              "Signer #1 certificate SHA-256 digest: "*)
+                ACTUAL_CERT=${line##*: }
+                ;;
+              "Number of signers: "*)
+                SIGNER_COUNT=${line##*: }
+                ;;
+            esac
+          done < release/apksigner-verification.txt
+
+          if [ "$SIGNER_COUNT" != 1 ] ||
+            [ "$ACTUAL_CERT" != "$EXPECTED_CERT" ]; then
+            echo "APK signing certificate does not match the pinned identity" >&2
+            exit 1
+          fi
+
+          (
+            cd release
+            sha256sum "hermes-mobile-$RELEASE_TAG.apk" \
+              > "hermes-mobile-$RELEASE_TAG.apk.sha256"
+          )
           cp LICENSE NOTICE SIGNING.md release/
           cp signing/hermes-mobile-release-certificate.pem release/
           {
             echo "versionName=${{ steps.version.outputs.version }}"
             echo "versionCode=${{ steps.version.outputs.code }}"
-            echo "commit=${{ github.sha }}"
+            echo "commit=${{ steps.version.outputs.commit }}"
           } > release/provenance.txt
 
       - name: Upload release artifacts

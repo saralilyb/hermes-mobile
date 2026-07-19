@@ -49,8 +49,9 @@ The release workflow reads these repository secrets:
 - `KEY_PASSWORD`
 
 Secrets must be populated without printing their values. The workflow builds
-the generic `hermesRelease` variant, verifies it with `apksigner`, and creates
-a draft GitHub release.
+the generic `hermesRelease` variant, verifies it with `apksigner`, requires one
+signer matching the pinned public certificate, and creates a draft GitHub
+release.
 
 ## Release verification
 
