@@ -87,6 +87,14 @@ private val settingsDestinations: Set<NavKey> =
 internal fun selectedBottomNavDestination(currentScreen: NavKey): NavKey =
     if (currentScreen in settingsDestinations) SettingsScreen else currentScreen
 
+/** Preserve compact display modes while allowing the standard bar to grow. */
+internal fun Modifier.bottomNavigationHeight(displayMode: BottomNavDisplayMode): Modifier =
+    when (displayMode) {
+        BottomNavDisplayMode.ICON_ONLY -> height(56.dp)
+        BottomNavDisplayMode.TEXT_ONLY -> height(44.dp)
+        BottomNavDisplayMode.ICON_AND_TEXT -> heightIn(min = 80.dp)
+    }
+
 private fun appEntryProvider(
     sessionId: String?,
     openDrawer: () -> Unit,
@@ -315,18 +323,13 @@ fun MainNavigation(sessionId: String? = null) {
                 contentWindowInsets = WindowInsets.navigationBars,
                 bottomBar = {
                     if (showBottomBar) {
-                        val barHeight =
-                            when (bottomNavDisplayMode) {
-                                BottomNavDisplayMode.ICON_ONLY -> 56.dp
-                                BottomNavDisplayMode.TEXT_ONLY -> 44.dp
-                                BottomNavDisplayMode.ICON_AND_TEXT -> 80.dp
-                            }
                         val selectedDestination =
                             selectedBottomNavDestination(currentScreen)
                         NavigationBar(
-                            // A minimum preserves display-mode density while
-                            // allowing system insets and large text to grow.
-                            modifier = Modifier.heightIn(min = barHeight),
+                            modifier =
+                                Modifier.bottomNavigationHeight(
+                                    bottomNavDisplayMode,
+                                ),
                         ) {
                             bottomNavItems.forEach { item ->
                                 val showIcon =
