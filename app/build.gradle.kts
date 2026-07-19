@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 import org.gradle.api.tasks.testing.Test
 
 plugins {
@@ -16,15 +18,17 @@ android {
     }
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.m57.hermescontrol"
+        applicationId = "sh.slb.hermesmobile"
         minSdk = 26
         targetSdk = 36
-        // Version overrides passed from CI via -PversionName / -PversionCode
-        // Falls back to defaults for local development.
-        versionCode = (project.findProperty("versionCode") as? String)?.toIntOrNull() ?: 1
-        versionName = (project.findProperty("versionName") as? String) ?: "1.0-dev"
+        // Version overrides passed from CI via -PversionName / -PversionCode.
+        versionCode =
+            (project.findProperty("versionCode") as? String)?.toIntOrNull()
+                ?: 1
+        versionName =
+            (project.findProperty("versionName") as? String) ?: "1.0-dev"
+        manifestPlaceholders["usesCleartextTraffic"] = "false"
 
-        // Embed git commit SHA for the About card in Settings
         val gitSha =
             providers.exec {
                 commandLine("git", "rev-parse", "--short", "HEAD")
@@ -32,50 +36,57 @@ android {
         buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("hermes") {
+            dimension = "distribution"
+        }
+        create("iris") {
+            dimension = "distribution"
+            applicationId = "sh.slb.irismobile"
+        }
+    }
+
+    val releaseStorePath = System.getenv("KEYSTORE_PATH")
+    val releaseStorePassword = System.getenv("KEYSTORE_PASSWORD")
+    val releaseKeyAlias = System.getenv("KEY_ALIAS")
+    val releaseKeyPassword = System.getenv("KEY_PASSWORD")
+    val releaseSigningReady =
+        listOf(
+            releaseStorePath,
+            releaseStorePassword,
+            releaseKeyAlias,
+            releaseKeyPassword,
+        ).all { !it.isNullOrBlank() }
+
     signingConfigs {
-        create("release") {
-            val isReleaseBuild =
-                gradle.startParameter.taskNames.any { name ->
-                    name.contains("Release", ignoreCase = true) || name == "build"
-                }
-
-            if (isReleaseBuild) {
-                val storePath = System.getenv("KEYSTORE_PATH")
-                val storePass = System.getenv("KEYSTORE_PASSWORD")
-                val alias = System.getenv("KEY_ALIAS")
-                val keyPass = System.getenv("KEY_PASSWORD")
-
-                if (storePath != null && storePass != null && alias != null && keyPass != null) {
-                    storeFile = file(storePath)
-                    storePassword = storePass
-                    keyAlias = alias
-                    keyPassword = keyPass
-                } else {
-                    // Env vars missing — signing deferred to release workflow.
-                    // Don't hard-require(): that would break compileReleaseKotlin
-                    // in CI where keystore secrets aren't set.
-                    logger.warn("Release signing config missing env vars — signing deferred to release workflow")
-                    storeFile = file("dummy.keystore")
-                    storePassword = "dummy"
-                    keyAlias = "dummy"
-                    keyPassword = "dummy"
-                }
-            } else {
-                // Dummy values for evaluation configuration during non-release builds
-                storeFile = file("dummy.keystore")
-                storePassword = "dummy"
-                keyAlias = "dummy"
-                keyPassword = "dummy"
+        if (releaseSigningReady) {
+            create("release") {
+                storeFile = file(requireNotNull(releaseStorePath))
+                storePassword = requireNotNull(releaseStorePassword)
+                keyAlias = requireNotNull(releaseKeyAlias)
+                keyPassword = requireNotNull(releaseKeyPassword)
             }
         }
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "ALLOW_CLEARTEXT", "true")
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs["release"]
+            buildConfigField("boolean", "ALLOW_CLEARTEXT", "false")
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs["release"]
+            }
         }
     }
     compileOptions {

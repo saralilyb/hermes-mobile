@@ -1,3 +1,5 @@
+# Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 name: Android CI/CD
 
 env:
@@ -17,6 +19,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   # ─────────────────────────────────────────────────────────────────────
   # Job 1: ktlint (code style) — fastest feedback, runs in parallel.
@@ -27,16 +32,16 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
         with:
           validate-wrappers: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTED_KEY }}
@@ -46,7 +51,7 @@ jobs:
 
       - name: Cache ktlint
         id: cache-ktlint
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.local/bin/ktlint
           key: ktlint-1.2.1
@@ -55,12 +60,18 @@ jobs:
         if: steps.cache-ktlint.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.local/bin
-          curl -sSLO https://github.com/pinterest/ktlint/releases/download/1.2.1/ktlint
-          chmod +x ktlint
-          mv ktlint ~/.local/bin/
+          curl -fsSL \
+            https://github.com/pinterest/ktlint/releases/download/1.2.1/ktlint \
+            -o ~/.local/bin/ktlint
+          chmod 0755 ~/.local/bin/ktlint
+
+      - name: Verify ktlint checksum
+        run: |
+          echo "2e28cf46c27d38076bf63beeba0bdef6a845688d6c5dccd26505ce876094eb92  $HOME/.local/bin/ktlint" |
+            sha256sum -c -
 
       - name: Add local bin to PATH
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run ktlintCheck
         run: ./gradlew ktlintCheck
@@ -70,7 +81,7 @@ jobs:
 
       - name: Upload ktlint reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ktlint-reports
           path: |
@@ -89,16 +100,16 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
         with:
           validate-wrappers: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTED_KEY }}
@@ -106,12 +117,12 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
-      - name: Run lintDebug
-        run: ./gradlew lintDebug
+      - name: Run debug lint
+        run: ./gradlew lintHermesDebug lintIrisDebug
 
       - name: Upload lint reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: lint-reports
           path: app/build/reports/lint-results-debug.*
@@ -126,16 +137,16 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
         with:
           validate-wrappers: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTED_KEY }}
@@ -148,7 +159,7 @@ jobs:
 
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: test-reports
           path: app/build/reports/tests/
@@ -164,16 +175,16 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
         with:
           validate-wrappers: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTED_KEY }}
@@ -181,15 +192,15 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
-      - name: Build assembleDebug
-        run: ./gradlew assembleDebug
+      - name: Build debug APKs
+        run: ./gradlew assembleHermesDebug assembleIrisDebug
 
       - name: Upload Debug APK Artifact
         if: success()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: hermescontrol-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/*/debug/*.apk
           if-no-files-found: error
           retention-days: 7
 
@@ -206,16 +217,16 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
         with:
           validate-wrappers: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTED_KEY }}
@@ -224,7 +235,8 @@ jobs:
         run: chmod +x gradlew
 
       - name: Compile release Kotlin
-        run: ./gradlew compileReleaseKotlin
+        run: |
+          ./gradlew compileHermesReleaseKotlin compileIrisReleaseKotlin
 
   # ─────────────────────────────────────────────────────────────────────
   # Job 6: Instrumented tests — runs on Android emulator.
@@ -237,16 +249,16 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
         with:
           validate-wrappers: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTED_KEY }}
@@ -264,7 +276,7 @@ jobs:
       # Cache the AVD to avoid downloading/recreating it from scratch every time
       - name: AVD Cache
         id: avd-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.android/avd/*
@@ -272,7 +284,7 @@ jobs:
           key: avd-api34-atd-x86_64
 
       - name: Run connectedDebugAndroidTest
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
           api-level: 34
           target: aosp_atd
@@ -280,11 +292,13 @@ jobs:
           disable-animations: true
           force-avd-creation: false
           emulator-options: -no-window -no-audio -no-boot-anim -camera-back none -memory 2048
-          script: ./gradlew connectedDebugAndroidTest --no-daemon
+          script: |
+            ./gradlew connectedHermesDebugAndroidTest
+            ./gradlew connectedIrisDebugAndroidTest
 
       - name: Upload instrumented test reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: androidTest-reports
           path: app/build/reports/androidTests/
@@ -296,7 +310,13 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   ci-summary:
     name: CI Summary
-    needs: [ktlint, android-lint, unit-tests, build, release-compile]
+    needs:
+      - ktlint
+      - android-lint
+      - unit-tests
+      - build
+      - release-compile
+      - instrumented-tests
     runs-on: ubuntu-latest
     timeout-minutes: 2
     if: always()
@@ -308,9 +328,16 @@ jobs:
           TEST_RESULT: ${{ needs.unit-tests.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           RELEASE_COMPILE_RESULT: ${{ needs.release-compile.result }}
+          INSTRUMENTED_RESULT: ${{ needs.instrumented-tests.result }}
         run: |
           FAILED=0
-          for entry in "ktlint:$KTLINT_RESULT" "android-lint:$LINT_RESULT" "unit-tests:$TEST_RESULT" "build:$BUILD_RESULT" "release-compile:$RELEASE_COMPILE_RESULT"; do
+          for entry in \
+            "ktlint:$KTLINT_RESULT" \
+            "android-lint:$LINT_RESULT" \
+            "unit-tests:$TEST_RESULT" \
+            "build:$BUILD_RESULT" \
+            "release-compile:$RELEASE_COMPILE_RESULT" \
+            "instrumented-tests:$INSTRUMENTED_RESULT"; do
             name="${entry%%:*}"
             result="${entry#*:}"
             echo "::notice::$name = $result"

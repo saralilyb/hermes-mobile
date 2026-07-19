@@ -1,0 +1,12 @@
+Hermes Mobile
+Copyright 2026 M57 (Hy4ri)
+
+This distribution is based on Hy4ri/hermes-mobile:
+https://github.com/Hy4ri/hermes-mobile
+
+Security, transport, persistence, application identity, build, and release
+modifications Copyright 2026 Sara Burke.
+
+Hermes Mobile is an unofficial client for Hermes Agent. The Apache License 2.0
+does not grant rights to third-party trademarks or imply endorsement by the
+upstream authors or Nous Research.

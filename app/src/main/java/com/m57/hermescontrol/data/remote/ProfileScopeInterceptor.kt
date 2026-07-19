@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.data.remote
 
 import com.m57.hermescontrol.data.local.AuthManager
@@ -62,7 +64,11 @@ object ProfileScopeInterceptor : Interceptor {
             return chain.proceed(request) // explicit param wins
         }
 
-        if (!isProfileScopedPath(url.encodedPath)) {
+        val relativePath =
+            runCatching {
+                AuthManager.endpoint().relativeRequestPath(url)
+            }.getOrDefault(url.encodedPath)
+        if (!isProfileScopedPath(relativePath)) {
             return chain.proceed(request)
         }
 

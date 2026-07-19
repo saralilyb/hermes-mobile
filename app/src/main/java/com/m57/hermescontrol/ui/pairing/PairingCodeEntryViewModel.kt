@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.pairing
 
 import android.app.Application
@@ -12,6 +14,7 @@ import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.NetworkError
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.OkHttpProvider
+import com.m57.hermescontrol.data.remote.ServerEndpoint
 import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,7 +70,7 @@ class PairingCodeEntryViewModel(
         val trimmed = code.trim()
 
         _uiState.update { it.copy(isConnecting = true, errorMessage = null) }
-        Log.d(TAG, "Processing pairing code (${trimmed.take(64)}…)")
+        Log.d(TAG, "Processing pairing code")
 
         try {
             // ── Format 1: hermes://connect URI ──────────────────────────
@@ -115,7 +118,7 @@ class PairingCodeEntryViewModel(
                 setError(app.getString(R.string.connect_error_malformed))
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Unexpected parse error", e)
+            Log.e(TAG, "Unexpected pairing parse error (${e.javaClass.simpleName})")
             setError(e.message ?: app.getString(R.string.connect_error_malformed))
         }
     }
@@ -125,18 +128,23 @@ class PairingCodeEntryViewModel(
         port: Int,
         token: String,
     ) {
+        val endpoint = ServerEndpoint.fromLegacy(host, port)
+
         viewModelScope.launch {
             val result =
                 withContext(Dispatchers.IO) {
-                    val tempApi = ApiClient.createTempService(host, port, token)
+                    val tempApi =
+                        ApiClient.createTempService(
+                            endpoint.baseUrl.toString(),
+                            token,
+                        )
                     safeApiCall { tempApi.getStatus() }
                 }
 
             when (result) {
                 is NetworkResult.Success -> {
                     AuthManager.setToken(token)
-                    AuthManager.setHost(host)
-                    AuthManager.setPort(port)
+                    AuthManager.setBaseUrl(endpoint.baseUrl.toString())
                     ApiClient.rebuild()
                     _uiState.update { it.copy(isConnecting = false, connectionSuccess = true) }
                 }

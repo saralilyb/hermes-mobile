@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol
 
 import android.app.Application
@@ -89,14 +91,16 @@ class E2eIntegrationTest {
 
         mockApiService = mockk()
         every { ApiClient.hermesApi } returns mockApiService
-        every { ApiClient.createTempService(any(), any(), any()) } returns mockApiService
+        every { ApiClient.createTempService(any(), any()) } returns mockApiService
         every { ApiClient.rebuild() } returns Unit
 
         // Default AuthManager stubs
         every { AuthManager.getToken() } returns "mock-token"
+        every { AuthManager.getBaseUrl() } returns "https://127.0.0.1:9119/"
         every { AuthManager.getHost() } returns "127.0.0.1"
         every { AuthManager.getPort() } returns 9119
         every { AuthManager.setToken(any()) } returns Unit
+        every { AuthManager.setBaseUrl(any()) } returns Unit
         every { AuthManager.setHost(any()) } returns Unit
         every { AuthManager.setPort(any()) } returns Unit
         every { AuthManager.getConnectionProfiles() } returns emptyList()
@@ -1391,6 +1395,8 @@ class E2eIntegrationTest {
             every { mockUri.getQueryParameter("host") } returns "192.168.1.5"
             every { mockUri.getQueryParameter("port") } returns "9119"
             every { mockUri.getQueryParameter("token") } returns "TEST_TOKEN"
+            every { mockUri.getQueryParameter("base_url") } returns null
+            every { mockUri.getQueryParameter("baseUrl") } returns null
 
             val statusResponse = mockk<StatusResponse>()
             coEvery { mockApiService.getStatus() } returns Response.success(statusResponse)

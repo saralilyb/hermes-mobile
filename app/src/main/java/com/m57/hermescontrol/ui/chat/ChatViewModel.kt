@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.chat
 
 import android.app.Application
@@ -14,6 +16,7 @@ import com.m57.hermescontrol.data.model.ModelProvider
 import com.m57.hermescontrol.data.model.PinnedModel
 import com.m57.hermescontrol.data.model.SessionMessage
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.AuthPayloads
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.OkHttpProvider
 import com.m57.hermescontrol.data.remote.safeApiCall
@@ -42,7 +45,6 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ConcurrentHashMap
 
@@ -716,7 +718,7 @@ class ChatViewModel(
             for (attachment in attachments) {
                 val b64 = readContentUriBase64(attachment.uri)
                 if (b64 == null) {
-                    Log.w(TAG, "Skipping unreadable attachment: ${attachment.name}")
+                    Log.w(TAG, "Skipping unreadable attachment")
                     continue
                 }
 
@@ -742,7 +744,7 @@ class ChatViewModel(
                             @Suppress("UNCHECKED_CAST")
                             val ok = (result as? Map<String, Any?>)?.get("attached") as? Boolean
                             if (ok != true) {
-                                Log.w(TAG, "Image attach for ${attachment.name} returned non-ok: $result")
+                                Log.w(TAG, "Image attachment request failed")
                             }
                         }
                     } else {
@@ -765,7 +767,7 @@ class ChatViewModel(
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to upload attachment ${attachment.name}", e)
+                    Log.e(TAG, "Failed to upload attachment (${e.javaClass.simpleName})")
                     _uiState.update {
                         it.copy(errorMessage = "⚠️ Upload failed: ${attachment.name}")
                     }
@@ -809,7 +811,7 @@ class ChatViewModel(
             }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Log.e(TAG, "Failed to read and encode attachment: ${e.message}", e)
+            Log.e(TAG, "Failed to read and encode attachment (${e.javaClass.simpleName})")
             null
         }
 
@@ -1114,7 +1116,7 @@ class ChatViewModel(
             val jsonElement = map.toJsonElement()
             OkHttpProvider.json.decodeFromJsonElement<CommandCatalog>(jsonElement)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse command catalog", e)
+            Log.e(TAG, "Failed to parse command catalog (${e.javaClass.simpleName})")
             null
         }
 
@@ -1752,17 +1754,17 @@ class ChatViewModel(
         onResult: (Boolean, String?) -> Unit,
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            val host = AuthManager.getHost()
-            val port = AuthManager.getPort()
-            val baseUrl = "http://$host:$port"
+            val endpoint =
+                try {
+                    AuthManager.endpointForBuild()
+                } catch (e: IllegalArgumentException) {
+                    withContext(Dispatchers.Main) {
+                        onResult(false, e.message)
+                    }
+                    return@launch
+                }
             val jsonMediaType = "application/json; charset=utf-8".toMediaType()
-            val jsonBody =
-                JSONObject()
-                    .put("provider", "basic")
-                    .put("username", username)
-                    .put("password", password)
-                    .put("next", "")
-                    .toString()
+            val jsonBody = AuthPayloads.passwordLogin(username, password)
 
             try {
                 val loginClient =
@@ -1775,7 +1777,7 @@ class ChatViewModel(
                 val loginReq =
                     Request
                         .Builder()
-                        .url("$baseUrl/auth/password-login")
+                        .url(endpoint.resolve("auth/password-login"))
                         .header("Content-Type", "application/json")
                         .post(jsonBody.toRequestBody(jsonMediaType))
                         .build()
@@ -1804,7 +1806,7 @@ class ChatViewModel(
                 val ticketReq =
                     Request
                         .Builder()
-                        .url("$baseUrl/api/auth/ws-ticket")
+                        .url(endpoint.resolve("api/auth/ws-ticket"))
                         .post("{}".toRequestBody(jsonMediaType))
                         .build()
                 ticketClient.newCall(ticketReq).execute().use { ticketResp ->
@@ -1815,8 +1817,8 @@ class ChatViewModel(
                         return@launch
                     }
 
-                    val body = ticketResp.body.string()
-                    val ticket = JSONObject(body).optString("ticket").takeIf { it.isNotBlank() }
+                    val ticket =
+                        AuthPayloads.webSocketTicket(ticketResp.body.string())
 
                     if (ticket.isNullOrBlank()) {
                         withContext(Dispatchers.Main) {
@@ -1834,10 +1836,6 @@ class ChatViewModel(
                     }
                 }
             } catch (e: java.io.IOException) {
-                withContext(Dispatchers.Main) {
-                    onResult(false, "Connection failed: ${e.message}")
-                }
-            } catch (e: org.json.JSONException) {
                 withContext(Dispatchers.Main) {
                     onResult(false, "Connection failed: ${e.message}")
                 }

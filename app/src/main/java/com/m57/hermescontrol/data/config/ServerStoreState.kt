@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.data.config
 
 import com.m57.hermescontrol.data.model.PinnedModel
@@ -8,8 +10,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class ServerStoreState(
+    /** Legacy host and port retained for one-time migration. */
     val host: String = "127.0.0.1",
     val port: Int = 9119,
+    val baseUrl: String? = null,
     val autoReconnect: Boolean = true,
     val themePreference: ThemePreference = ThemePreference.SYSTEM,
     val useDynamicColors: Boolean = true,

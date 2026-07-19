@@ -1,3 +1,5 @@
+<!-- Modified from Hy4ri/hermes-mobile for this fork; see NOTICE. -->
+
 <div align="center">
   <br>
   <img src="https://img.shields.io/badge/Android-34DDDD?style=for-the-badge&logo=android&logoColor=black" alt="Android"/>
@@ -11,8 +13,8 @@
 <p align="center"><strong>Native Android companion app for your Hermes AI agent.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/Hy4ri/hermes-mobile/releases/latest"><img src="https://img.shields.io/github/v/release/Hy4ri/hermes-mobile?color=6750A4&label=Latest%20Release&logo=github" alt="Latest Release"></a>
-  <img src="https://img.shields.io/github/actions/workflow/status/Hy4ri/hermes-mobile/android.yml?branch=main&label=CI&logo=githubactions" alt="CI">
+  <a href="https://github.com/saralilyb/hermes-mobile/releases/latest"><img src="https://img.shields.io/github/v/release/saralilyb/hermes-mobile?color=6750A4&label=Latest%20Release&logo=github" alt="Latest Release"></a>
+  <img src="https://img.shields.io/github/actions/workflow/status/saralilyb/hermes-mobile/android.yml?branch=main&label=CI&logo=githubactions" alt="CI">
   <img src="https://img.shields.io/badge/minSdk-26-brightgreen" alt="minSdk 26">
   <img src="https://img.shields.io/badge/targetSdk-36-brightgreen" alt="targetSdk 36">
 </p>
@@ -21,7 +23,11 @@
 
 ## Overview
 
-**Hermes Mobile** is the native Android client for [Hermes Agent](https://hermes-agent.nousresearch.com). It connects securely to your local Hermes gateway (REST API and WebSocket TUI Gateway) over LAN, giving you pocket control over your AI assistant.
+**Hermes Mobile** is an unofficial native Android client for
+[Hermes Agent](https://hermes-agent.nousresearch.com). This security-focused
+fork is based on [Hy4ri/hermes-mobile](https://github.com/Hy4ri/hermes-mobile)
+and uses generic Hermes branding for its public release. The optional `iris`
+flavor exists only to distinguish a side-by-side personal installation.
 
 ---
 
@@ -38,69 +44,69 @@
 
 ## Quick Start
 
-### Prerequisites
-- **JDK 21+** (required for Kotlin compilation and the Gradle toolchain)
-- **Android Studio** (Ladybug+) or a **Nix** development environment
+### Install with Obtainium
 
-### Build & Deploy
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/Hy4ri/hermes-mobile.git
-   cd hermes-mobile
-   ```
-2. **Build the debug APK:**
-   ```bash
-   ./gradlew assembleDebug
-   ```
-3. **Install on your emulator/device:**
-   ```bash
-   adb install app/build/outputs/apk/debug/app-debug.apk
-   ```
+Add this repository URL to
+[Obtainium](https://github.com/ImranR98/Obtainium):
 
-*Note: For release builds, ensure keystore environment variables (`KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`) are configured, or let the GitHub Actions release workflow handle it on tag push (`v*`).*
+```text
+https://github.com/saralilyb/hermes-mobile
+```
+
+Obtainium installs the signed generic `Hermes Mobile` APK published with each
+GitHub Release. The `Iris Mobile` flavor is a separate personal build, not the
+public update channel.
+
+### Build from source
+
+Prerequisites:
+
+- **JDK 21+**
+- **Android Studio** or an Android SDK with platform 36
+
+```sh
+git clone https://github.com/saralilyb/hermes-mobile.git
+cd hermes-mobile
+./gradlew assembleHermesDebug
+adb install app/build/outputs/apk/hermes/debug/app-hermes-debug.apk
+```
+
+Release builds require `KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, and
+`KEY_PASSWORD`. The tag-triggered workflow creates a draft release only after
+the signed APK passes `apksigner` verification. Verify published artifacts
+against the certificate fingerprint in [SIGNING.md](SIGNING.md).
 
 ---
 
 ## Authentication
 
-Once the app is installed, you need to point it at your Hermes gateway. The app auto-detects which auth mode the dashboard is using — just fill in the fields it shows.
+Enter the complete Hermes dashboard base URL, including `https://`, any
+explicit port, and any reverse-proxy path prefix. For example:
 
-### 1. Start the dashboard
-
-On your host machine, start the dashboard:
-
-```bash
-hermes dashboard                          # loopback (127.0.0.1:9119) — no auth needed
-hermes dashboard --host 0.0.0.0           # LAN — requires auth
+```text
+https://hermes.example.com/
+https://hermes.example.com:9119/dashboard/
 ```
 
-For LAN access, configure credentials in `~/.hermes/config.yaml`:
+The app probes `/api/status`, discovers the configured authentication mode, and
+shows only the required fields. Basic authentication uses the username and
+password configured on the dashboard; the app exchanges them for a session
+cookie and a short-lived WebSocket ticket. Do not use example or default
+passwords.
 
-```yaml
-dashboard:
-  basic_auth:
-    username: admin       # pick your own
-    password: hermes      # pick your own
-```
-
-### 2. Connect the app
-
-Tap **Sign in** on the landing screen and enter the dashboard host and port. The app probes the dashboard and reveals the fields you need:
-
-| Auth mode | When | What you fill |
-|-----------|------|---------------|
-| **Token only** | Dashboard on same machine (loopback) | **Token** — grab from `~/.hermes/dashboard-token.txt` or `~/.hermes/.env` (`HERMES_DASHBOARD_SESSION_TOKEN`). The app can also auto-extract it from the dashboard page |
-| **Basic auth** | Dashboard on LAN with password gate | **Username** + **Password** (default `admin` / `hermes`). The app logs in, gets a session cookie, and mints a WebSocket ticket automatically |
-
-> The app communicates over plain HTTP — it's designed for **trusted local networks only**. Do not expose your Hermes gateway to untrusted networks.
+Release builds require HTTPS and derive `wss://` WebSocket URLs from the same
+base URL. Debug builds can use explicit HTTP URLs for local development and
+show a cleartext warning.
 
 ### Connection profiles
 
-Have multiple gateways? Switch between them in **Settings → Connection profiles**. Each profile stores its own host, port, and token — just tap to swap.
+Use **Settings → Connection profiles** to switch among complete server URLs.
+Credentials and session state remain scoped to their profile.
 
 ### Pairing (admin)
 
-The **Pairing** screen lets you approve or revoke agents and services that are trying to connect to your gateway, such as Telegram or Discord sessions.
+The **Pairing** screen lets you approve or revoke agents and services that are
+trying to connect to your gateway, such as Telegram or Discord sessions.
 
 ---
 
@@ -138,6 +144,8 @@ For developer-specific details, code conventions, and project architecture notes
 
 ## License
 
-Copyright © 2026 M57 (Hy4ri).
+Copyright © 2026 M57 (Hy4ri). Security, transport, packaging, and distribution
+modifications Copyright © 2026 Sara Burke.
 
-This project is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
+This fork remains licensed under the Apache License, Version 2.0. See
+[LICENSE](LICENSE) and [NOTICE](NOTICE).

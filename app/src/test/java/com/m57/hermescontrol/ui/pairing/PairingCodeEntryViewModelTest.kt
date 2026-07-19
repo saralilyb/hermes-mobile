@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.pairing
 
 import android.app.Application
@@ -19,7 +21,7 @@ class PairingCodeEntryViewModelTest {
     fun setup() {
         mockkStatic(Log::class)
         every { Log.d(any(), any()) } returns 0
-        every { Log.e(any(), any(), any()) } returns 0
+        every { Log.e(any(), any()) } returns 0
     }
 
     @After

@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.notification
 
 import android.app.Notification
@@ -64,7 +66,7 @@ class NotificationReplyReceiverTest {
         mockkStatic(android.util.Log::class)
         every { android.util.Log.d(any<String>(), any<String>()) } returns 0
         every { android.util.Log.i(any<String>(), any<String>()) } returns 0
-        every { android.util.Log.e(any<String>(), any<String>(), any()) } returns 0
+        every { android.util.Log.e(any<String>(), any<String>()) } returns 0
         every { android.util.Log.w(any<String>(), any<String>()) } returns 0
 
         // Mock RemoteInput static method
@@ -268,8 +270,13 @@ class NotificationReplyReceiverTest {
         receiver.onReceive(mockContext, mockIntent)
         Thread.sleep(500)
 
-        // Error should be logged
-        verify { android.util.Log.e("NotificationReply", any<String>(), any()) }
+        // Error should be logged without exception details.
+        verify {
+            android.util.Log.e(
+                "NotificationReply",
+                match { it.contains("RuntimeException") },
+            )
+        }
 
         // Pending result must still finish even on Room failure
         verify { mockPendingResult.finish() }
@@ -289,8 +296,13 @@ class NotificationReplyReceiverTest {
         // Wait longer than the 5-second timeout, but less than the 10-second delay
         Thread.sleep(6000)
 
-        // Timeout should be caught in catch block and logged
-        verify { android.util.Log.e("NotificationReply", any<String>(), any()) }
+        // Timeout should be caught and logged without exception details.
+        verify {
+            android.util.Log.e(
+                "NotificationReply",
+                match { it.contains("TimeoutCancellationException") },
+            )
+        }
 
         // Pending result must still finish after timeout
         verify { mockPendingResult.finish() }

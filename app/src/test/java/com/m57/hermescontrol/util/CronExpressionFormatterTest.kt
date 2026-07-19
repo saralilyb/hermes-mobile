@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.util
 
 import android.util.Log
@@ -13,7 +15,7 @@ class CronExpressionFormatterTest {
     @Before
     fun setup() {
         mockkStatic(Log::class)
-        every { Log.w(any(), any<String>(), any()) } returns 0
+        every { Log.w(any(), any<String>()) } returns 0
     }
 
     @After

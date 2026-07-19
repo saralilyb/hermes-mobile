@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.data.local
 
 import android.content.Context
@@ -151,7 +153,7 @@ class AuthManagerTest {
     fun testBaseUrl() {
         AuthManager.setHost("hermes.local")
         AuthManager.setPort(1234)
-        assertEquals("http://hermes.local:1234/", AuthManager.baseUrl())
+        assertEquals("https://hermes.local:1234/", AuthManager.baseUrl())
     }
 
     @Test
@@ -179,9 +181,8 @@ class AuthManagerTest {
         AuthManager.ensureDefaultProfile()
         every { mockPrefs.getString("token_${AuthManager.DEFAULT_PROFILE_ID}", null) } returns "token123"
         AuthManager.setSelectedProfileId(AuthManager.DEFAULT_PROFILE_ID)
-        AuthManager.setHost("hermes.local")
-        AuthManager.setPort(1234)
-        assertEquals("ws://hermes.local:1234/api/ws?token=token123", AuthManager.wsUrl())
+        AuthManager.setBaseUrl("https://hermes.local:1234/")
+        assertEquals("wss://hermes.local:1234/api/ws?token=token123", AuthManager.wsUrl())
     }
 
     @Test
@@ -189,9 +190,8 @@ class AuthManagerTest {
         AuthManager.ensureDefaultProfile()
         every { mockPrefs.getString("token_${AuthManager.DEFAULT_PROFILE_ID}", null) } returns null
         AuthManager.setSelectedProfileId(AuthManager.DEFAULT_PROFILE_ID)
-        AuthManager.setHost("hermes.local")
-        AuthManager.setPort(1234)
-        assertEquals("ws://hermes.local:1234/api/ws?token=", AuthManager.wsUrl())
+        AuthManager.setBaseUrl("https://hermes.local:1234/")
+        assertEquals("wss://hermes.local:1234/api/ws?token=", AuthManager.wsUrl())
     }
 
     // ── TEST-08: Token routing through selected profile ─────────────────
@@ -276,7 +276,7 @@ class AuthManagerTest {
         AuthManager.setHost("10.0.0.99")
 
         val updated = AuthManager.getConnectionProfiles().first()
-        assertEquals("10.0.0.99", updated.host)
+        assertEquals("http://10.0.0.99:9119/", updated.resolvedBaseUrl)
     }
 
     @Test
@@ -288,7 +288,7 @@ class AuthManagerTest {
         AuthManager.setPort(9999)
 
         val updated = AuthManager.getConnectionProfiles().first()
-        assertEquals(9999, updated.port)
+        assertEquals("http://10.0.0.1:9999/", updated.resolvedBaseUrl)
     }
 
     @Test

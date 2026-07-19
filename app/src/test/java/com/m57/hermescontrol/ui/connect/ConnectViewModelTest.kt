@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.connect
 
 import android.app.Application
@@ -49,14 +51,16 @@ class ConnectViewModelTest {
 
         mockApiService = mockk()
         every { ApiClient.hermesApi } returns mockApiService
-        every { ApiClient.createTempService(any(), any(), any()) } returns mockApiService
+        every { ApiClient.createTempService(any(), any()) } returns mockApiService
         every { ApiClient.rebuild() } returns Unit
 
         // Default AuthManager stubs
         every { AuthManager.getToken() } returns ""
+        every { AuthManager.getBaseUrl() } returns "https://127.0.0.1:9119/"
         every { AuthManager.getHost() } returns "127.0.0.1"
         every { AuthManager.getPort() } returns 9119
         every { AuthManager.setToken(any()) } returns Unit
+        every { AuthManager.setBaseUrl(any()) } returns Unit
         every { AuthManager.setHost(any()) } returns Unit
         every { AuthManager.setPort(any()) } returns Unit
         every { AuthManager.getConnectionProfiles() } returns emptyList()
@@ -94,8 +98,7 @@ class ConnectViewModelTest {
     @Test
     fun testInitialLoadingFromAuthManager() {
         every { AuthManager.getToken() } returns "saved-token"
-        every { AuthManager.getHost() } returns "hermes.local"
-        every { AuthManager.getPort() } returns 8888
+        every { AuthManager.getBaseUrl() } returns "https://hermes.local:8888/"
 
         val viewModel = ConnectViewModel(mockApp)
         val state = viewModel.uiState.value
@@ -195,8 +198,7 @@ class ConnectViewModelTest {
             advanceUntilIdle()
 
             verify { AuthManager.setToken("valid-token") }
-            verify { AuthManager.setHost("127.0.0.1") }
-            verify { AuthManager.setPort(9119) }
+            verify { AuthManager.setBaseUrl("https://127.0.0.1:9119/") }
             verify { ApiClient.rebuild() }
 
             val state = viewModel.uiState.value
@@ -534,8 +536,7 @@ class ConnectViewModelTest {
             advanceUntilIdle()
 
             verify { AuthManager.setToken("standalone-token") }
-            verify { AuthManager.setHost("10.0.0.1") }
-            verify { AuthManager.setPort(9119) }
+            verify { AuthManager.setBaseUrl("https://10.0.0.1:9119/") }
             verify(exactly = 0) { AuthManager.saveConnectionProfiles(any()) }
         }
 

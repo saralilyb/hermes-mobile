@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.data.remote
 
 import com.m57.hermescontrol.data.local.AuthManager
@@ -41,6 +43,11 @@ class ApiClientTest {
 
         // Point AuthManager at our MockWebServer
         every { AuthManager.baseUrl() } returns mockWebServer.url("/").toString()
+        every { AuthManager.endpointForBuild() } returns
+            ServerEndpoint.parse(
+                mockWebServer.url("/").toString(),
+                CleartextPolicy.ALLOW_WITH_WARNING,
+            )
         every { AuthManager.getHost() } returns "127.0.0.1"
         every { AuthManager.getPort() } returns 9119
 

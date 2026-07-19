@@ -1,5 +1,7 @@
+<!-- Modified from Hy4ri/hermes-mobile for this fork; see NOTICE. -->
+
 <resources>
-    <string name="app_name">HermesMobile</string>
+    <string name="app_name">Hermes Mobile</string>
 
     <!-- Chat -->
     <string name="chat_send_desc">Send</string>
@@ -809,6 +811,7 @@
     <string name="auth_login_desc">Connect to your Hermes dashboard</string>
     <string name="auth_login_host_label">Host</string>
     <string name="auth_login_port_label">Port</string>
+    <string name="auth_login_base_url_label">Server URL</string>
     <string name="auth_login_token_label">Session Token</string>
     <string name="auth_login_username_label">Username</string>
     <string name="auth_login_password_label">Password</string>
