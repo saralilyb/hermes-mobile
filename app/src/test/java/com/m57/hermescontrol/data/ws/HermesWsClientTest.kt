@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.data.ws
 
 import android.util.Log
@@ -36,7 +38,7 @@ class HermesWsClientTest {
         every { Log.d(any<String>(), any<String>()) } returns 0
         every { Log.i(any<String>(), any<String>()) } returns 0
         every { Log.w(any<String>(), any<String>()) } returns 0
-        every { Log.e(any<String>(), any<String>(), any()) } returns 0
+        every { Log.e(any<String>(), any<String>()) } returns 0
 
         mockWebServer = MockWebServer()
         mockWebServer.start()

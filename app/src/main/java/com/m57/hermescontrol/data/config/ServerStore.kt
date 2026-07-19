@@ -1,7 +1,10 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.data.config
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.Serializer
+import com.m57.hermescontrol.data.remote.ServerEndpoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -29,7 +32,7 @@ class ServerStore(
                 try {
                     dataStore.data.first().selfHealed()
                 } catch (e: Exception) {
-                    ServerStoreState()
+                    ServerStoreSerializer.defaultValue
                 }
             }
         _stateFlow = MutableStateFlow(initial)
@@ -60,7 +63,8 @@ object ServerStoreSerializer : Serializer<ServerStoreState> {
             prettyPrint = false
         }
 
-    override val defaultValue: ServerStoreState = ServerStoreState()
+    override val defaultValue: ServerStoreState =
+        ServerStoreState(baseUrl = ServerEndpoint.DEFAULT_BASE_URL)
 
     override suspend fun readFrom(input: InputStream): ServerStoreState =
         try {

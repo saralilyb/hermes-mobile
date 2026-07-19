@@ -1,9 +1,12 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.data.ws
 
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.m57.hermescontrol.BuildConfig
 import com.m57.hermescontrol.data.local.AuthManager
+import com.m57.hermescontrol.data.remote.AuthPayloads
 import com.m57.hermescontrol.data.remote.DashboardSessionTokenRefresher
 import com.m57.hermescontrol.data.remote.NetworkMonitor
 import com.m57.hermescontrol.data.remote.OkHttpProvider
@@ -53,8 +56,8 @@ enum class ConnectionStatus {
 /**
  * WebSocket client for the Hermes Dashboard JSON-RPC 2.0 interface.
  *
- * Connects to `ws://HOST:PORT/api/ws?token=TOKEN`, auto-reconnects with
- * exponential backoff, and emits parsed [WsEvent]s via [events] SharedFlow
+ * Connects to the scheme-aware endpoint derived by [AuthManager],
+ * auto-reconnects with exponential backoff, and emits parsed [WsEvent]s via [events] SharedFlow
  * as well as direct callbacks.
  */
 object HermesWsClient {
@@ -131,7 +134,10 @@ object HermesWsClient {
                     val rpc = OkHttpProvider.json.decodeFromString<JsonRpcResponse>(text)
                     EventParser.parse(rpc, text)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to parse message", e)
+                    Log.e(
+                        TAG,
+                        "Failed to parse WebSocket message (${e.javaClass.simpleName})",
+                    )
                     WsEvent.Unknown(text)
                 }
             }.flowOn(Dispatchers.Default) // CPU-bound
@@ -161,7 +167,10 @@ object HermesWsClient {
         // Monitor network state to trigger immediate reconnect when network is restored
         wsScope.launch {
             NetworkMonitor.isConnected.collect { connected ->
-                if (connected && !isConnected && !intentionalClose.get() && AuthManager.isAutoReconnect()) {
+                val autoReconnect =
+                    runCatching { AuthManager.isAutoReconnect() }
+                        .getOrDefault(false)
+                if (connected && !isConnected && !intentionalClose.get() && autoReconnect) {
                     Log.d(TAG, "Network restored — triggering immediate reconnect")
                     currentBackoff = INITIAL_BACKOFF_MS
                     reconnectJob?.cancel()
@@ -265,36 +274,43 @@ object HermesWsClient {
             val request =
                 Request
                     .Builder()
-                    .url("http://${AuthManager.getHost()}:${AuthManager.getPort()}/api/auth/ws-ticket")
+                    .url(
+                        AuthManager.endpointForBuild().resolve(
+                            "api/auth/ws-ticket",
+                        ),
+                    )
                     .post("{}".toRequestBody())
                     .build()
 
-            // Run network call on Dispatchers.IO to avoid NetworkOnMainThreadException
-            val response =
-                kotlinx.coroutines.runBlocking(Dispatchers.IO) {
-                    client.newCall(request).execute()
-                }
+            return kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.w(
+                            TAG,
+                            "WS ticket refresh failed: HTTP ${response.code}",
+                        )
+                        _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
+                        return@use false
+                    }
 
-            if (response.isSuccessful) {
-                val body = response.body.string()
-                val ticketMatch = Regex("""\"ticket\":\"([^\"]+)\"""").find(body)
-                val ticket = ticketMatch?.groupValues?.getOrNull(1)
-                if (!ticket.isNullOrBlank()) {
+                    val ticket =
+                        AuthPayloads.webSocketTicket(response.body.string())
+                    if (ticket.isNullOrBlank()) {
+                        Log.w(
+                            TAG,
+                            "WS ticket refresh failed: invalid response",
+                        )
+                        _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
+                        return@use false
+                    }
+
                     AuthManager.setToken(ticket)
                     if (BuildConfig.DEBUG) Log.d(TAG, "WS ticket refreshed")
-                    return true
-                } else {
-                    Log.w(TAG, "WS ticket refresh failed: response body did not contain ticket")
-                    _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
-                    return false
+                    true
                 }
-            } else {
-                Log.w(TAG, "WS ticket refresh failed: HTTP ${response.code}")
-                _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
-                return false
             }
         } catch (e: Exception) {
-            Log.w(TAG, "WS ticket refresh failed: ${e.message}")
+            Log.w(TAG, "WS ticket refresh failed: ${e.javaClass.simpleName}")
             _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
             return false
         }
@@ -418,7 +434,6 @@ object HermesWsClient {
         onSent?.invoke(id)
         val request = JsonRpcRequest(id = id, method = method, params = params.mapValues { it.value.toJsonElement() })
         val json = OkHttpProvider.json.encodeToString(request)
-        if (BuildConfig.DEBUG) Log.d(TAG, "→ $json")
         val ws = webSocket
         if (ws != null && connected.get()) {
             ws.send(json)
@@ -448,9 +463,15 @@ object HermesWsClient {
             Log.w(TAG, "Aborting openSocket: WS ticket refresh failed")
             return
         }
-        val url = AuthManager.wsUrl()
-        val safeUrl = url.replace(Regex("token=[^&]+"), "token=REDACTED")
-        if (BuildConfig.DEBUG) Log.d(TAG, "Connecting to $safeUrl")
+        val url =
+            try {
+                AuthManager.wsUrl()
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "WebSocket blocked by transport policy")
+                _connectionStatus.value = ConnectionStatus.DISCONNECTED
+                return
+            }
+        if (BuildConfig.DEBUG) Log.d(TAG, "Connecting to WebSocket endpoint")
 
         val request = Request.Builder().url(url).build()
         webSocket = OkHttpProvider.websocket.newWebSocket(request, WsListenerImpl())
@@ -501,7 +522,6 @@ object HermesWsClient {
             while (messageQueue.isNotEmpty()) {
                 val msg = messageQueue.poll()
                 if (msg != null) {
-                    if (BuildConfig.DEBUG) Log.d(TAG, "→ (queued) $msg")
                     webSocket.send(msg)
                 }
             }
@@ -511,7 +531,6 @@ object HermesWsClient {
             webSocket: WebSocket,
             text: String,
         ) {
-            if (BuildConfig.DEBUG) Log.d(TAG, "← $text")
             lastPongTimestamp = System.currentTimeMillis()
             // Resolve any in-flight `request()` awaiting this RPC result/error
             // (issue #526) before fanning the parsed event out to collectors.
@@ -520,7 +539,10 @@ object HermesWsClient {
                     val rpc = OkHttpProvider.json.decodeFromString<JsonRpcResponse>(text)
                     EventParser.parse(rpc, text)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to parse message", e)
+                    Log.e(
+                        TAG,
+                        "Failed to parse WebSocket message (${e.javaClass.simpleName})",
+                    )
                     WsEvent.Unknown(text)
                 }
             when (event) {
@@ -539,7 +561,7 @@ object HermesWsClient {
             code: Int,
             reason: String,
         ) {
-            Log.d(TAG, "WebSocket closing: $code $reason")
+            Log.d(TAG, "WebSocket closing: $code")
             webSocket.close(code, reason)
         }
 
@@ -548,7 +570,7 @@ object HermesWsClient {
             code: Int,
             reason: String,
         ) {
-            Log.i(TAG, "WebSocket closed: $code $reason")
+            Log.i(TAG, "WebSocket closed: $code")
             connected.set(false)
             stopHealthTracking()
             if (code == 4001 || code == 4401 ||
@@ -567,7 +589,7 @@ object HermesWsClient {
             t: Throwable,
             response: Response?,
         ) {
-            Log.e(TAG, "WebSocket failure: ${t.message}", t)
+            Log.e(TAG, "WebSocket failure (${t.javaClass.simpleName})")
             connected.set(false)
             stopHealthTracking()
             val code = response?.code ?: 0

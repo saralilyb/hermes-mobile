@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.connect
 
 import android.app.Application
@@ -8,9 +10,11 @@ import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.CleartextPolicy
 import com.m57.hermescontrol.data.remote.NetworkError
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.OkHttpProvider
+import com.m57.hermescontrol.data.remote.ServerEndpoint
 import com.m57.hermescontrol.data.remote.safeApiCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +28,9 @@ import kotlinx.serialization.json.jsonPrimitive
 
 data class ConnectUiState(
     val token: String = "",
+    val baseUrl: String = ServerEndpoint.DEFAULT_BASE_URL,
+    val transportWarning: String? = null,
+    // Derived legacy fields retained for pairing-code compatibility.
     val host: String = "127.0.0.1",
     val port: String = "9119",
     val isConnecting: Boolean = false,
@@ -47,16 +54,23 @@ class ConnectViewModel(
 
     fun loadSavedValues() {
         val savedToken = AuthManager.getToken() ?: ""
-        val savedHost = AuthManager.getHost()
-        val savedPort = AuthManager.getPort()
+        val savedBaseUrl = AuthManager.getBaseUrl()
         val profiles = AuthManager.getConnectionProfiles()
         val selectedId = AuthManager.getSelectedProfileId()
         val selectedProfile = profiles.firstOrNull { it.id == selectedId }
+        val profileBaseUrl = selectedProfile?.resolvedBaseUrl ?: savedBaseUrl
+        val endpoint =
+            ServerEndpoint.parse(
+                profileBaseUrl,
+                CleartextPolicy.ALLOW_WITH_WARNING,
+            )
         _uiState.update {
             it.copy(
                 token = savedToken,
-                host = selectedProfile?.host ?: savedHost,
-                port = (selectedProfile?.port ?: savedPort).toString(),
+                baseUrl = endpoint.baseUrl.toString(),
+                transportWarning = endpoint.securityWarning,
+                host = endpoint.baseUrl.host,
+                port = endpoint.baseUrl.port.toString(),
                 profiles = profiles,
                 selectedProfile = selectedProfile,
                 profileName = selectedProfile?.name ?: "",
@@ -75,12 +89,19 @@ class ConnectViewModel(
     fun selectProfile(profile: ConnectionProfile) {
         AuthManager.setSelectedProfileId(profile.id)
         val token = AuthManager.getProfileToken(profile.id) ?: ""
+        val endpoint =
+            ServerEndpoint.parse(
+                profile.resolvedBaseUrl,
+                CleartextPolicy.ALLOW_WITH_WARNING,
+            )
         _uiState.update {
             it.copy(
                 selectedProfile = profile,
                 profileName = profile.name,
-                host = profile.host,
-                port = profile.port.toString(),
+                baseUrl = endpoint.baseUrl.toString(),
+                transportWarning = endpoint.securityWarning,
+                host = endpoint.baseUrl.host,
+                port = endpoint.baseUrl.port.toString(),
                 token = token,
             )
         }
@@ -90,12 +111,58 @@ class ConnectViewModel(
         _uiState.update { it.copy(token = value.trim(), errorMessage = null) }
     }
 
+    fun onBaseUrlChange(value: String) {
+        val trimmed = value.trim()
+        val parsed =
+            runCatching {
+                ServerEndpoint.parse(
+                    trimmed,
+                    CleartextPolicy.ALLOW_WITH_WARNING,
+                )
+            }.getOrNull()
+        _uiState.update {
+            it.copy(
+                baseUrl = trimmed,
+                transportWarning = parsed?.securityWarning,
+                host = parsed?.baseUrl?.host ?: it.host,
+                port = parsed?.baseUrl?.port?.toString() ?: it.port,
+                errorMessage = null,
+            )
+        }
+    }
+
     fun onHostChange(value: String) {
-        _uiState.update { it.copy(host = value.trim(), errorMessage = null) }
+        val host = value.trim()
+        if (host.isBlank()) {
+            _uiState.update {
+                it.copy(host = host, baseUrl = "", errorMessage = null)
+            }
+            return
+        }
+        val current =
+            ServerEndpoint.parse(
+                _uiState.value.baseUrl,
+                CleartextPolicy.ALLOW_WITH_WARNING,
+            )
+        val normalizedHost = host.removePrefix("[").removeSuffix("]")
+        onBaseUrlChange(
+            current.baseUrl.newBuilder().host(normalizedHost).build().toString(),
+        )
     }
 
     fun onPortChange(value: String) {
-        _uiState.update { it.copy(port = value.filter { c -> c.isDigit() }, errorMessage = null) }
+        val digits = value.filter { c -> c.isDigit() }
+        val port = digits.toIntOrNull()
+        if (port == null || port !in 1..65535) {
+            _uiState.update { it.copy(port = digits, errorMessage = null) }
+            return
+        }
+        val current =
+            ServerEndpoint.parse(
+                _uiState.value.baseUrl,
+                CleartextPolicy.ALLOW_WITH_WARNING,
+            )
+        onBaseUrlChange(current.baseUrl.newBuilder().port(port).build().toString())
     }
 
     fun connect() {
@@ -113,23 +180,38 @@ class ConnectViewModel(
             _uiState.update { it.copy(errorMessage = app.getString(R.string.connect_error_port_invalid)) }
             return
         }
+        val endpoint =
+            try {
+                ServerEndpoint.parseForBuild(state.baseUrl)
+            } catch (e: IllegalArgumentException) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+                return
+            }
 
-        _uiState.update { it.copy(isConnecting = true, errorMessage = null) }
+        _uiState.update {
+            it.copy(
+                isConnecting = true,
+                errorMessage = null,
+                baseUrl = endpoint.baseUrl.toString(),
+                transportWarning = endpoint.securityWarning,
+            )
+        }
 
         viewModelScope.launch {
             val result =
                 withContext(Dispatchers.IO) {
-                    val tempApi = ApiClient.createTempService(state.host, port, state.token)
+                    val tempApi =
+                        ApiClient.createTempService(
+                            endpoint.baseUrl.toString(),
+                            state.token,
+                        )
                     safeApiCall { tempApi.getStatus() }
                 }
             when (result) {
                 is NetworkResult.Success -> {
-                    // Persist credentials to the selected (Default) profile upon successful verification.
-                    // setToken/setHost/setPort delegate to the currently-selected profile, which is
-                    // always non-null after issue #478 (never the legacy standalone path).
+                    // Persist only after successful validation.
+                    AuthManager.setBaseUrl(endpoint.baseUrl.toString())
                     AuthManager.setToken(state.token)
-                    AuthManager.setHost(state.host)
-                    AuthManager.setPort(port)
                     ApiClient.rebuild()
 
                     if (state.saveProfile) {
@@ -143,12 +225,15 @@ class ConnectViewModel(
                             }
                         val targetProfile =
                             if (existingIndex >= 0) {
-                                currentProfiles[existingIndex].copy(host = state.host, port = port)
+                                currentProfiles[existingIndex].copy(
+                                    host = "",
+                                    port = 0,
+                                    baseUrl = endpoint.baseUrl.toString(),
+                                )
                             } else {
                                 ConnectionProfile(
                                     name = state.profileName,
-                                    host = state.host,
-                                    port = port,
+                                    baseUrl = endpoint.baseUrl.toString(),
                                 )
                             }
                         val updatedProfiles =
@@ -275,6 +360,32 @@ class ConnectViewModel(
         }
     }
 
+    private fun applyLegacyPairing(
+        host: String,
+        portText: String,
+        token: String,
+    ) {
+        val port = portText.toIntOrNull()
+        if (port == null || port !in 1..65535) {
+            _uiState.update {
+                it.copy(errorMessage = app.getString(R.string.connect_error_port_invalid))
+            }
+            return
+        }
+        val endpoint = ServerEndpoint.fromLegacy(host, port)
+        _uiState.update {
+            it.copy(
+                baseUrl = endpoint.baseUrl.toString(),
+                transportWarning = endpoint.securityWarning,
+                host = endpoint.baseUrl.host,
+                port = endpoint.baseUrl.port.toString(),
+                token = token,
+                errorMessage = null,
+            )
+        }
+        connect()
+    }
+
     fun onPairingString(value: String) {
         val trimmed = value.trim()
         if (trimmed.isBlank()) return
@@ -285,16 +396,18 @@ class ConnectViewModel(
                 val host = uri.getQueryParameter("host")
                 val port = uri.getQueryParameter("port")
                 val token = uri.getQueryParameter("token")
-                if (host != null && port != null && token != null) {
-                    _uiState.update {
-                        it.copy(
-                            host = host,
-                            port = port,
-                            token = token,
-                            errorMessage = null,
-                        )
-                    }
+                val baseUrl =
+                    uri.getQueryParameter("base_url")
+                        ?.takeIf { it.isNotBlank() }
+                        ?: uri.getQueryParameter("baseUrl")?.takeIf { it.isNotBlank() }
+                if (baseUrl != null && token != null) {
+                    onBaseUrlChange(baseUrl)
+                    _uiState.update { it.copy(token = token) }
                     connect()
+                    return
+                }
+                if (host != null && port != null && token != null) {
+                    applyLegacyPairing(host, port, token)
                     return
                 }
             }
@@ -308,16 +421,23 @@ class ConnectViewModel(
                     val host = json["host"]?.jsonPrimitive?.content
                     val port = json["port"]?.jsonPrimitive?.content
                     val token = json["token"]?.jsonPrimitive?.content
-                    if (host != null && port != null && token != null) {
-                        _uiState.update {
-                            it.copy(
-                                host = host,
-                                port = port,
-                                token = token,
-                                errorMessage = null,
-                            )
-                        }
+                    val baseUrl =
+                        json["base_url"]
+                            ?.jsonPrimitive
+                            ?.content
+                            ?.takeIf { it.isNotBlank() }
+                            ?: json["baseUrl"]
+                                ?.jsonPrimitive
+                                ?.content
+                                ?.takeIf { it.isNotBlank() }
+                    if (baseUrl != null && token != null) {
+                        onBaseUrlChange(baseUrl)
+                        _uiState.update { it.copy(token = token) }
                         connect()
+                        return
+                    }
+                    if (host != null && port != null && token != null) {
+                        applyLegacyPairing(host, port, token)
                         return
                     }
                     // Decoded valid JSON but missing required fields

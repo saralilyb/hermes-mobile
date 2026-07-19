@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.util
 
 import com.m57.hermescontrol.BuildConfig
@@ -49,7 +51,10 @@ object CronExpressionFormatter {
             return schedule
         } catch (e: Exception) {
             if (BuildConfig.DEBUG) {
-                android.util.Log.w("CronExpressionFormatter", "Failed to parse cron: $schedule", e)
+                android.util.Log.w(
+                    "CronExpressionFormatter",
+                    "Failed to parse cron expression (${e.javaClass.simpleName})",
+                )
             }
             return "Raw: $schedule"
         }

@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.chat
 
 import android.app.Application
@@ -62,6 +64,7 @@ class SlashCommandDispatchRpcTest {
         every { android.util.Log.d(any(), any()) } returns 0
         every { android.util.Log.i(any(), any()) } returns 0
         every { android.util.Log.w(any(), any<String>()) } returns 0
+        every { android.util.Log.e(any(), any()) } returns 0
         every { android.util.Log.e(any(), any(), any()) } returns 0
 
         mockkStatic(Dispatchers::class)

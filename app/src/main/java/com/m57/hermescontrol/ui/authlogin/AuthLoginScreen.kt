@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.authlogin
 
 import android.app.Application
@@ -153,27 +155,28 @@ fun AuthLoginScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // Host field
             OutlinedTextField(
-                value = state.host,
-                onValueChange = viewModel::onHostChange,
-                label = { Text(stringResource(R.string.auth_login_host_label)) },
+                value = state.baseUrl,
+                onValueChange = viewModel::onBaseUrlChange,
+                label = {
+                    Text(stringResource(R.string.auth_login_base_url_label))
+                },
+                placeholder = {
+                    Text("https://hermes.example.com:9119")
+                },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 enabled = state.authMode == null,
             )
 
-            // Port field
-            OutlinedTextField(
-                value = state.port,
-                onValueChange = viewModel::onPortChange,
-                label = { Text(stringResource(R.string.auth_login_port_label)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                enabled = state.authMode == null,
-            )
+            state.transportWarning?.let { warning ->
+                Text(
+                    text = warning,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
 
             // Probe / probing indicator
             if (state.probing) {

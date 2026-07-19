@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.system
 
 import android.util.Log
@@ -151,7 +153,10 @@ class SystemViewModel :
                         "doctor" to doctorResult,
                     ).forEach { (name, result) ->
                         if (result is NetworkResult.Failure) {
-                            Log.w(TAG, "$name endpoint: ${result.error.message}")
+                            Log.w(
+                                TAG,
+                                "$name endpoint failed (${result.error.javaClass.simpleName})",
+                            )
                         }
                     }
                 }

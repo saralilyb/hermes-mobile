@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.authlogin
 
 import android.app.Application
@@ -29,8 +31,7 @@ class AuthLoginViewModelTest {
     @Before
     fun setup() {
         mockkObject(AuthManager)
-        every { AuthManager.getHost() } returns "localhost"
-        every { AuthManager.getPort() } returns 9119
+        every { AuthManager.getBaseUrl() } returns "https://localhost:9119/"
         every { AuthManager.getConnectionProfiles() } returns emptyList()
 
         mockkObject(OkHttpProvider)
@@ -51,23 +52,14 @@ class AuthLoginViewModelTest {
     }
 
     @Test
-    fun `onHostChange updates host and clears error and auth mode`() {
-        viewModel.onHostChange(" 192.168.1.100 ")
+    fun `onBaseUrlChange updates URL and clears error and auth mode`() {
+        viewModel.onBaseUrlChange(" https://192.168.1.100:9443/proxy ")
 
         val state = viewModel.uiState.value
-        assertEquals("192.168.1.100", state.host)
+        assertEquals("https://192.168.1.100:9443/proxy", state.baseUrl)
         assertNull(state.errorMessage)
         assertNull(state.authMode)
-    }
-
-    @Test
-    fun `onPortChange updates port keeping only digits and clears error and auth mode`() {
-        viewModel.onPortChange("9a1b1c9")
-
-        val state = viewModel.uiState.value
-        assertEquals("9119", state.port)
-        assertNull(state.errorMessage)
-        assertNull(state.authMode)
+        assertNull(state.transportWarning)
     }
 
     @Test
@@ -101,6 +93,7 @@ class AuthLoginViewModelTest {
         every { OkHttpProvider.probe.newCall(any()) } returns mockCall
         every { mockCall.execute() } returns mockResponse
         every { mockResponse.isSuccessful } returns false
+        every { mockResponse.close() } returns Unit
 
         viewModel.probe()
 

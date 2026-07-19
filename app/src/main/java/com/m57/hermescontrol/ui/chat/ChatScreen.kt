@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.chat
 
 import android.Manifest
@@ -252,7 +254,10 @@ fun ChatScreen(
                     val size = inputStream?.use { it.available().toLong() } ?: 0L
                     viewModel.addAttachment(uri.toString(), fileName, "image/jpeg", size)
                 } catch (e: Exception) {
-                    Log.e("ChatScreen", "Camera capture failed", e)
+                    Log.e(
+                        "ChatScreen",
+                        "Camera capture failed (${e.javaClass.simpleName})",
+                    )
                     scrollScope.launch {
                         snackbarHostState.showSnackbar(
                             cameraErrorMsg,
@@ -492,7 +497,10 @@ fun ChatScreen(
                         pendingCameraUri = uri
                         cameraLauncher.launch(uri)
                     } catch (e: Exception) {
-                        Log.e("ChatScreen", "Camera launch failed", e)
+                        Log.e(
+                            "ChatScreen",
+                            "Camera launch failed (${e.javaClass.simpleName})",
+                        )
                     }
                 },
                 onImageTap = { filePickerLauncher.launch("image/*") },

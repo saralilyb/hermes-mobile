@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.settings.components
 
 import androidx.compose.animation.AnimatedVisibility
@@ -85,7 +87,7 @@ internal fun ConnectionSection(
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                             )
                             Text(
-                                text = "${profile.host}:${profile.port}",
+                                text = profile.resolvedBaseUrl,
                                 style =
                                     MaterialTheme.typography.bodySmall.copy(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -139,12 +141,12 @@ internal fun ConnectionSection(
         ProfileEditorDialog(
             isEditing = state.editingProfileId != null,
             name = state.dialogProfileName,
-            host = state.dialogProfileHost,
-            port = state.dialogProfilePort,
+            baseUrl = state.dialogProfileBaseUrl,
+            transportWarning = state.dialogProfileTransportWarning,
+            errorMessage = state.dialogProfileError,
             token = state.dialogProfileToken,
             onNameChange = viewModel::onDialogProfileNameChange,
-            onHostChange = viewModel::onDialogProfileHostChange,
-            onPortChange = viewModel::onDialogProfilePortChange,
+            onBaseUrlChange = viewModel::onDialogProfileBaseUrlChange,
             onTokenChange = viewModel::onDialogProfileTokenChange,
             onSave = viewModel::saveProfileFromDialog,
             onDismiss = viewModel::closeProfileDialog,

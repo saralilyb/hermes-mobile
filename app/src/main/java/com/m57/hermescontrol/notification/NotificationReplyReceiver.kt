@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.notification
 
 import android.app.Notification
@@ -95,7 +97,10 @@ open class NotificationReplyReceiver : BroadcastReceiver() {
                         }
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("NotificationReply", "Failed to process reply", e)
+                    android.util.Log.e(
+                        "NotificationReply",
+                        "Failed to process reply (${e.javaClass.simpleName})",
+                    )
                 } finally {
                     pendingResult.finish()
                 }

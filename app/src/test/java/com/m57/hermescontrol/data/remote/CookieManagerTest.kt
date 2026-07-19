@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.data.remote
 
 import kotlinx.coroutines.test.runTest
@@ -5,17 +7,10 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Unit tests for [CookieManager] — the issue #470 coordinator.
- *
- * Injects a [FakePersistentCookieJar] via the test seam so no Android deps
- * are needed. Covers:
- * - session cookie set/get round-trip (host-scoped)
- * - clearing the session cookie
- * - prune/clear pass-through to the jar
- */
+/** Unit tests for the encrypted, per-endpoint cookie coordinator. */
 class CookieManagerTest {
     private fun fakeJar(): PersistentCookieJar {
         val jar = buildFakePersistentCookieJar()
@@ -23,6 +18,9 @@ class CookieManagerTest {
         CookieManager.setJarForTest(jar)
         return jar
     }
+
+    private val secureEndpoint =
+        ServerEndpoint.parse("https://hermes.example.com:9119/prefix/")
 
     @After
     fun tearDown() {
@@ -32,7 +30,7 @@ class CookieManagerTest {
     @Test
     fun setThenGetSessionCookie_roundTrips() {
         fakeJar()
-        CookieManager.setSessionCookie("sess-xyz", "dashboard.local")
+        CookieManager.setSessionCookie("sess-xyz", secureEndpoint)
 
         assertEquals("sess-xyz", CookieManager.getSessionCookie())
     }
@@ -40,45 +38,54 @@ class CookieManagerTest {
     @Test
     fun setSessionCookie_nullClearsValue() {
         fakeJar()
-        CookieManager.setSessionCookie("sess-xyz", "dashboard.local")
+        CookieManager.setSessionCookie("sess-xyz", secureEndpoint)
         assertEquals("sess-xyz", CookieManager.getSessionCookie())
 
-        CookieManager.setSessionCookie(null, "dashboard.local")
+        CookieManager.setSessionCookie(null, secureEndpoint)
         assertNull(CookieManager.getSessionCookie())
     }
 
     @Test
-    fun setSessionCookie_hostScoped_onlyMatchesThatHost() =
+    fun setSessionCookie_isSecureAndScopedToHttpsOrigin() =
         runTest {
             val jar = fakeJar()
-            CookieManager.setSessionCookie("sess-xyz", "dashboard.local")
+            CookieManager.setSessionCookie("sess-xyz", secureEndpoint)
 
-            val onHost =
+            val onOrigin =
                 jar.loadForRequest(
-                    "http://dashboard.local/api/status".toHttpUrl(),
+                    "https://hermes.example.com:9119/prefix/api/status"
+                        .toHttpUrl(),
                 )
-            assertEquals(1, onHost.size)
-            assertEquals("sess-xyz", onHost[0].value)
+            assertEquals(1, onOrigin.size)
+            assertEquals("sess-xyz", onOrigin[0].value)
+            assertTrue(onOrigin[0].secure)
 
-            val offHost = jar.loadForRequest("http://other.local/".toHttpUrl())
-            assertEquals(0, offHost.size)
+            val cleartext =
+                jar.loadForRequest(
+                    "http://hermes.example.com:9119/prefix/api/status"
+                        .toHttpUrl(),
+                )
+            assertTrue(cleartext.isEmpty())
+
+            val offHost =
+                jar.loadForRequest("https://other.example.com/".toHttpUrl())
+            assertTrue(offHost.isEmpty())
         }
 
     @Test
     fun pruneServerCache_delegatesToJar() =
         runTest {
-            val jar = fakeJar()
-            CookieManager.setSessionCookie("keep-me", "dashboard.local")
+            fakeJar()
+            CookieManager.setSessionCookie("keep-me", secureEndpoint)
             CookieManager.pruneServerCache()
-            // Session cookie is preserved by prune.
             assertEquals("keep-me", CookieManager.getSessionCookie())
         }
 
     @Test
     fun clearAll_wipesSession() =
         runTest {
-            val jar = fakeJar()
-            CookieManager.setSessionCookie("bye", "dashboard.local")
+            fakeJar()
+            CookieManager.setSessionCookie("bye", secureEndpoint)
             CookieManager.clearAll()
             assertNull(CookieManager.getSessionCookie())
         }

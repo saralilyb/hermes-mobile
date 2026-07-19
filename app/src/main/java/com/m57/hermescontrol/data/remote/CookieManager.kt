@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.data.remote
 
 import android.content.Context
@@ -9,7 +11,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import okhttp3.Cookie
-import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /**
  * Coordinator for the issue #470 cookie stack.
@@ -62,33 +63,32 @@ object CookieManager {
     fun getSessionCookie(): String? = jar?.getSessionCookieValue()
 
     /**
-     * Set the `hermes_session_at` session cookie for the active scope.
-     * [host] should be the dashboard host so the cookie matches REST requests.
+     * Set the session cookie for the active scope and canonical endpoint.
+     * HTTPS endpoints produce Secure cookies that cannot be sent over HTTP.
      */
     fun setSessionCookie(
         rawValue: String?,
-        host: String,
+        endpoint: ServerEndpoint,
     ) {
         val j = jar ?: return
         if (rawValue.isNullOrBlank()) {
-            // Clearing: drop the session cookie (and any other cookies) for the
-            // active scope — equivalent to the old AuthManager nulling the
-            // session-cookie pref.
             j.clearActive()
             return
         }
-        val cookie =
+        val builder =
             Cookie
                 .Builder()
                 .name(SESSION_COOKIE_NAME)
                 .value(rawValue)
-                .expiresAt(System.currentTimeMillis() + 10L * 365 * 24 * 60 * 60 * 1000)
-                .hostOnlyDomain(host)
-                .path("/")
+                .expiresAt(
+                    System.currentTimeMillis() +
+                        10L * 365 * 24 * 60 * 60 * 1000,
+                )
+                .hostOnlyDomain(endpoint.baseUrl.host)
+                .path(endpoint.baseUrl.encodedPath)
                 .httpOnly()
-                .build()
-        val url = "http://$host/".toHttpUrl()
-        j.saveFromResponse(url, listOf(cookie))
+        if (endpoint.baseUrl.isHttps) builder.secure()
+        j.saveFromResponse(endpoint.baseUrl, listOf(builder.build()))
     }
 
     /** Evict expired (non-session) cookies for the active scope. */

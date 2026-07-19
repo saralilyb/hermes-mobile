@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.settings.components
 
 import androidx.compose.foundation.layout.Arrangement
@@ -25,12 +27,12 @@ import com.m57.hermescontrol.R
 internal fun ProfileEditorDialog(
     isEditing: Boolean,
     name: String,
-    host: String,
-    port: String,
+    baseUrl: String,
+    transportWarning: String?,
+    errorMessage: String?,
     token: String,
     onNameChange: (String) -> Unit,
-    onHostChange: (String) -> Unit,
-    onPortChange: (String) -> Unit,
+    onBaseUrlChange: (String) -> Unit,
     onTokenChange: (String) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
@@ -55,20 +57,33 @@ internal fun ProfileEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
-                    value = host,
-                    onValueChange = onHostChange,
-                    label = { Text(stringResource(R.string.settings_field_host)) },
+                    value = baseUrl,
+                    onValueChange = onBaseUrlChange,
+                    label = {
+                        Text(stringResource(R.string.auth_login_base_url_label))
+                    },
+                    placeholder = {
+                        Text("https://hermes.example.com:9119")
+                    },
                     singleLine = true,
+                    keyboardOptions =
+                        KeyboardOptions(keyboardType = KeyboardType.Uri),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
-                    value = port,
-                    onValueChange = onPortChange,
-                    label = { Text(stringResource(R.string.settings_field_port)) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                transportWarning?.let { warning ->
+                    Text(
+                        text = warning,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                errorMessage?.let { error ->
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 if (isEditing) {
                     OutlinedTextField(
                         value = token,
@@ -87,7 +102,10 @@ internal fun ProfileEditorDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onSave, enabled = name.isNotBlank() && host.isNotBlank()) {
+            Button(
+                onClick = onSave,
+                enabled = name.isNotBlank() && baseUrl.isNotBlank(),
+            ) {
                 Text(stringResource(R.string.action_save))
             }
         },

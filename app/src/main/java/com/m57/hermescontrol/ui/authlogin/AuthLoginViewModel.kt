@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.authlogin
 
 import android.app.Application
@@ -9,6 +11,8 @@ import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.AuthPayloads
+import com.m57.hermescontrol.data.remote.ServerEndpoint
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.data.ws.HermesWsClient
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -38,8 +43,8 @@ enum class DashboardAuthMode {
 }
 
 data class AuthLoginUiState(
-    val host: String = "127.0.0.1",
-    val port: String = "9119",
+    val baseUrl: String = ServerEndpoint.DEFAULT_BASE_URL,
+    val transportWarning: String? = null,
     val token: String = "",
     val username: String = "",
     val password: String = "",
@@ -57,8 +62,7 @@ class AuthLoginViewModel(
     private val _uiState =
         MutableStateFlow(
             AuthLoginUiState(
-                host = AuthManager.getHost(),
-                port = AuthManager.getPort().toString(),
+                baseUrl = AuthManager.getBaseUrl(),
             ),
         )
     val uiState: StateFlow<AuthLoginUiState> = _uiState.asStateFlow()
@@ -91,21 +95,28 @@ class AuthLoginViewModel(
     private val probeClient: OkHttpClient =
         com.m57.hermescontrol.data.remote.OkHttpProvider.probe
 
-    fun onHostChange(value: String) {
-        _uiState.update { it.copy(host = value.trim(), errorMessage = null, authMode = null) }
-    }
-
-    /** Reset ephemeral connection state (called when screen leaves composition). */
-    fun clearConnectionState() {
-        _uiState.update { it.copy(connectionSuccess = false, errorMessage = null, isLoading = false) }
-    }
-
-    fun onPortChange(value: String) {
+    fun onBaseUrlChange(value: String) {
+        val warning =
+            runCatching {
+                ServerEndpoint.parseForBuild(value).securityWarning
+            }.getOrNull()
         _uiState.update {
             it.copy(
-                port = value.filter { c -> c.isDigit() },
+                baseUrl = value.trim(),
+                transportWarning = warning,
                 errorMessage = null,
                 authMode = null,
+            )
+        }
+    }
+
+    /** Reset ephemeral connection state when the screen leaves composition. */
+    fun clearConnectionState() {
+        _uiState.update {
+            it.copy(
+                connectionSuccess = false,
+                errorMessage = null,
+                isLoading = false,
             )
         }
     }
@@ -127,22 +138,28 @@ class AuthLoginViewModel(
      */
     fun probe() {
         val state = _uiState.value
-        if (state.host.isBlank()) {
-            _uiState.update { it.copy(errorMessage = app.getString(R.string.auth_login_error_host_required)) }
-            return
-        }
-        val port = state.port.toIntOrNull()
-        if (port == null || port !in 1..65535) {
-            _uiState.update { it.copy(errorMessage = app.getString(R.string.auth_login_error_port_invalid)) }
-            return
-        }
+        val endpoint =
+            try {
+                ServerEndpoint.parseForBuild(state.baseUrl)
+            } catch (e: IllegalArgumentException) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+                return
+            }
 
-        _uiState.update { it.copy(probing = true, errorMessage = null, authMode = null) }
+        _uiState.update {
+            it.copy(
+                probing = true,
+                errorMessage = null,
+                authMode = null,
+                baseUrl = endpoint.baseUrl.toString(),
+                transportWarning = endpoint.securityWarning,
+            )
+        }
 
         viewModelScope.launch {
             val result =
                 withContext(Dispatchers.IO) {
-                    probeDashboardInternal(state.host, port)
+                    probeDashboardInternal(endpoint)
                 }
             _uiState.update {
                 it.copy(
@@ -174,25 +191,21 @@ class AuthLoginViewModel(
      * When [ProbeResult.extractedToken] is non-null, the session token
      * was found embedded in the dashboard SPA HTML and can be auto-populated.
      */
-    private fun probeDashboardInternal(
-        host: String,
-        port: Int,
-    ): ProbeResult? {
-        val baseUrl = "http://$host:$port"
-
+    private fun probeDashboardInternal(endpoint: ServerEndpoint): ProbeResult? {
         // Step 1: Check if dashboard is reachable via /api/status (always public)
         val statusOk =
             try {
                 val req =
                     Request
                         .Builder()
-                        .url("$baseUrl/api/status")
+                        .url(endpoint.resolve("api/status"))
                         .get()
                         .build()
-                val resp = probeClient.newCall(req).execute()
-                resp.isSuccessful
+                probeClient.newCall(req).execute().use { response ->
+                    response.isSuccessful
+                }
             } catch (e: Exception) {
-                Log.w(TAG, "Status probe failed: ${e.message}")
+                Log.w(TAG, "Status probe failed (${e.javaClass.simpleName})")
                 return null // Dashboard unreachable
             }
 
@@ -204,16 +217,16 @@ class AuthLoginViewModel(
                 val req =
                     Request
                         .Builder()
-                        .url(baseUrl)
+                        .url(endpoint.baseUrl)
                         .get()
                         .build()
-                val resp = probeClient.newCall(req).execute()
-                val code = resp.code
-                val location = resp.header("location", "")
-                // 302 to /login means basic auth is active
-                code == 302 && location?.contains("/login", ignoreCase = true) == true
+                probeClient.newCall(req).execute().use { response ->
+                    val location = response.header("location", "")
+                    response.code == 302 &&
+                        location?.contains("/login", ignoreCase = true) == true
+                }
             } catch (e: Exception) {
-                Log.w(TAG, "SPA probe failed: ${e.message}")
+                Log.w(TAG, "SPA probe failed (${e.javaClass.simpleName})")
                 false
             }
 
@@ -224,11 +237,13 @@ class AuthLoginViewModel(
                 val req =
                     Request
                         .Builder()
-                        .url(baseUrl)
+                        .url(endpoint.baseUrl)
                         .get()
                         .build()
-                val resp = probeClient.newCall(req).execute()
-                val body = resp.body.string()
+                val body =
+                    probeClient.newCall(req).execute().use { response ->
+                        response.body.string()
+                    }
                 // Extract __HERMES_SESSION_TOKEN__ from the SPA HTML
                 val tokenMatch = Regex("""__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"""").find(body)
                 extractedToken = tokenMatch?.groupValues?.getOrNull(1)
@@ -236,7 +251,7 @@ class AuthLoginViewModel(
                     Log.w(TAG, "SPA has no __HERMES_SESSION_TOKEN__ — mode might require both auth")
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "SPA token extraction failed: ${e.message}")
+                Log.w(TAG, "SPA token extraction failed (${e.javaClass.simpleName})")
             }
         }
 
@@ -265,7 +280,13 @@ class AuthLoginViewModel(
      */
     fun connect() {
         val state = _uiState.value
-        val port = state.port.toIntOrNull() ?: return
+        val endpoint =
+            try {
+                ServerEndpoint.parseForBuild(state.baseUrl)
+            } catch (e: IllegalArgumentException) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+                return
+            }
 
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
@@ -274,16 +295,16 @@ class AuthLoginViewModel(
                 withContext(Dispatchers.IO) {
                     when (state.authMode) {
                         DashboardAuthMode.TOKEN_ONLY -> {
-                            val token = connectTokenOnly(state.host, port, state.token)
+                            val token = connectTokenOnly(endpoint, state.token)
                             if (token != null) ConnectResult(wsCredential = token) else null
                         }
 
                         DashboardAuthMode.BASIC_AUTH -> {
-                            connectBasicAuth(state.host, port, state.username, state.password)
+                            connectBasicAuth(endpoint, state.username, state.password)
                         }
 
                         DashboardAuthMode.ALL -> {
-                            connectBasicAuth(state.host, port, state.username, state.password)
+                            connectBasicAuth(endpoint, state.username, state.password)
                         }
 
                         null -> {
@@ -293,8 +314,7 @@ class AuthLoginViewModel(
                 }
 
             if (result != null) {
-                AuthManager.setHost(state.host)
-                AuthManager.setPort(port)
+                AuthManager.setBaseUrl(endpoint.baseUrl.toString())
                 AuthManager.setToken(result.wsCredential)
                 if (state.authMode == DashboardAuthMode.TOKEN_ONLY) {
                     // Loopback mode — no session cookie; ensure any stale one
@@ -319,8 +339,7 @@ class AuthLoginViewModel(
      * Validate the token by calling /api/status with it.
      */
     private suspend fun connectTokenOnly(
-        host: String,
-        port: Int,
+        endpoint: ServerEndpoint,
         token: String,
     ): String? {
         if (token.isBlank()) {
@@ -330,7 +349,11 @@ class AuthLoginViewModel(
             return null
         }
 
-        val tempApi = ApiClient.createTempService(host, port, token)
+        val tempApi =
+            ApiClient.createTempService(
+                endpoint.baseUrl.toString(),
+                token,
+            )
         val result = safeApiCall { tempApi.getSessions() }
 
         return when (result) {
@@ -372,8 +395,7 @@ class AuthLoginViewModel(
      * Returns the WS ticket and the session cookie for REST auth.
      */
     private fun connectBasicAuth(
-        host: String,
-        port: Int,
+        endpoint: ServerEndpoint,
         username: String,
         password: String,
     ): ConnectResult? {
@@ -390,8 +412,8 @@ class AuthLoginViewModel(
             return null
         }
 
-        val baseUrl = "http://$host:$port"
-        val jsonBody = """{"provider":"basic","username":"$username","password":"$password","next":""}"""
+        val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+        val jsonBody = AuthPayloads.passwordLogin(username, password)
 
         try {
             // Step 1: Authenticate via the password login endpoint to get a session cookie
@@ -405,21 +427,27 @@ class AuthLoginViewModel(
             val loginReq =
                 Request
                     .Builder()
-                    .url("$baseUrl/auth/password-login")
+                    .url(endpoint.resolve("auth/password-login"))
                     .header("Content-Type", "application/json")
-                    .post(jsonBody.toRequestBody())
+                    .post(jsonBody.toRequestBody(jsonMediaType))
                     .build()
-            val loginResp = loginClient.newCall(loginReq).execute()
-
-            if (!loginResp.isSuccessful) {
-                val msg =
-                    when (loginResp.code) {
-                        401 -> app.getString(R.string.connect_error_401)
-                        403 -> app.getString(R.string.connect_error_403)
-                        else -> app.getString(R.string.connect_error_http_code, loginResp.code)
+            loginClient.newCall(loginReq).execute().use { loginResp ->
+                if (!loginResp.isSuccessful) {
+                    val msg =
+                        when (loginResp.code) {
+                            401 -> app.getString(R.string.connect_error_401)
+                            403 -> app.getString(R.string.connect_error_403)
+                            else ->
+                                app.getString(
+                                    R.string.connect_error_http_code,
+                                    loginResp.code,
+                                )
+                        }
+                    _uiState.update {
+                        it.copy(isLoading = false, errorMessage = msg)
                     }
-                _uiState.update { it.copy(isLoading = false, errorMessage = msg) }
-                return null
+                    return null
+                }
             }
 
             // The session cookie is captured automatically by the shared
@@ -438,36 +466,38 @@ class AuthLoginViewModel(
             val ticketReq =
                 Request
                     .Builder()
-                    .url("$baseUrl/api/auth/ws-ticket")
-                    .post("{}".toRequestBody())
+                    .url(endpoint.resolve("api/auth/ws-ticket"))
+                    .post("{}".toRequestBody(jsonMediaType))
                     .build()
-            val ticketResp = ticketClient.newCall(ticketReq).execute()
-
-            if (!ticketResp.isSuccessful) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = app.getString(R.string.connect_error_http_code, ticketResp.code),
-                    )
+            return ticketClient.newCall(ticketReq).execute().use { response ->
+                if (!response.isSuccessful) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage =
+                                app.getString(
+                                    R.string.connect_error_http_code,
+                                    response.code,
+                                ),
+                        )
+                    }
+                    return@use null
                 }
-                return null
-            }
 
-            val ticketBody = ticketResp.body.string()
-            val ticketMatch = Regex(""""ticket":"([^"]+)"""").find(ticketBody)
-            val ticket = ticketMatch?.groupValues?.getOrNull(1)
-
-            if (ticket.isNullOrBlank()) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to obtain WebSocket ticket",
-                    )
+                val ticket =
+                    AuthPayloads.webSocketTicket(response.body.string())
+                if (ticket.isNullOrBlank()) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "Failed to obtain WebSocket ticket",
+                        )
+                    }
+                    return@use null
                 }
-                return null
-            }
 
-            return ConnectResult(wsCredential = ticket)
+                ConnectResult(wsCredential = ticket)
+            }
         } catch (e: Exception) {
             _uiState.update {
                 it.copy(

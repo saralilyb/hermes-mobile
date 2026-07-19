@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.data.ws
 
 import android.util.Log
@@ -178,7 +180,7 @@ object EventParser {
             }
 
             else -> {
-                Log.w(TAG, "Unknown event type: $eventType")
+                Log.w(TAG, "Unknown WebSocket event type")
                 WsEvent.Unknown(rawJson)
             }
         }
