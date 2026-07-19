@@ -175,7 +175,7 @@ object AuthManager {
 
     /**
      * In gated mode (basic auth), the dashboard authenticates REST API
-     * requests via the `hermes_session_at` cookie, not via
+     * requests via a dashboard session cookie, not via
      * `Authorization: Bearer`. The cookie is now owned by the shared
      * [CookieManager]/[PersistentCookieJar] (issue #470) which attaches it
      * automatically on every REST call, follows redirects, and persists it

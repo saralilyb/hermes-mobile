@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -70,6 +71,21 @@ import com.m57.hermescontrol.ui.pairing.PairingCodeEntryScreen as PairingCodeEnt
 
 private fun resolveBottomNavItems(names: List<String>): List<ScreenDefinition> =
     names.mapNotNull { name -> ScreenRegistry.ALL_SCREENS.firstOrNull { it.key::class.simpleName == name } }
+
+private val settingsDestinations: Set<NavKey> =
+    setOf(
+        SettingsScreen,
+        SettingsConnection,
+        SettingsAppearance,
+        SettingsChat,
+        SettingsNavBar,
+        SettingsBehavior,
+        SettingsAbout,
+    )
+
+/** Keep Settings selected while one of its drill-down pages is visible. */
+internal fun selectedBottomNavDestination(currentScreen: NavKey): NavKey =
+    if (currentScreen in settingsDestinations) SettingsScreen else currentScreen
 
 private fun appEntryProvider(
     sessionId: String?,
@@ -305,8 +321,12 @@ fun MainNavigation(sessionId: String? = null) {
                                 BottomNavDisplayMode.TEXT_ONLY -> 44.dp
                                 BottomNavDisplayMode.ICON_AND_TEXT -> 80.dp
                             }
+                        val selectedDestination =
+                            selectedBottomNavDestination(currentScreen)
                         NavigationBar(
-                            modifier = Modifier.height(barHeight),
+                            // A minimum preserves display-mode density while
+                            // allowing system insets and large text to grow.
+                            modifier = Modifier.heightIn(min = barHeight),
                         ) {
                             bottomNavItems.forEach { item ->
                                 val showIcon =
@@ -316,7 +336,7 @@ fun MainNavigation(sessionId: String? = null) {
                                     bottomNavDisplayMode == BottomNavDisplayMode.ICON_AND_TEXT ||
                                         bottomNavDisplayMode == BottomNavDisplayMode.TEXT_ONLY
 
-                                val isSelected = currentScreen == item.key
+                                val isSelected = selectedDestination == item.key
 
                                 NavigationBarItem(
                                     selected = isSelected,
