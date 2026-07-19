@@ -48,7 +48,7 @@ internal fun ConnectionSection(
     passwordVisible: Boolean,
     onPasswordVisibilityToggle: () -> Unit,
 ) {
-    SectionCard(title = stringResource(R.string.settings_sec_connection)) {
+    SectionCard {
         // ── Saved profiles list ──────────────────────────────────
         if (state.profiles.isNotEmpty()) {
             Text(

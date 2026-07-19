@@ -37,7 +37,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.theme.BottomNavDisplayMode
@@ -57,7 +59,7 @@ internal fun AppearanceSection(
     appLanguage: String,
     onAppLanguageChange: (String) -> Unit,
 ) {
-    SectionCard(title = stringResource(R.string.settings_sec_appearance)) {
+    SectionCard {
         Text(
             text = stringResource(R.string.settings_item_theme),
             style = MaterialTheme.typography.bodyLarge,
@@ -215,6 +217,7 @@ internal fun AppearanceSection(
             val activity = LocalActivity.current
             languageOptions.forEachIndexed { index, (code, label) ->
                 SegmentedButton(
+                    modifier = Modifier.testTag("language_option_$code"),
                     selected = appLanguage == code,
                     onClick = {
                         onAppLanguageChange(code)
@@ -229,7 +232,11 @@ internal fun AppearanceSection(
                             count = languageOptions.size,
                         ),
                 ) {
-                    Text(label)
+                    Text(
+                        text = label,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
@@ -243,7 +250,7 @@ internal fun ChatSection(
     typingEffectDelayMs: Int,
     onTypingEffectDelayMsChange: (Int) -> Unit,
 ) {
-    SectionCard(title = stringResource(R.string.settings_sec_chat)) {
+    SectionCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -326,7 +333,7 @@ internal fun NavBarSection(
     onRemoveNavItem: (String) -> Unit,
     onAddNavItem: (String) -> Unit,
 ) {
-    SectionCard(title = stringResource(R.string.settings_sec_nav_bar)) {
+    SectionCard {
         Text(
             text = stringResource(R.string.settings_item_bottom_nav_display_mode),
             style = MaterialTheme.typography.bodyLarge,

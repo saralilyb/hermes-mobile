@@ -27,8 +27,8 @@ import java.util.concurrent.atomic.AtomicReference
  *   [CookieStore.load] (double-checked through [loadedScopes]).
  * - **Pruning** — [pruneServerCache] evicts expired cookies to bound growth.
  *
- * The session cookie (`hermes_session_at`) is explicitly retained across
- * pruning because its lifetime is owned server-side, not by client expiry.
+ * Dashboard access-cookie variants are explicitly retained across pruning
+ * because their lifetime is owned server-side, not by client expiry.
  */
 class PersistentCookieJar(
     private val store: CookieStore,
@@ -74,8 +74,14 @@ class PersistentCookieJar(
         return null
     }
 
-    /** Convenience: value of the `hermes_session_at` session cookie. */
-    fun getSessionCookieValue(): String? = getCookie(SESSION_COOKIE_NAME)?.value
+    /**
+     * Value of the active dashboard access cookie, including the `__Host-`
+     * and `__Secure-` variants used by HTTPS deployments.
+     */
+    fun getSessionCookieValue(): String? =
+        SESSION_COOKIE_NAMES.firstNotNullOfOrNull { name ->
+            getCookie(name)?.value
+        }
 
     override fun saveFromResponse(
         url: HttpUrl,

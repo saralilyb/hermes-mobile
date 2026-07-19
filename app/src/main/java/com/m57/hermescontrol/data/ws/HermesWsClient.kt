@@ -232,12 +232,13 @@ object HermesWsClient {
     }
 
     /**
-     * If a session cookie is present (gated mode), mint a fresh WS ticket
-     * from the dashboard. The ticket is single-use and has a 30-second TTL,
-     * so we must mint a new one on every connect (first launch and reconnect).
+     * In gated mode, mint a fresh WebSocket ticket from the dashboard. The
+     * ticket is single-use and has a 30-second time-to-live (TTL), so a new
+     * one is required on every connect and reconnect.
      *
-     * The session cookie is attached automatically by the shared CookieJar on
-     * OkHttpProvider.probe (issue #470), so we no longer inject it manually.
+     * Dashboard access and refresh cookies are attached automatically by the
+     * shared CookieJar on [OkHttpProvider.probe]. The ticket endpoint decides
+     * whether those cookies represent a live or refreshable session.
      *
      * Returns true if the token is ready (either because we are not in gated mode,
      * or because ticket refresh succeeded). Returns false if we are in gated mode
@@ -262,13 +263,12 @@ object HermesWsClient {
             return true
         }
 
-        val sessionCookie = AuthManager.getSessionCookie()
-        if (sessionCookie.isNullOrBlank()) {
-            Log.w(TAG, "WS ticket refresh aborted: no session cookie found in gated mode")
-            _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
-            return false
-        }
-
+        // Do not preflight on a client-known access-cookie name. HTTPS
+        // deployments prefix that cookie with `__Host-` or `__Secure-`, and
+        // the access cookie may legitimately be absent while the server still
+        // has a valid refresh cookie. The authenticated ticket endpoint is the
+        // authority: the shared CookieJar attaches every applicable cookie and
+        // the server either refreshes the session or returns an auth failure.
         try {
             val client = OkHttpProvider.probe
             val request =

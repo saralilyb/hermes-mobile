@@ -23,9 +23,9 @@ import okhttp3.Cookie
  * - [getSessionCookie] / [setSessionCookie] — backward-compatible accessors
  *   used by [com.m57.hermescontrol.data.local.AuthManager] and the login flow.
  *
- * The session cookie is still exposed as a single string because the WS client
- * and a few REST paths reference it directly; internally it is just the
- * `hermes_session_at` cookie from the active scope.
+ * A single-value accessor remains for compatibility with migrated sessions;
+ * internally it resolves the dashboard access cookie from the active scope,
+ * including HTTPS prefix variants.
  */
 object CookieManager {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -59,7 +59,7 @@ object CookieManager {
         runBlocking(scope.coroutineContext) { j.useStore(serverId) }
     }
 
-    /** Read the current `hermes_session_at` cookie value (or null). */
+    /** Read the current dashboard access-cookie value (or null). */
     fun getSessionCookie(): String? = jar?.getSessionCookieValue()
 
     /**

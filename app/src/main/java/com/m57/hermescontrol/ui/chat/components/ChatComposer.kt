@@ -110,17 +110,17 @@ fun ChatInputBar(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp, vertical = 4.dp),
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(16.dp),
             colors =
                 CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                    containerColor = MaterialTheme.colorScheme.surface,
                 ),
             border =
                 BorderStroke(
                     width = 1.dp,
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
                 ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         ) {
             Column {
                 // Commands hidden from the suggestion menu — desktop/CLI-only and

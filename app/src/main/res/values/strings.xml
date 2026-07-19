@@ -135,7 +135,7 @@
     <string name="chat_status_reconnecting">Reconnecting\u2026</string>
     <string name="chat_status_disconnected">Disconnected</string>
     <string name="chat_status_no_network">No network</string>
-    <string name="chat_status_auth_expired">Session expired</string>
+    <string name="chat_status_auth_expired">Chat authentication expired</string>
     <string name="chat_thinking">Thinking\u2026</string>
     <string name="chat_thinking_param">Thinking: %1$s\u2026</string>
     <string name="chat_reasoning">Reasoning</string>
@@ -233,7 +233,7 @@
 
     <!-- Language -->
     <string name="settings_item_language">Language</string>
-    <string name="language_system">System default</string>
+    <string name="language_system">System</string>
     <string name="language_english">English</string>
     <string name="language_korean">한국어</string>
 

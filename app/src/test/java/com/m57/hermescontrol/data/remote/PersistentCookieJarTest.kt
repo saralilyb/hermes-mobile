@@ -28,10 +28,11 @@ class PersistentCookieJarTest {
     private fun sessionCookie(
         host: String,
         value: String,
+        name: String = SESSION_COOKIE_NAME,
     ): Cookie =
         Cookie
             .Builder()
-            .name(SESSION_COOKIE_NAME)
+            .name(name)
             .value(value)
             .expiresAt(System.currentTimeMillis() + 10L * 365 * 24 * 60 * 60 * 1000)
             .hostOnlyDomain(host)
@@ -171,6 +172,36 @@ class PersistentCookieJarTest {
             jar.clearActive()
 
             assertTrue(jar.loadForRequest("http://c.local/".toHttpUrl()).isEmpty())
+        }
+
+    @Test
+    fun getSessionCookieValue_acceptsServerCookieNameVariants() =
+        runTest {
+            val variants =
+                listOf(
+                    SESSION_COOKIE_NAME,
+                    "__Host-$SESSION_COOKIE_NAME",
+                    "__Secure-$SESSION_COOKIE_NAME",
+                )
+
+            variants.forEachIndexed { index, name ->
+                val jar = makeJar()
+                val serverId = "variant-$index"
+                val host = "variant-$index.local"
+                jar.useStore(serverId)
+                jar.saveFromResponse(
+                    "https://$host/".toHttpUrl(),
+                    listOf(
+                        sessionCookie(
+                            host = host,
+                            value = "value-$index",
+                            name = name,
+                        ),
+                    ),
+                )
+
+                assertEquals("value-$index", jar.getSessionCookieValue())
+            }
         }
 
     @Test

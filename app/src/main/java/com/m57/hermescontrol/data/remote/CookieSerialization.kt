@@ -86,8 +86,25 @@ fun sessionCookieFromValue(value: String): Cookie? = wrapSessionCookie(value)
 
 const val SESSION_COOKIE_NAME = "hermes_session_at"
 
+/**
+ * Cookie-name variants emitted by Hermes Agent's dashboard-auth server.
+ *
+ * HTTPS deployments use `__Host-` at `/` and `__Secure-` under a reverse-
+ * proxy path. HTTP loopback deployments use the bare name. Keep the strictest
+ * variants first, matching the server's fallback order.
+ */
+val SESSION_COOKIE_NAMES: List<String> =
+    listOf(
+        "__Host-$SESSION_COOKIE_NAME",
+        "__Secure-$SESSION_COOKIE_NAME",
+        SESSION_COOKIE_NAME,
+    )
+
+/** True when [name] is any supported dashboard access-cookie name. */
+fun isSessionCookieName(name: String): Boolean = name in SESSION_COOKIE_NAMES
+
 /** True when [cookie] is the dashboard session cookie. */
-fun isSessionCookie(cookie: Cookie): Boolean = cookie.name == SESSION_COOKIE_NAME
+fun isSessionCookie(cookie: Cookie): Boolean = isSessionCookieName(cookie.name)
 
 /** Parse a raw `Set-Cookie` header value (sans the `hermes_session_at=` key). */
 fun Cookie.Companion.parseRaw(
