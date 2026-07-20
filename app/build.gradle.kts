@@ -175,7 +175,6 @@ dependencies {
     // Encrypted storage
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.datastore)
-    implementation("androidx.startup:startup-runtime:1.1.1")
 
     // Local database (Room) — message persistence
     implementation(libs.androidx.room.runtime)
@@ -227,7 +226,7 @@ tasks.register<Exec>("ktlintFormat") {
 // module, *Preview.kt files, and _test sources. Pairing/Auth screens are
 // exempt via the per-path overlay list below.
 //
-// Acceptable replacements (see docs/color-hardcoded-audit.md):
+// Acceptable replacements:
 //   - MaterialTheme.colorScheme.<token>
 //   - LocalHermesStatusColors.current.<semantic>
 //   - Color.Transparent / Color.Unspecified (intentional)
@@ -278,7 +277,7 @@ tasks.register("checkColorLiterals") {
                     "Replace with MaterialTheme.colorScheme.<token>, " +
                     "LocalHermesStatusColors.current.<semantic>, or " +
                     "Color.Transparent / Color.Unspecified (intentional).\n" +
-                    "See docs/color-hardcoded-audit.md.",
+                    "Update the theme token or the exemption list in app/build.gradle.kts.",
             )
         }
         logger.lifecycle("checkColorLiterals: no hardcoded Color literals found. ✅")
