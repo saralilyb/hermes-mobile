@@ -198,20 +198,34 @@ jobs:
               tr '[:upper:]' '[:lower:]'
           )
 
-          ACTUAL_CERT=
-          SIGNER_COUNT=
-          while IFS= read -r line; do
-            case "$line" in
-              "Signer #1 certificate SHA-256 digest: "*)
-                ACTUAL_CERT=${line##*: }
-                ;;
-              "Number of signers: "*)
-                SIGNER_COUNT=${line##*: }
-                ;;
-            esac
-          done < release/apksigner-verification.txt
+          # Build Tools 36 prefixes the digest with "Signer #1" while 37
+          # prefixes it with the signature scheme (for example, "V2 Signer").
+          # Parse the stable suffix and collapse identical digests that may be
+          # reported once per verified signature scheme.
+          ACTUAL_CERTS=$(
+            sed -n 's/^.*certificate SHA-256 digest: //p' \
+              release/apksigner-verification.txt |
+              tr '[:upper:]' '[:lower:]' |
+              sort -u
+          )
+          ACTUAL_CERT_COUNT=$(
+            printf '%s\n' "$ACTUAL_CERTS" |
+              sed '/^$/d' |
+              wc -l |
+              tr -d ' '
+          )
+          ACTUAL_CERT=$(
+            printf '%s\n' "$ACTUAL_CERTS" |
+              sed -n '1p'
+          )
+          SIGNER_COUNT=$(
+            sed -n 's/^Number of signers: //p' \
+              release/apksigner-verification.txt |
+              tail -n 1
+          )
 
           if [ "$SIGNER_COUNT" != 1 ] ||
+            [ "$ACTUAL_CERT_COUNT" != 1 ] ||
             [ "$ACTUAL_CERT" != "$EXPECTED_CERT" ]; then
             echo "APK signing certificate does not match the pinned identity" >&2
             exit 1
