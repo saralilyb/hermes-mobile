@@ -2,9 +2,6 @@
 
 name: Android CI/CD
 
-env:
-  GRADLE_CACHE_ENCRYPTED_KEY: ${{ secrets.GRADLE_ENCRYPTED_KEY }}
-
 on:
   push:
     branches: [main]
@@ -125,7 +122,10 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: lint-reports
-          path: app/build/reports/lint-results-debug.*
+          # Flavor-qualified since the hermes/iris split:
+          # lint-results-hermesDebug.*, lint-results-irisDebug.*
+          path: app/build/reports/lint-results-*
+          if-no-files-found: error
           retention-days: 7
 
   # ─────────────────────────────────────────────────────────────────────
