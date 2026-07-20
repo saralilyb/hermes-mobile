@@ -71,6 +71,7 @@ jobs:
       - name: Run validation
         run: |
           ./gradlew ktlintCheck
+          ./gradlew checkColorLiterals
           ./gradlew lintHermesDebug lintIrisDebug
           ./gradlew test
           ./gradlew assembleHermesDebug assembleIrisDebug
@@ -169,11 +170,17 @@ jobs:
           APK=app/build/outputs/apk/hermes/release/app-hermes-release.apk
           OUT=release/hermes-mobile-$RELEASE_TAG.apk
           cp "$APK" "$OUT"
-          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
-          if [ ! -x "$APKSIGNER" ]; then
-            echo "Android Build-Tools 36.0.0 apksigner is unavailable" >&2
+          APKSIGNER=$(
+            find "$ANDROID_HOME/build-tools" \
+              -maxdepth 2 -name apksigner -type f |
+              sort |
+              tail -n 1
+          )
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "No executable apksigner found under build-tools" >&2
             exit 1
           fi
+          echo "Using apksigner: $APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$OUT" |
             tee release/apksigner-verification.txt
 

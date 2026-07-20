@@ -13,15 +13,10 @@ local.properties
 *.swp
 *.swo
 
-# Nix / Gradle user home
-\$PWD/
-$PWD/
-
 ktlint
 .hermes/plans/
 
 # Local workspace artifacts and logs
-*.py
 .kotlin/
 
 

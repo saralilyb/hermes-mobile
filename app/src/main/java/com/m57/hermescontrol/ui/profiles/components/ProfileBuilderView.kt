@@ -584,7 +584,7 @@ private fun AddMcpDialog(
                         value = url,
                         onValueChange = { url = it },
                         label = { Text(stringResource(R.string.profiles_builder_mcp_sse_url)) },
-                        placeholder = { Text("http://localhost:8000/sse") },
+                        placeholder = { Text("https://mcp.example.com/sse") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )

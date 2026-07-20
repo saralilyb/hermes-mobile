@@ -366,7 +366,7 @@ object AuthManager {
             appScope?.let {
                 try {
                     it.cancel()
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                 }
             }
             appScope = null

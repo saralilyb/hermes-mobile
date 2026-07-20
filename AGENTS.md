@@ -5,26 +5,35 @@ This complements [README.md](README.md) (for humans) with agent-focused context.
 
 ## Project Overview
 
-**Hermes Control** is a Jetpack Compose Android app — a mobile control panel for
+**Hermes Mobile** is a Jetpack Compose Android app — a mobile control panel for
 [Hermes Agent](https://hermes-agent.nousresearch.com). It talks to the Hermes
-dashboard's REST API and WebSocket TUI Gateway (JSON-RPC 2.0) over a trusted LAN.
+dashboard's REST API and WebSocket TUI Gateway (JSON-RPC 2.0) over HTTPS/WSS in
+release builds. Debug builds may use HTTP/WS on a trusted development network.
 
-- **Package:** `com.m57.hermescontrol`
 - **Min SDK 26 / Target SDK 36 / Compile SDK 36**
-- **Kotlin 2.3.20**, KSP 2.3.9 (standalone versioning, NOT `kotlinVersion-kspVersion`)
-- **Jetpack Compose**, Room 2.7.x, Navigation3, OkHttp WebSocket, Retrofit, Gson
-- **Auth:** `EncryptedSharedPreferences` (AES256-GCM), Bearer token (REST) + `?token=` (WS)
+- **Namespace:** `com.m57.hermescontrol`
+- **Application IDs:** `sh.slb.hermesmobile` (`hermes`) and
+  `sh.slb.irismobile` (`iris`)
+- **Kotlin 2.4.10**, KSP 2.3.10 (standalone versioning, not
+  `kotlinVersion-kspVersion`)
+- **Jetpack Compose**, Room 2.7.x, Navigation3, OkHttp WebSocket, Retrofit,
+  kotlinx-serialization
+- **Auth:** encrypted bearer tokens for direct mode; endpoint-scoped encrypted
+  cookies plus short-lived WebSocket tickets for gated mode
 
 ## Build & Test Commands
 
 ### ✅ Local Android SDK — if available
 
-If you have a local Android SDK (`ANDROID_HOME` set), these work:
+The project has `hermes` and `iris` product flavors. Unqualified tasks such as
+`assembleDebug`, `lintDebug`, and `testDebugUnitTest` are ambiguous; use the
+flavor-qualified tasks:
 
 ```bash
-./gradlew assembleDebug                     # full APK build
-./gradlew testDebugUnitTest                 # unit tests (MockK)
-./gradlew ktlintCheck                       # style check
+./gradlew assembleHermesDebug assembleIrisDebug
+./gradlew testHermesDebugUnitTest testIrisDebugUnitTest
+./gradlew lintHermesDebug lintIrisDebug
+./gradlew ktlintCheck checkColorLiterals
 ```
 
 **ktlint standalone** (no SDK needed):
@@ -45,8 +54,9 @@ chmod +x ktlint
 | `ktlint` | ktlint 1.2.1 style check |
 | `android-lint` | Android Lint |
 | `unit-tests` | JUnit |
-| `build` | assembleDebug (gated by the 3 above) |
-| `release-compile` | compileReleaseKotlin — catches release-variant compilation issues (e.g. debugImplementation-scoped deps referenced in main source) |
+| `build` | Assemble both debug flavors after the fast checks |
+| `release-compile` | Compile both release flavors to catch variant-only failures |
+| `instrumented-tests` | Run both debug flavors on an Android emulator |
 | `ci-summary` | Aggregator (`if: always()`) — branch protection gates on THIS check |
 
 Every Gradle job validates `gradle-wrapper.jar` and uses the remote build cache
@@ -54,8 +64,10 @@ Every Gradle job validates `gradle-wrapper.jar` and uses the remote build cache
 
 ### Releasing (`.github/workflows/release.yml`)
 
-Triggers on `git push tag v*`. Release APK uses R8 minification + resource shrinking.
-Requires `permissions: contents: write` on the `build-release` job.
+Triggers on `git push tag v*` or manual dispatch for an existing tag. The release
+APK uses R8 minification and resource shrinking. The build job has read-only
+repository access; a separate publish job receives `contents: write` and creates
+a draft release from the verified artifacts.
 
 ## Code Style
 
@@ -180,8 +192,8 @@ LoadingState(modifier = Modifier.padding(paddingValues))
 
 **Quick test:** If your screen's top gap is wider than CronJobsScreen's, you've double-stacked.
 
-**See also:** `references/hermes-scaffold-padding.md` in the skill doc for the full
-breakdown, edge cases, and timeline of previous occurrences.
+Keep this contract documented here next to `HermesScaffold`; there is no separate
+repository reference document.
 
 ### Room Persistence
 
@@ -222,13 +234,19 @@ gh pr create --title "fix(#N): description" --body "Closes #N"
 
 ## Security Considerations
 
-- **Cleartext HTTP/WS is intentional** — trusted LAN only. `usesCleartextTraffic="true"`
-  and `http://`/`ws://` URLs are by design. Don't "fix" this unless adding HTTPS support.
-- **`HttpLoggingInterceptor.Level.BODY`** must stay gated on `BuildConfig.DEBUG` — it
-  prints the Authorization header. (B1)
-- **AuthManager token** is ephemeral — it becomes invalid when the Hermes dashboard
-  restarts. Symptom: 401 on every call. Fix: re-extract the token from the running
-  gateway, don't assume the stored one is valid.
+- **Release builds are HTTPS/WSS only.** `ServerEndpoint.parseForBuild()` rejects
+  HTTP, the release manifest disables cleartext, and the main network-security
+  policy denies it. Debug builds override the policy and show a warning for
+  trusted-network development. Never broaden the release policy.
+- **`HttpLoggingInterceptor.Level.BODY`** must stay gated on `BuildConfig.DEBUG` —
+  it can expose authorization headers and message bodies.
+- **Direct mode:** REST uses a bearer token and WebSocket uses `?token=`. A token
+  can become invalid when the Hermes dashboard restarts.
+- **Gated mode:** REST authentication uses endpoint-scoped cookies from the shared
+  `PersistentCookieJar`; WebSocket connections mint a fresh short-lived ticket and
+  use `?ticket=`. Do not infer WebSocket authentication from a successful REST call.
+- **One endpoint authority:** parse a complete base URL with `ServerEndpoint`, then
+  derive REST and WebSocket URLs from it so reverse-proxy prefixes survive.
 - **Release signing** uses a keystore with env-var credentials (`KEYSTORE_PATH`,
   `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`). Don't commit keystore files or
   hardcode passwords.
@@ -268,6 +286,9 @@ com.m57.hermescontrol/
 
 ## Further Reading
 
-- [README.md](README.md) — human-facing overview, features, screenshots, tech stack
-- [TEST_INFRA.md](TEST_INFRA.md) / [TEST_READY.md](TEST_READY.md) — test infrastructure notes
-- [.github/workflows/android.yml](.github/workflows/android.yml) — CI pipeline source of truth
+- [README.md](README.md) — human-facing overview, features, and tech stack
+- [SECURITY.md](SECURITY.md) — transport, credential, storage, and privacy model
+- [SIGNING.md](SIGNING.md) — release identity and key lifecycle
+- [.github/workflows/android.yml](.github/workflows/android.yml) — CI source of truth
+- [.github/workflows/release.yml](.github/workflows/release.yml) — signed release
+  build, verification, and draft publication
