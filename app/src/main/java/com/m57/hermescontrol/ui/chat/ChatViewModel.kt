@@ -91,6 +91,7 @@ data class ChatUiState(
     val modelPickerProviders: List<ModelProvider> = emptyList(),
     val modelPickerPinned: List<PinnedModel> = emptyList(),
     val modelPickerLoading: Boolean = false,
+    val modelInventoryResolved: Boolean = false,
     // Current session's active provider/model label, used by the model action
     // accessibility text and picker title.
     val currentSessionModel: String? = null,
@@ -1177,9 +1178,21 @@ class ChatViewModel(
                 safeApiCall {
                     ApiClient.hermesApi.getModelOptions(refresh = false)
                 }
-            if (result is NetworkResult.Success) {
-                cachedModelOptions = result.data.providers.orEmpty()
-                _uiState.update { it.copy(modelPickerPinned = AuthManager.getPinnedModels()) }
+            when (result) {
+                is NetworkResult.Success -> {
+                    cachedModelOptions = result.data.providers.orEmpty()
+                    _uiState.update {
+                        it.copy(
+                            modelPickerProviders = cachedModelOptions,
+                            modelPickerPinned = AuthManager.getPinnedModels(),
+                            modelInventoryResolved = true,
+                        )
+                    }
+                }
+
+                is NetworkResult.Failure -> {
+                    _uiState.update { it.copy(modelInventoryResolved = true) }
+                }
             }
         }
     }
@@ -1220,6 +1233,7 @@ class ChatViewModel(
                         it.copy(
                             modelPickerProviders = cachedModelOptions,
                             modelPickerLoading = false,
+                            modelInventoryResolved = true,
                         )
                     }
                 }
@@ -1228,6 +1242,7 @@ class ChatViewModel(
                     _uiState.update {
                         it.copy(
                             modelPickerLoading = false,
+                            modelInventoryResolved = true,
                             errorMessage = "Failed to load models: ${result.error.message}",
                         )
                     }
