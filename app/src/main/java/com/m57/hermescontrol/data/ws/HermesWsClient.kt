@@ -155,13 +155,13 @@ object HermesWsClient {
     // WS payloads (desktop `requestDesktopOnboarding`). Mobile has no equivalent
     // at the auth layer, so we extract it here once, globally, and let any
     // screen render a banner that deep-links to ProvidersScreen.
-    private val _credentialWarning = MutableStateFlow<String?>(null)
+    private val credentialWarningState = CredentialWarningState()
 
     /** Non-null when the backend reports a credential warning to resolve. */
-    val credentialWarning: StateFlow<String?> = _credentialWarning.asStateFlow()
+    val credentialWarning: StateFlow<String?> = credentialWarningState.warning
 
     fun clearCredentialWarning() {
-        _credentialWarning.value = null
+        credentialWarningState.dismiss()
     }
 
     init {
@@ -189,9 +189,7 @@ object HermesWsClient {
                         else -> null
                     }
                 val warning = data?.get("credential_warning") as? String
-                if (!warning.isNullOrBlank()) {
-                    _credentialWarning.value = warning
-                }
+                credentialWarningState.update(warning)
             }
         }
     }

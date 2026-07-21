@@ -4,10 +4,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -25,8 +29,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.m57.hermescontrol.data.model.ModelProvider
 import com.m57.hermescontrol.data.model.PinnedModel
 import com.m57.hermescontrol.ui.common.LoadingState
@@ -49,11 +55,17 @@ fun ModelPickerDialog(
     pinnedModels: List<PinnedModel> = emptyList(),
     onSelect: (provider: String, model: String) -> Unit,
     onDismiss: () -> Unit,
+    imeInsets: WindowInsets = WindowInsets.ime,
 ) {
     var pickerQuery by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier =
+            Modifier
+                .windowInsetsPadding(imeInsets)
+                .testTag("model_picker_dialog"),
+        properties = DialogProperties(decorFitsSystemWindows = false),
         title = { Text(title) },
         text = {
             Column {
@@ -84,11 +96,17 @@ fun ModelPickerDialog(
                     SearchBar(
                         query = pickerQuery,
                         onQueryChange = { pickerQuery = it },
+                        modifier = Modifier.testTag("model_picker_search"),
                         placeholder = "Search models and providers...",
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    LazyColumn(modifier = Modifier.height(400.dp)) {
+                    LazyColumn(
+                        modifier =
+                            Modifier
+                                .weight(1f, fill = false)
+                                .heightIn(max = 400.dp),
+                    ) {
                         // ── Pinned section ──
                         if (filteredPinned.isNotEmpty()) {
                             item(key = "pinned-header") {
@@ -173,7 +191,12 @@ fun ModelPickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("model_picker_cancel"),
+            ) {
+                Text("Cancel")
+            }
         },
     )
 }

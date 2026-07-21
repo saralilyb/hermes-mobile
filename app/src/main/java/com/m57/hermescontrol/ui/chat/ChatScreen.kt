@@ -117,6 +117,13 @@ fun ChatScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val streamingState by viewModel.streamingState.collectAsStateWithLifecycle()
     val credentialWarning by HermesWsClient.credentialWarning.collectAsStateWithLifecycle()
+    val visibleCredentialWarning =
+        actionableCredentialWarning(
+            warning = credentialWarning,
+            currentSessionModel = state.currentSessionModel,
+            providers = state.modelPickerProviders,
+            inventoryResolved = state.modelInventoryResolved,
+        )
     val listState = rememberLazyListState()
     var isOlderPagingArmed by remember(state.currentSessionId) { mutableStateOf(false) }
 
@@ -395,7 +402,7 @@ fun ChatScreen(
                 onReloginClick = { showReloginDialog = true },
             )
 
-            credentialWarning?.let { warning ->
+            visibleCredentialWarning?.let { warning ->
                 CredentialWarningBanner(
                     warning = warning,
                     onFix = { NavigationController.navigateTo(com.m57.hermescontrol.ProvidersScreen) },
