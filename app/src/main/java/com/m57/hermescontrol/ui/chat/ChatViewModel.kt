@@ -90,7 +90,8 @@ data class ChatUiState(
     val modelPickerProviders: List<ModelProvider> = emptyList(),
     val modelPickerPinned: List<PinnedModel> = emptyList(),
     val modelPickerLoading: Boolean = false,
-    // Current session's active model label (provider/model), shown in the chip
+    // Current session's active provider/model label, used by the model action
+    // accessibility text and picker title.
     val currentSessionModel: String? = null,
     // Attachment state
     val pendingAttachments: List<Attachment> = emptyList(),
@@ -259,7 +260,19 @@ class ChatViewModel(
     // ── Connection ───────────────────────────────────────────────────────
 
     private fun connectWebSocket(setLoading: Boolean = false) {
-        val token = AuthManager.getToken() ?: return
+        // In loopback (token) mode the session token is the WS credential and
+        // must be present before connecting. In gated (ticket) mode the ticket
+        // is minted fresh by HermesWsClient.refreshWsTicketIfNeeded() from the
+        // persisted session cookie, so getToken() is expected to be empty here
+        // and must NOT block the connect (issue #640: chat showed "reconnect"
+        // immediately after basic-auth login because this guard returned early).
+        val isGated =
+            runCatching { AuthManager.serverStore.getLatestState().wsAuthParam == "ticket" }
+                .getOrNull() ?: false
+        if (!isGated) {
+            val token = AuthManager.getToken() ?: return
+            if (token.isBlank()) return
+        }
 
         // Don't disturb an already-working (or already-recovering) connection.
         // HermesWsClient is a global singleton shared by every tab; the chat tab
@@ -364,6 +377,22 @@ class ChatViewModel(
         when (event) {
             is WsEvent.GatewayReady -> {
                 handleGatewayReady()
+            }
+
+            is WsEvent.SessionInfo -> {
+                if (isCurrentSession(event.sessionId)) {
+                    val model = (event.data?.get("model") as? String)?.trim().orEmpty()
+                    val provider = (event.data?.get("provider") as? String)?.trim().orEmpty()
+                    if (model.isNotEmpty()) {
+                        val label =
+                            if (provider.isEmpty() || model.startsWith("$provider/")) {
+                                model
+                            } else {
+                                "$provider/$model"
+                            }
+                        _uiState.update { it.copy(currentSessionModel = label) }
+                    }
+                }
             }
 
             is WsEvent.MessageToken -> {
@@ -492,6 +521,7 @@ class ChatViewModel(
                         isLoading = false,
                         messages = emptyList(),
                         chatTitle = "Hermes",
+                        currentSessionModel = null,
                     )
                 }
                 // Mirror the active session id app-wide so session-scoped
@@ -1252,6 +1282,7 @@ class ChatViewModel(
                 chatTitle = title,
                 showSessionPicker = false,
                 isAgentTyping = false,
+                currentSessionModel = null,
             )
         }
         // Mirror the active session id app-wide (issue #532).

@@ -240,11 +240,12 @@ object HermesWsClient {
      * shared CookieJar on [OkHttpProvider.probe]. The ticket endpoint decides
      * whether those cookies represent a live or refreshable session.
      *
-     * Returns true if the token is ready (either because we are not in gated mode,
-     * or because ticket refresh succeeded). Returns false if we are in gated mode
-     * and ticket refresh failed or cannot be performed.
+     * Distinguishes a definitive authentication rejection from a retryable
+     * transport/server failure. Only the former should force the user to sign
+     * in again; treating every ticket-mint failure as expired authentication
+     * turns brief gateway or network interruptions into logout loops.
      */
-    private fun refreshWsTicketIfNeeded(): Boolean {
+    private fun refreshWsTicketIfNeeded(): TicketRefreshResult {
         val isGated =
             try {
                 AuthManager.serverStore.getLatestState().wsAuthParam == "ticket"
@@ -260,7 +261,7 @@ object HermesWsClient {
             // restart. Refresh it before each WebSocket handshake so automatic
             // reconnect does not get stuck in AUTH_EXPIRED with a stale token.
             DashboardSessionTokenRefresher.refresh()
-            return true
+            return TicketRefreshResult.READY
         }
 
         // Do not preflight on a client-known access-cookie name. HTTPS
@@ -289,8 +290,11 @@ object HermesWsClient {
                             TAG,
                             "WS ticket refresh failed: HTTP ${response.code}",
                         )
-                        _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
-                        return@use false
+                        return@use if (response.code == 401 || response.code == 403) {
+                            TicketRefreshResult.AUTHENTICATION_FAILED
+                        } else {
+                            TicketRefreshResult.TRANSIENT_FAILURE
+                        }
                     }
 
                     val ticket =
@@ -300,20 +304,24 @@ object HermesWsClient {
                             TAG,
                             "WS ticket refresh failed: invalid response",
                         )
-                        _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
-                        return@use false
+                        return@use TicketRefreshResult.TRANSIENT_FAILURE
                     }
 
                     AuthManager.setToken(ticket)
                     if (BuildConfig.DEBUG) Log.d(TAG, "WS ticket refreshed")
-                    true
+                    TicketRefreshResult.READY
                 }
             }
         } catch (e: Exception) {
             Log.w(TAG, "WS ticket refresh failed: ${e.javaClass.simpleName}")
-            _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
-            return false
+            return TicketRefreshResult.TRANSIENT_FAILURE
         }
+    }
+
+    private enum class TicketRefreshResult {
+        READY,
+        AUTHENTICATION_FAILED,
+        TRANSIENT_FAILURE,
     }
 
     /** Cleanly close the WebSocket and stop auto-reconnect. */
@@ -459,9 +467,22 @@ object HermesWsClient {
     // ── Internal ─────────────────────────────────────────────────────────
 
     private fun openSocket() {
-        if (!refreshWsTicketIfNeeded()) {
-            Log.w(TAG, "Aborting openSocket: WS ticket refresh failed")
-            return
+        when (refreshWsTicketIfNeeded()) {
+            TicketRefreshResult.READY -> Unit
+
+            TicketRefreshResult.AUTHENTICATION_FAILED -> {
+                Log.w(TAG, "Aborting openSocket: dashboard authentication rejected")
+                intentionalClose.set(true)
+                _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
+                return
+            }
+
+            TicketRefreshResult.TRANSIENT_FAILURE -> {
+                Log.w(TAG, "Deferring openSocket: WS ticket refresh temporarily unavailable")
+                _connectionStatus.value = ConnectionStatus.RECONNECTING
+                scheduleReconnect()
+                return
+            }
         }
         val url =
             try {

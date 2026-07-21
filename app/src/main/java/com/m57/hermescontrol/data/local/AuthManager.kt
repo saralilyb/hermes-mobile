@@ -443,7 +443,10 @@ object AuthManager {
                         profile
                     }
                 }
-            state.copy(connectionProfiles = profiles)
+            state.copy(
+                baseUrl = normalized,
+                connectionProfiles = profiles,
+            )
         }
     }
 

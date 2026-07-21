@@ -79,7 +79,6 @@
     <string name="screen_config">설정</string>
     <string name="screen_mcp_servers">MCP 서버</string>
     <string name="screen_models">모델</string>
-    <string name="screen_pairing">페어링</string>
     <string name="screen_keys">키</string>
     <string name="screen_channels">채널</string>
     <string name="screen_logs">로그</string>
@@ -106,6 +105,10 @@
     <!-- Chat Screen & Bubble -->
     <string name="chat_action_search">검색</string>
     <string name="chat_action_close_search">검색 닫기</string>
+    <string name="chat_action_switch_model">이 채팅의 모델 변경</string>
+    <string name="chat_action_switch_model_current">이 채팅의 모델 변경. 현재: %1$s</string>
+    <string name="chat_model_picker_title">이 채팅의 모델 변경</string>
+    <string name="chat_model_picker_title_current">모델 변경 — 현재: %1$s</string>
     <string name="chat_action_reconnect">재접속</string>
     <string name="chat_action_relogin">재로그인</string>
     <string name="chat_relogin_title">헤르메스 재로그인</string>
@@ -228,7 +231,6 @@
     <string name="connect_error_malformed">잘못된 페어링 문자열 — URL 또는 Base64 JSON이어야 함</string>
     <string name="connect_error_parse_failed">페어링 문자열 파싱 실패: %1$s</string>
 
-    <string name="connect_pairing_string">페어링 문자열</string>
     <string name="connect_placeholder_pairing">hermes://… 또는 Base64 설정 붙여넣기</string>
     <string name="connect_save_profile">연결 프로필 저장</string>
     <string name="connect_profile_name">프로필 이름</string>
@@ -404,16 +406,6 @@
     <string name="webhooks_hint_secret">비워두면 자동 생성</string>
     <string name="webhooks_no_matching">일치하는 구독 없음</string>
     <string name="webhooks_no_matching_desc">검색어를 조정해보세요.</string>
-
-    <!-- Pairing Screen -->
-    <string name="pairing_screen_title">기기 페어링</string>
-    <string name="pairing_sec_pending">승인 대기</string>
-    <string name="pairing_action_clear_all">전체 지우기</string>
-    <string name="pairing_action_approve">승인</string>
-    <string name="pairing_sec_approved">승인된 기기</string>
-    <string name="pairing_empty_approved">승인된 기기가 없습니다.</string>
-    <string name="pairing_label_user_id">사용자 ID: %1$s</string>
-    <string name="pairing_action_revoke">철회</string>
 
     <!-- Config Screen -->
     <string name="config_screen_title">설정</string>
@@ -688,12 +680,6 @@
     <string name="landing_title">헤르메스 모바일</string>
     <string name="landing_subtitle">Hermes Agent 제어판</string>
     <string name="landing_action_auth_login">인증 로그인</string>
-    <string name="landing_action_pairing_login">페어링 로그인</string>
-
-    <!-- Pairing Code Entry Screen -->
-    <string name="pairing_code_entry_title">페어링 로그인</string>
-    <string name="pairing_code_entry_manual_desc">아래에 Hermes 대시보드의 페어링 문자열을 붙여넣으세요.</string>
-    <string name="pairing_code_entry_code_label">페어링 코드</string>
 
     <!-- Loading State -->
     <string name="loading_state_subtitle_models">모델 제공자 확인 중…</string>

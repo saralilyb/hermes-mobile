@@ -406,6 +406,36 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun testSessionInfo_tracksModelForCurrentSessionOnly() =
+        runTest {
+            val (viewModel, sessionId) = createViewModelWithSession()
+
+            mockEventsFlow.emit(
+                WsEvent.SessionInfo(
+                    data = mapOf("provider" to "openai-codex", "model" to "gpt-5.6-sol"),
+                    sessionId = sessionId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(
+                "openai-codex/gpt-5.6-sol",
+                viewModel.uiState.value.currentSessionModel,
+            )
+
+            mockEventsFlow.emit(
+                WsEvent.SessionInfo(
+                    data = mapOf("provider" to "fireworks", "model" to "glm-5p2"),
+                    sessionId = "another-session",
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(
+                "openai-codex/gpt-5.6-sol",
+                viewModel.uiState.value.currentSessionModel,
+            )
+        }
+
+    @Test
     fun testTypedModelCommandWithArg_dispatchesDirectly() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
