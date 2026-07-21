@@ -194,6 +194,20 @@ class AuthManagerTest {
         assertEquals("wss://hermes.local:1234/api/ws?token=", AuthManager.wsUrl())
     }
 
+    @Test
+    fun testWsUrlWithCredential_doesNotPersistHandshakeTicket() {
+        AuthManager.ensureDefaultProfile()
+        every { mockPrefs.getString("token_${AuthManager.DEFAULT_PROFILE_ID}", null) } returns "token123"
+        AuthManager.setSelectedProfileId(AuthManager.DEFAULT_PROFILE_ID)
+        AuthManager.setBaseUrl("https://hermes.local:1234/")
+
+        assertEquals(
+            "wss://hermes.local:1234/api/ws?ticket=fresh-ticket",
+            AuthManager.wsUrlWithCredential("fresh-ticket"),
+        )
+        assertEquals("token123", AuthManager.getToken())
+    }
+
     // ── TEST-08: Token routing through selected profile ─────────────────
 
     @Test

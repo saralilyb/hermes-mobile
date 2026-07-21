@@ -74,6 +74,7 @@ object HermesWsClient {
     private val requestId = AtomicInteger(0)
     private val connected = AtomicBoolean(false)
     private val intentionalClose = AtomicBoolean(false)
+    private val ticketAuthRetryUsed = AtomicBoolean(false)
     private val messageQueue = ConcurrentLinkedQueue<String>()
 
     @Volatile
@@ -226,6 +227,7 @@ object HermesWsClient {
             return
         }
         intentionalClose.set(false)
+        ticketAuthRetryUsed.set(false)
         currentBackoff = INITIAL_BACKOFF_MS
         _connectionStatus.value = ConnectionStatus.CONNECTING
         openSocket()
@@ -261,7 +263,7 @@ object HermesWsClient {
             // restart. Refresh it before each WebSocket handshake so automatic
             // reconnect does not get stuck in AUTH_EXPIRED with a stale token.
             DashboardSessionTokenRefresher.refresh()
-            return TicketRefreshResult.READY
+            return TicketRefreshResult(TicketRefreshStatus.READY)
         }
 
         // Do not preflight on a client-known access-cookie name. HTTPS
@@ -291,9 +293,9 @@ object HermesWsClient {
                             "WS ticket refresh failed: HTTP ${response.code}",
                         )
                         return@use if (response.code == 401 || response.code == 403) {
-                            TicketRefreshResult.AUTHENTICATION_FAILED
+                            TicketRefreshResult(TicketRefreshStatus.AUTHENTICATION_FAILED)
                         } else {
-                            TicketRefreshResult.TRANSIENT_FAILURE
+                            TicketRefreshResult(TicketRefreshStatus.TRANSIENT_FAILURE)
                         }
                     }
 
@@ -304,21 +306,25 @@ object HermesWsClient {
                             TAG,
                             "WS ticket refresh failed: invalid response",
                         )
-                        return@use TicketRefreshResult.TRANSIENT_FAILURE
+                        return@use TicketRefreshResult(TicketRefreshStatus.TRANSIENT_FAILURE)
                     }
 
-                    AuthManager.setToken(ticket)
                     if (BuildConfig.DEBUG) Log.d(TAG, "WS ticket refreshed")
-                    TicketRefreshResult.READY
+                    TicketRefreshResult(TicketRefreshStatus.READY, ticket)
                 }
             }
         } catch (e: Exception) {
             Log.w(TAG, "WS ticket refresh failed: ${e.javaClass.simpleName}")
-            return TicketRefreshResult.TRANSIENT_FAILURE
+            return TicketRefreshResult(TicketRefreshStatus.TRANSIENT_FAILURE)
         }
     }
 
-    private enum class TicketRefreshResult {
+    private data class TicketRefreshResult(
+        val status: TicketRefreshStatus,
+        val ticket: String? = null,
+    )
+
+    private enum class TicketRefreshStatus {
         READY,
         AUTHENTICATION_FAILED,
         TRANSIENT_FAILURE,
@@ -327,6 +333,7 @@ object HermesWsClient {
     /** Cleanly close the WebSocket and stop auto-reconnect. */
     fun disconnect() {
         intentionalClose.set(true)
+        ticketAuthRetryUsed.set(false)
         reconnectJob?.cancel()
         reconnectJob = null
         stopHealthTracking()
@@ -467,17 +474,18 @@ object HermesWsClient {
     // ── Internal ─────────────────────────────────────────────────────────
 
     private fun openSocket() {
-        when (refreshWsTicketIfNeeded()) {
-            TicketRefreshResult.READY -> Unit
+        val ticketResult = refreshWsTicketIfNeeded()
+        when (ticketResult.status) {
+            TicketRefreshStatus.READY -> Unit
 
-            TicketRefreshResult.AUTHENTICATION_FAILED -> {
+            TicketRefreshStatus.AUTHENTICATION_FAILED -> {
                 Log.w(TAG, "Aborting openSocket: dashboard authentication rejected")
                 intentionalClose.set(true)
                 _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
                 return
             }
 
-            TicketRefreshResult.TRANSIENT_FAILURE -> {
+            TicketRefreshStatus.TRANSIENT_FAILURE -> {
                 Log.w(TAG, "Deferring openSocket: WS ticket refresh temporarily unavailable")
                 _connectionStatus.value = ConnectionStatus.RECONNECTING
                 scheduleReconnect()
@@ -486,7 +494,8 @@ object HermesWsClient {
         }
         val url =
             try {
-                AuthManager.wsUrl()
+                ticketResult.ticket?.let(AuthManager::wsUrlWithCredential)
+                    ?: AuthManager.wsUrl()
             } catch (e: IllegalArgumentException) {
                 Log.w(TAG, "WebSocket blocked by transport policy")
                 _connectionStatus.value = ConnectionStatus.DISCONNECTED
@@ -525,6 +534,29 @@ object HermesWsClient {
                     openSocket()
                 }
             }
+    }
+
+    /**
+     * A WebSocket ticket is single-use and can be rejected after the dashboard
+     * session has already refreshed successfully. In gated mode, mint and try
+     * one fresh ticket before declaring the dashboard session expired.
+     */
+    private fun handleAuthenticationRejected() {
+        val isGated =
+            runCatching {
+                AuthManager.serverStore.getLatestState().wsAuthParam == "ticket"
+            }.getOrDefault(false)
+        if (isGated && !intentionalClose.get() &&
+            ticketAuthRetryUsed.compareAndSet(false, true)
+        ) {
+            Log.w(TAG, "WebSocket ticket rejected; retrying once with a fresh ticket")
+            _connectionStatus.value = ConnectionStatus.RECONNECTING
+            wsScope.launch { openSocket() }
+            return
+        }
+
+        intentionalClose.set(true)
+        _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
     }
 
     // ── Listener ─────────────────────────────────────────────────────────
@@ -566,6 +598,12 @@ object HermesWsClient {
                     )
                     WsEvent.Unknown(text)
                 }
+            // A parsed gateway frame proves that the fresh ticket established
+            // a usable session. Do not reset on unknown/auth-noise frames: that
+            // could otherwise permit an immediate rejection loop.
+            if (event !is WsEvent.Unknown) {
+                ticketAuthRetryUsed.set(false)
+            }
             when (event) {
                 is WsEvent.RpcResult -> resolvePending(event.id, event.result, null)
                 is WsEvent.RpcError -> resolvePending(event.id, null, event.error)
@@ -598,7 +636,7 @@ object HermesWsClient {
                 reason.contains("unauthorized", ignoreCase = true) ||
                 reason.startsWith("auth:", ignoreCase = true)
             ) {
-                _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
+                handleAuthenticationRejected()
             } else {
                 _connectionStatus.value = ConnectionStatus.RECONNECTING
                 scheduleReconnect()
@@ -618,7 +656,7 @@ object HermesWsClient {
                     "401",
                 ) == true || t.message?.contains("unauthorized", ignoreCase = true) == true
             ) {
-                _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
+                handleAuthenticationRejected()
             } else {
                 _connectionStatus.value = ConnectionStatus.RECONNECTING
                 scheduleReconnect()

@@ -20,22 +20,14 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
 /**
- * Regression test for the basic-auth token-derivation bug.
+ * Regression coverage for the gated-auth CookieJar contract.
  *
- * Root cause (issue #634 rework): AuthLoginViewModel.connectBasicAuth() built a
- * FRESH OkHttpClient for the /auth/password-login call, so the Set-Cookie from
- * that response was captured by an ephemeral jar and never reached the
- * /api/auth/ws-ticket call on a DIFFERENT client. The ticket request then got
- * 401, connectBasicAuth returned null, and the UI fell back to asking the user
- * to paste a token manually.
- *
- * Fix: both calls use the SHARED OkHttpProvider.probe client (same
- * CookieManager.cookieJar), so the session cookie set by password-login flows
- * into the ws-ticket request automatically.
- *
- * This test proves the contract at the layer that was actually broken: a
- * password-login with Set-Cookie on the shared client must let a subsequent
- * ws-ticket request on the SAME client carry the cookie and succeed.
+ * Password login and the later WebSocket handshake run on separate call paths.
+ * Both must use the shared [OkHttpProvider] CookieJar so the dashboard session
+ * captured during login reaches the per-handshake `/api/auth/ws-ticket` call.
+ * This test proves that contract at the HTTP layer: a password login with
+ * `Set-Cookie` on the shared client lets a later ticket request carry the
+ * cookie and succeed.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class AuthLoginBasicAuthFlowTest {

@@ -32,12 +32,15 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -552,6 +555,24 @@ fun ChatScreen(
                     viewModel.sendSlashModel(provider, model)
                 },
                 onDismiss = { viewModel.closeModelPicker() },
+            )
+        }
+
+        state.modelSwitchConfirmation?.let { confirmation ->
+            AlertDialog(
+                onDismissRequest = viewModel::cancelModelSwitchConfirmation,
+                title = { Text(stringResource(R.string.chat_model_confirm_title)) },
+                text = { Text(confirmation.message) },
+                confirmButton = {
+                    TextButton(onClick = viewModel::confirmModelSwitch) {
+                        Text(stringResource(R.string.chat_model_confirm_action))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = viewModel::cancelModelSwitchConfirmation) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
+                },
             )
         }
     }

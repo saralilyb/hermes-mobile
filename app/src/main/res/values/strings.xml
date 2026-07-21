@@ -123,7 +123,13 @@
     <string name="chat_action_switch_model">Switch model for this chat</string>
     <string name="chat_action_switch_model_current">Switch model for this chat. Current: %1$s</string>
     <string name="chat_model_picker_title">Switch model for this chat</string>
-    <string name="chat_model_picker_title_current">Switch model — current: %1$s</string>
+    <string name="chat_model_picker_title_current">Switch model (current: %1$s)</string>
+    <string name="chat_model_confirm_title">Confirm model switch</string>
+    <string name="chat_model_confirm_action">Switch model</string>
+    <string name="chat_model_confirm_default_message">This model may incur additional cost.</string>
+    <string name="chat_model_switch_no_session">No active live session</string>
+    <string name="chat_model_switch_session_changed">The active session changed; choose the model again</string>
+    <string name="chat_model_switch_failed">Failed to switch model: %1$s</string>
     <string name="chat_action_reconnect">Reconnect</string>
     <string name="chat_action_relogin">Re-login</string>
     <string name="chat_relogin_title">Re-login to Hermes</string>
