@@ -566,6 +566,11 @@ object HermesWsClient {
             webSocket: WebSocket,
             response: Response,
         ) {
+            if (webSocket !== HermesWsClient.webSocket) {
+                Log.d(TAG, "Ignoring stale WebSocket onOpen callback")
+                webSocket.close(1000, "Superseded connection")
+                return
+            }
             Log.i(TAG, "WebSocket opened")
             connected.set(true)
             _connectionStatus.value = ConnectionStatus.CONNECTED
@@ -584,6 +589,10 @@ object HermesWsClient {
             webSocket: WebSocket,
             text: String,
         ) {
+            if (webSocket !== HermesWsClient.webSocket) {
+                Log.d(TAG, "Ignoring stale WebSocket message")
+                return
+            }
             lastPongTimestamp = System.currentTimeMillis()
             // Resolve any in-flight `request()` awaiting this RPC result/error
             // (issue #526) before fanning the parsed event out to collectors.
@@ -622,6 +631,9 @@ object HermesWsClient {
         ) {
             Log.d(TAG, "WebSocket closing: $code")
             webSocket.close(code, reason)
+            if (webSocket !== HermesWsClient.webSocket) {
+                Log.d(TAG, "Ignoring stale WebSocket onClosing callback")
+            }
         }
 
         override fun onClosed(
@@ -629,6 +641,11 @@ object HermesWsClient {
             code: Int,
             reason: String,
         ) {
+            if (webSocket !== HermesWsClient.webSocket) {
+                Log.d(TAG, "Ignoring stale WebSocket onClosed callback")
+                return
+            }
+            HermesWsClient.webSocket = null
             Log.i(TAG, "WebSocket closed: $code")
             connected.set(false)
             stopHealthTracking()
@@ -648,6 +665,11 @@ object HermesWsClient {
             t: Throwable,
             response: Response?,
         ) {
+            if (webSocket !== HermesWsClient.webSocket) {
+                Log.d(TAG, "Ignoring stale WebSocket onFailure callback")
+                return
+            }
+            HermesWsClient.webSocket = null
             Log.e(TAG, "WebSocket failure (${t.javaClass.simpleName})")
             connected.set(false)
             stopHealthTracking()

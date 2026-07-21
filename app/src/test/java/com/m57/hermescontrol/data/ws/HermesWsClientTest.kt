@@ -492,6 +492,41 @@ class HermesWsClientTest {
         assertFalse(HermesWsClient.isConnected)
     }
 
+    @Test
+    fun testStaleTerminalCallbacksDoNotClobberFreshConnection() {
+        val activeSocket = mockk<WebSocket>(relaxed = true)
+        val staleSocket = mockk<WebSocket>(relaxed = true)
+
+        val socketField = HermesWsClient::class.java.getDeclaredField("webSocket")
+        socketField.isAccessible = true
+        socketField.set(HermesWsClient, activeSocket)
+
+        val connectedField = HermesWsClient::class.java.getDeclaredField("connected")
+        connectedField.isAccessible = true
+        (connectedField.get(HermesWsClient) as java.util.concurrent.atomic.AtomicBoolean).set(true)
+
+        val statusField = HermesWsClient::class.java.getDeclaredField("_connectionStatus")
+        statusField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val status = statusField.get(HermesWsClient) as MutableStateFlow<ConnectionStatus>
+        status.value = ConnectionStatus.CONNECTED
+
+        val listenerClass =
+            HermesWsClient::class.java.declaredClasses.first {
+                it.simpleName == "WsListenerImpl"
+            }
+        val constructor = listenerClass.getDeclaredConstructor()
+        constructor.isAccessible = true
+        val staleListener = constructor.newInstance() as WebSocketListener
+
+        staleListener.onClosed(staleSocket, 4401, "auth: ticket_invalid")
+        staleListener.onFailure(staleSocket, java.io.IOException("late failure"), null)
+
+        assertTrue(HermesWsClient.isConnected)
+        assertEquals(ConnectionStatus.CONNECTED, HermesWsClient.connectionStatus.value)
+        assertTrue(socketField.get(HermesWsClient) === activeSocket)
+    }
+
     // ── Issue #635: gated-mode WS ticket fetch must not be blocked by a
     // missing bare-name session cookie (HTTPS deployments prefix it with
     // __Host- / __Secure-). ────────────────────────────────────────────────
