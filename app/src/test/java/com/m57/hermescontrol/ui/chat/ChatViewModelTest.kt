@@ -1233,6 +1233,202 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun testSessionResumeRpcResult_restoresHistoryFromPayload() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val resumeRequestId = "resume-history"
+            coEvery {
+                ApiClient.hermesApi.getSessionMessages(any(), any(), any())
+            } returns
+                retrofit2.Response.success(
+                    com.m57.hermescontrol.data.model.SessionMessagesResponse(
+                        messages = emptyList(),
+                    ),
+                )
+            every {
+                HermesWsClient.send(
+                    WsMethods.SESSION_RESUME,
+                    mapOf("session_id" to "session-root"),
+                    any(),
+                )
+            } answers {
+                arg<((String) -> Unit)?>(2)?.invoke(resumeRequestId)
+                resumeRequestId
+            }
+
+            viewModel.switchSession("session-root")
+            advanceUntilIdle()
+            mockEventsFlow.emit(
+                WsEvent.RpcResult(
+                    resumeRequestId,
+                    mapOf(
+                        "session_id" to "runtime-456",
+                        "resumed" to "session-tip",
+                        "message_count" to 2.0,
+                        "messages" to
+                            listOf(
+                                mapOf(
+                                    "role" to "user",
+                                    "text" to "Earlier question",
+                                ),
+                                mapOf(
+                                    "role" to "assistant",
+                                    "text" to "Earlier answer",
+                                ),
+                            ),
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            val messages = viewModel.uiState.value.messages
+            assertEquals(
+                "session-tip",
+                viewModel.uiState.value.currentSessionId,
+            )
+            assertEquals(3, messages.size)
+            assertEquals("Earlier question", messages[0].content)
+            assertEquals(MessageRole.USER, messages[0].role)
+            assertEquals("Earlier answer", messages[1].content)
+            assertEquals(MessageRole.ASSISTANT, messages[1].role)
+            assertEquals("Session resumed", messages[2].content)
+
+            viewModel.refreshCurrentSession()
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf("Earlier question", "Earlier answer", "Session resumed"),
+                viewModel.uiState.value.messages.map { it.content },
+            )
+        }
+
+    @Test
+    fun testStaleSessionResumeRpcResult_isIgnored() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            every {
+                HermesWsClient.send(
+                    WsMethods.SESSION_RESUME,
+                    any(),
+                    any(),
+                )
+            } answers {
+                val sessionId = arg<Map<String, Any>>(1)["session_id"] as String
+                val requestId = "resume-$sessionId"
+                arg<((String) -> Unit)?>(2)?.invoke(requestId)
+                requestId
+            }
+
+            viewModel.switchSession("session-a")
+            advanceUntilIdle()
+            viewModel.switchSession("session-b")
+            advanceUntilIdle()
+            mockEventsFlow.emit(
+                WsEvent.RpcResult(
+                    "resume-session-a",
+                    mapOf(
+                        "session_id" to "runtime-a",
+                        "resumed" to "session-a-tip",
+                        "messages" to
+                            listOf(
+                                mapOf(
+                                    "role" to "assistant",
+                                    "text" to "Wrong session",
+                                ),
+                            ),
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("session-b", viewModel.uiState.value.currentSessionId)
+            assertTrue(viewModel.uiState.value.messages.isEmpty())
+        }
+
+    @Test
+    fun testResumePayload_doesNotBreakRestPagination() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val api = ApiClient.hermesApi
+            coEvery { api.getSessions(any(), any(), any()) } returns
+                retrofit2.Response.success(
+                    com.m57.hermescontrol.data.model.SessionListResponse(
+                        sessions =
+                            listOf(
+                                com.m57.hermescontrol.data.model.SessionInfo(
+                                    id = "session-root",
+                                    message_count = 200,
+                                ),
+                            ),
+                    ),
+                )
+            coEvery {
+                api.getSessionMessages("session-root", 150, 50)
+            } returns
+                retrofit2.Response.success(
+                    com.m57.hermescontrol.data.model.SessionMessagesResponse(
+                        messages =
+                            listOf(
+                                com.m57.hermescontrol.data.model.SessionMessage(
+                                    role = "user",
+                                    content = "REST question",
+                                ),
+                                com.m57.hermescontrol.data.model.SessionMessage(
+                                    role = "assistant",
+                                    content = "REST answer",
+                                ),
+                            ),
+                    ),
+                )
+            var olderPageRequested = false
+            coEvery {
+                api.getSessionMessages("session-root", 50, 0)
+            } answers {
+                olderPageRequested = true
+                retrofit2.Response.success(
+                    com.m57.hermescontrol.data.model.SessionMessagesResponse(
+                        messages = emptyList(),
+                    ),
+                )
+            }
+            val resumeRequestId = "resume-pagination"
+            every {
+                HermesWsClient.send(
+                    WsMethods.SESSION_RESUME,
+                    mapOf("session_id" to "session-root"),
+                    any(),
+                )
+            } answers {
+                arg<((String) -> Unit)?>(2)?.invoke(resumeRequestId)
+                resumeRequestId
+            }
+
+            viewModel.switchSession("session-root")
+            advanceUntilIdle()
+            mockEventsFlow.emit(
+                WsEvent.RpcResult(
+                    resumeRequestId,
+                    mapOf(
+                        "session_id" to "runtime-root",
+                        "resumed" to "session-root",
+                        "messages" to
+                            listOf(
+                                mapOf(
+                                    "role" to "assistant",
+                                    "text" to "Fallback answer",
+                                ),
+                            ),
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+            viewModel.loadOlderMessages()
+            advanceUntilIdle()
+
+            assertTrue(olderPageRequested)
+        }
+
+    @Test
     fun testInterruptSession_withSessionId_sendsRpc() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
