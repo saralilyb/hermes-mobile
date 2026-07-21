@@ -67,7 +67,6 @@ import com.m57.hermescontrol.ui.settings.SettingsViewModel
 import kotlinx.coroutines.launch
 import com.m57.hermescontrol.ui.authlogin.AuthLoginScreen as AuthLoginScreenContent
 import com.m57.hermescontrol.ui.landing.LandingScreen as LandingScreenContent
-import com.m57.hermescontrol.ui.pairing.PairingCodeEntryScreen as PairingCodeEntryScreenContent
 
 private fun resolveBottomNavItems(names: List<String>): List<ScreenDefinition> =
     names.mapNotNull { name -> ScreenRegistry.ALL_SCREENS.firstOrNull { it.key::class.simpleName == name } }
@@ -105,9 +104,6 @@ private fun appEntryProvider(
             onAuthLogin = {
                 NavigationController.navigateTo(AuthLoginScreen)
             },
-            onPairingLogin = {
-                NavigationController.navigateTo(PairingCodeEntryScreen)
-            },
         )
         // Landing doesn't use HermesScaffold — opt out of drawer gestures explicitly (issue #619).
         DisableDrawerGestures()
@@ -115,18 +111,6 @@ private fun appEntryProvider(
 
     entry<AuthLoginScreen> {
         AuthLoginScreenContent(
-            onConnected = {
-                NavigationController.resetTo(ChatScreen)
-            },
-            onBack = {
-                NavigationController.goBack()
-            },
-        )
-        DisableDrawerGestures()
-    }
-
-    entry<PairingCodeEntryScreen> {
-        PairingCodeEntryScreenContent(
             onConnected = {
                 NavigationController.resetTo(ChatScreen)
             },
@@ -182,7 +166,6 @@ private fun appEntryProvider(
     entry<SettingsAbout> {
         SettingsAboutPage(
             onBack = { NavigationController.goBack() },
-            onLogout = { /* handled by caller via goBack fallback */ },
             viewModel = viewModel { SettingsViewModel() },
         )
     }
@@ -192,7 +175,11 @@ private fun appEntryProvider(
 fun MainNavigation(sessionId: String? = null) {
     val token by AuthManager.tokenFlow.collectAsState()
     val hasToken = !token.isNullOrBlank()
-    val startScreen: NavKey = if (hasToken) ChatScreen else LandingScreen
+    val usesTicketAuth =
+        runCatching {
+            AuthManager.serverStore.getLatestState().wsAuthParam == "ticket"
+        }.getOrDefault(false)
+    val startScreen: NavKey = if (hasToken || usesTicketAuth) ChatScreen else LandingScreen
 
     val backStack = remember(startScreen) { NavBackStack(startScreen) }
     NavigationController.backStack = backStack
@@ -223,8 +210,7 @@ fun MainNavigation(sessionId: String? = null) {
 
     val showBottomBar =
         currentScreen != LandingScreen &&
-            currentScreen != AuthLoginScreen &&
-            currentScreen != PairingCodeEntryScreen
+            currentScreen != AuthLoginScreen
 
     val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
 

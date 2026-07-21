@@ -276,6 +276,7 @@ class EventParserTest {
         val event = EventParser.parse(response)
         assertTrue(event is WsEvent.SessionInfo)
         assertEquals(mapOf("session_id" to "sess-1"), (event as WsEvent.SessionInfo).data)
+        assertEquals("sess-1", event.sessionId)
     }
 
     @Test

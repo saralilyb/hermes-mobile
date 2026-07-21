@@ -9,6 +9,7 @@ import android.util.Base64OutputStream
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.local.HermesDatabase
 import com.m57.hermescontrol.data.model.Attachment
@@ -85,13 +86,15 @@ data class ChatUiState(
     val commandCatalog: CommandCatalog = CommandCatalog(),
     // In-session model picker (issue #589) — surfaced when the user types /model
     // (or taps the top-bar model chip). Mirror of the global model screen's
-    // picker, but the selection hot-swaps the CURRENT session via the slash path.
+    // picker, but the selection hot-swaps the CURRENT session via config.set.
     val showModelPicker: Boolean = false,
     val modelPickerProviders: List<ModelProvider> = emptyList(),
     val modelPickerPinned: List<PinnedModel> = emptyList(),
     val modelPickerLoading: Boolean = false,
-    // Current session's active model label (provider/model), shown in the chip
+    // Current session's active provider/model label, used by the model action
+    // accessibility text and picker title.
     val currentSessionModel: String? = null,
+    val modelSwitchConfirmation: ModelSwitchConfirmation? = null,
     // Attachment state
     val pendingAttachments: List<Attachment> = emptyList(),
     // Reaction animation — set when a reaction WS event arrives, auto-clears
@@ -140,6 +143,14 @@ data class SudoPromptUi(
 data class SecretPromptUi(
     val requestId: String?,
     val sessionId: String?,
+)
+
+/** Expensive-model confirmation returned by the gateway's config.set RPC. */
+data class ModelSwitchConfirmation(
+    val message: String,
+    val spec: String,
+    val displayLabel: String?,
+    val sessionId: String,
 )
 
 class ChatViewModel(
@@ -259,7 +270,19 @@ class ChatViewModel(
     // ── Connection ───────────────────────────────────────────────────────
 
     private fun connectWebSocket(setLoading: Boolean = false) {
-        val token = AuthManager.getToken() ?: return
+        // In loopback (token) mode the session token is the WS credential and
+        // must be present before connecting. In gated (ticket) mode the ticket
+        // is minted fresh by HermesWsClient.refreshWsTicketIfNeeded() from the
+        // persisted session cookie, so getToken() is expected to be empty here
+        // and must NOT block the connect (issue #640: chat showed "reconnect"
+        // immediately after basic-auth login because this guard returned early).
+        val isGated =
+            runCatching { AuthManager.serverStore.getLatestState().wsAuthParam == "ticket" }
+                .getOrNull() ?: false
+        if (!isGated) {
+            val token = AuthManager.getToken() ?: return
+            if (token.isBlank()) return
+        }
 
         // Don't disturb an already-working (or already-recovering) connection.
         // HermesWsClient is a global singleton shared by every tab; the chat tab
@@ -364,6 +387,22 @@ class ChatViewModel(
         when (event) {
             is WsEvent.GatewayReady -> {
                 handleGatewayReady()
+            }
+
+            is WsEvent.SessionInfo -> {
+                if (isCurrentSession(event.sessionId)) {
+                    val model = (event.data?.get("model") as? String)?.trim().orEmpty()
+                    val provider = (event.data?.get("provider") as? String)?.trim().orEmpty()
+                    if (model.isNotEmpty()) {
+                        val label =
+                            if (provider.isEmpty() || model.startsWith("$provider/")) {
+                                model
+                            } else {
+                                "$provider/$model"
+                            }
+                        _uiState.update { it.copy(currentSessionModel = label) }
+                    }
+                }
             }
 
             is WsEvent.MessageToken -> {
@@ -492,6 +531,8 @@ class ChatViewModel(
                         isLoading = false,
                         messages = emptyList(),
                         chatTitle = "Hermes",
+                        currentSessionModel = null,
+                        modelSwitchConfirmation = null,
                     )
                 }
                 // Mirror the active session id app-wide so session-scoped
@@ -990,11 +1031,6 @@ class ChatViewModel(
      * (matching the TUI client's `modelValueForConfigSet`).
      */
     private fun handleModelSwitch(command: String) {
-        val sessionId = runtimeSessionId
-        if (sessionId == null) {
-            addAssistantMessage("No active session. Use `/new` to create one.")
-            return
-        }
         // Strip a leading "/model" (and any following whitespace) — config.set
         // key=model expects the bare spec, not a slash command. Match the
         // dispatcher's case-insensitive "/model" detection so a typed "/MODEL"
@@ -1006,13 +1042,7 @@ class ChatViewModel(
             } else {
                 command.trim()
             }
-        viewModelScope.launch(Dispatchers.IO) {
-            wsClient.send(
-                WsMethods.CONFIG_SET,
-                mapOf("key" to "model", "value" to spec, "session_id" to sessionId),
-                onSent = { id -> trackRequest(id, WsMethods.CONFIG_SET) },
-            )
-        }
+        applySessionModel(spec)
     }
 
     /**
@@ -1210,14 +1240,7 @@ class ChatViewModel(
         _uiState.update { it.copy(showModelPicker = false, modelPickerLoading = false) }
     }
 
-    /**
-     * Hot-swap the CURRENT session's model via the /model slash command.
-     *
-     * Builds the backend-valid command form `/model <model> --provider <slug>
-     * --session`. The `--session` flag keeps the switch scoped to this chat
-     * only (it writes a per-session override and never touches the global
-     * model config), per the backend model-switch contract.
-     */
+    /** Hot-swap only the current live session through the awaited config.set RPC. */
     fun sendSlashModel(
         provider: String,
         model: String,
@@ -1226,12 +1249,123 @@ class ChatViewModel(
             it.copy(
                 showModelPicker = false,
                 modelPickerLoading = false,
-                // Optimistic: reflect the chosen model in the top-bar chip until
-                // the next session sync confirms the backend hot-swap.
-                currentSessionModel = "$provider/$model",
             )
         }
-        handleSlashCommand("/model $model --provider $provider --session")
+        applySessionModel(
+            spec = "$model --provider $provider --session",
+            displayLabel = "$provider/$model",
+        )
+    }
+
+    fun confirmModelSwitch() {
+        val pending = _uiState.value.modelSwitchConfirmation ?: return
+        if (runtimeSessionId != pending.sessionId) {
+            _uiState.update {
+                it.copy(
+                    modelSwitchConfirmation = null,
+                    errorMessage =
+                        getApplication<Application>().getString(
+                            R.string.chat_model_switch_session_changed,
+                        ),
+                )
+            }
+            return
+        }
+        _uiState.update { it.copy(modelSwitchConfirmation = null) }
+        applySessionModel(
+            spec = pending.spec,
+            displayLabel = pending.displayLabel,
+            confirmExpensive = true,
+        )
+    }
+
+    fun cancelModelSwitchConfirmation() {
+        _uiState.update { it.copy(modelSwitchConfirmation = null) }
+    }
+
+    private fun applySessionModel(
+        spec: String,
+        displayLabel: String? = null,
+        confirmExpensive: Boolean = false,
+    ) {
+        val sessionId = runtimeSessionId
+        if (sessionId == null) {
+            _uiState.update {
+                it.copy(
+                    errorMessage =
+                        getApplication<Application>().getString(
+                            R.string.chat_model_switch_no_session,
+                        ),
+                )
+            }
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val params =
+                mutableMapOf<String, Any>(
+                    "session_id" to sessionId,
+                    "key" to "model",
+                    "value" to spec,
+                )
+            if (confirmExpensive) {
+                params["confirm_expensive_model"] = true
+            }
+
+            try {
+                val result = wsClient.request(WsMethods.CONFIG_SET, params).await()
+                val resultMap = result as? Map<*, *>
+                if (resultMap?.get("confirm_required") == true) {
+                    val message =
+                        (resultMap["confirm_message"] as? String)
+                            ?.takeIf { it.isNotBlank() }
+                            ?: getApplication<Application>().getString(
+                                R.string.chat_model_confirm_default_message,
+                            )
+                    _uiState.update {
+                        if (runtimeSessionId != sessionId) return@update it
+                        it.copy(
+                            modelSwitchConfirmation =
+                                ModelSwitchConfirmation(
+                                    message = message,
+                                    spec = spec,
+                                    displayLabel = displayLabel,
+                                    sessionId = sessionId,
+                                ),
+                        )
+                    }
+                    return@launch
+                }
+
+                val provider = resultMap?.get("provider") as? String
+                val model = resultMap?.get("model") as? String
+                val confirmedLabel =
+                    if (!provider.isNullOrBlank() && !model.isNullOrBlank()) {
+                        "$provider/$model"
+                    } else {
+                        displayLabel
+                    }
+                _uiState.update {
+                    if (runtimeSessionId != sessionId) return@update it
+                    it.copy(
+                        currentSessionModel = confirmedLabel ?: it.currentSessionModel,
+                        modelSwitchConfirmation = null,
+                    )
+                }
+            } catch (e: HermesWsClient.HermesRpcException) {
+                _uiState.update {
+                    if (runtimeSessionId != sessionId) return@update it
+                    it.copy(
+                        errorMessage =
+                            getApplication<Application>().getString(
+                                R.string.chat_model_switch_failed,
+                                e.message,
+                            ),
+                        modelSwitchConfirmation = null,
+                    )
+                }
+            }
+        }
     }
 
     fun switchSession(sessionId: String) {
@@ -1252,6 +1386,8 @@ class ChatViewModel(
                 chatTitle = title,
                 showSessionPicker = false,
                 isAgentTyping = false,
+                currentSessionModel = null,
+                modelSwitchConfirmation = null,
             )
         }
         // Mirror the active session id app-wide (issue #532).
@@ -1796,44 +1932,15 @@ class ChatViewModel(
                     }
                 }
 
-                val ticketClient =
-                    com.m57.hermescontrol.data.remote.OkHttpProvider.base
-                        .newBuilder()
-                        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                        .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                        .build()
+                // The login response updated the shared CookieJar. Keep the
+                // one-use WebSocket ticket out of persistent token state;
+                // reconnect() lets HermesWsClient mint it for the handshake.
+                AuthManager.setToken(null)
+                AuthManager.setWsAuthParam("ticket")
 
-                val ticketReq =
-                    Request
-                        .Builder()
-                        .url(endpoint.resolve("api/auth/ws-ticket"))
-                        .post("{}".toRequestBody(jsonMediaType))
-                        .build()
-                ticketClient.newCall(ticketReq).execute().use { ticketResp ->
-                    if (!ticketResp.isSuccessful) {
-                        withContext(Dispatchers.Main) {
-                            onResult(false, "Failed to mint WS ticket: HTTP ${ticketResp.code}")
-                        }
-                        return@launch
-                    }
-
-                    val ticket =
-                        AuthPayloads.webSocketTicket(ticketResp.body.string())
-
-                    if (ticket.isNullOrBlank()) {
-                        withContext(Dispatchers.Main) {
-                            onResult(false, "Invalid ticket returned from server")
-                        }
-                        return@launch
-                    }
-
-                    AuthManager.setWsAuthParam("ticket")
-                    AuthManager.setToken(ticket)
-
-                    withContext(Dispatchers.Main) {
-                        onResult(true, null)
-                        reconnect()
-                    }
+                withContext(Dispatchers.Main) {
+                    onResult(true, null)
+                    reconnect()
                 }
             } catch (e: java.io.IOException) {
                 withContext(Dispatchers.Main) {

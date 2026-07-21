@@ -271,8 +271,8 @@ class AuthLoginViewModel(
      * Result of a successful connect attempt.
      */
     private data class ConnectResult(
-        /** WS credential: session token (loopback) or WS ticket (gated). */
-        val wsCredential: String,
+        /** Persistent loopback token; gated mode mints a ticket per handshake. */
+        val loopbackToken: String? = null,
     )
 
     /**
@@ -296,7 +296,7 @@ class AuthLoginViewModel(
                     when (state.authMode) {
                         DashboardAuthMode.TOKEN_ONLY -> {
                             val token = connectTokenOnly(endpoint, state.token)
-                            if (token != null) ConnectResult(wsCredential = token) else null
+                            if (token != null) ConnectResult(loopbackToken = token) else null
                         }
 
                         DashboardAuthMode.BASIC_AUTH -> {
@@ -315,8 +315,8 @@ class AuthLoginViewModel(
 
             if (result != null) {
                 AuthManager.setBaseUrl(endpoint.baseUrl.toString())
-                AuthManager.setToken(result.wsCredential)
                 if (state.authMode == DashboardAuthMode.TOKEN_ONLY) {
+                    AuthManager.setToken(result.loopbackToken)
                     // Loopback mode — no session cookie; ensure any stale one
                     // is cleared so the jar only sends the Bearer token.
                     AuthManager.setSessionCookie(null)
@@ -325,10 +325,14 @@ class AuthLoginViewModel(
                     // Gated (BASIC_AUTH / ALL): the session cookie was captured
                     // automatically by the shared CookieJar during the login
                     // call (issue #470), so we keep it and switch the WS auth
-                    // param to the ticket minted above.
+                    // param to a fresh, handshake-local ticket.
+                    AuthManager.setToken(null)
                     AuthManager.setWsAuthParam("ticket")
                 }
                 ApiClient.rebuild()
+                // A previous failed session may have left the singleton in
+                // AUTH_EXPIRED, which connect() intentionally refuses to clear.
+                HermesWsClient.disconnect()
                 HermesWsClient.connect()
                 _uiState.update { it.copy(isLoading = false, connectionSuccess = true) }
             }
@@ -391,8 +395,8 @@ class AuthLoginViewModel(
     }
 
     /**
-     * Authenticate with basic auth, then mint a WS ticket.
-     * Returns the WS ticket and the session cookie for REST auth.
+     * Authenticate with basic auth. The shared CookieJar captures the dashboard
+     * session; [HermesWsClient] mints a one-use ticket for each handshake.
      */
     private fun connectBasicAuth(
         endpoint: ServerEndpoint,
@@ -451,53 +455,8 @@ class AuthLoginViewModel(
             }
 
             // The session cookie is captured automatically by the shared
-            // CookieJar (issue #470) attached to OkHttpProvider.probe — no
-            // manual Set-Cookie parsing needed. We still mint a WS ticket below
-            // using whatever cookie the jar carries into that request.
-
-            // Step 3: Mint a WebSocket ticket using the session cookie
-            val ticketClient =
-                com.m57.hermescontrol.data.remote.OkHttpProvider.base
-                    .newBuilder()
-                    .connectTimeout(10, TimeUnit.SECONDS)
-                    .readTimeout(10, TimeUnit.SECONDS)
-                    .build()
-
-            val ticketReq =
-                Request
-                    .Builder()
-                    .url(endpoint.resolve("api/auth/ws-ticket"))
-                    .post("{}".toRequestBody(jsonMediaType))
-                    .build()
-            return ticketClient.newCall(ticketReq).execute().use { response ->
-                if (!response.isSuccessful) {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage =
-                                app.getString(
-                                    R.string.connect_error_http_code,
-                                    response.code,
-                                ),
-                        )
-                    }
-                    return@use null
-                }
-
-                val ticket =
-                    AuthPayloads.webSocketTicket(response.body.string())
-                if (ticket.isNullOrBlank()) {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = "Failed to obtain WebSocket ticket",
-                        )
-                    }
-                    return@use null
-                }
-
-                ConnectResult(wsCredential = ticket)
-            }
+            // CookieJar (issue #470) attached to OkHttpProvider.probe.
+            return ConnectResult()
         } catch (e: Exception) {
             _uiState.update {
                 it.copy(

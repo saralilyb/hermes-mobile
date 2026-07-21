@@ -4,12 +4,16 @@ package com.m57.hermescontrol.data.ws
 
 import android.util.Log
 import com.m57.hermescontrol.data.local.AuthManager
+import com.m57.hermescontrol.data.remote.CleartextPolicy
 import com.m57.hermescontrol.data.remote.CookieManager
+import com.m57.hermescontrol.data.remote.ServerEndpoint
 import com.m57.hermescontrol.data.remote.buildFakePersistentCookieJar
 import io.mockk.every
+import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
+import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -39,14 +43,24 @@ class HermesWsClientTest {
         every { Log.i(any<String>(), any<String>()) } returns 0
         every { Log.w(any<String>(), any<String>()) } returns 0
         every { Log.e(any<String>(), any<String>()) } returns 0
+        every { Log.isLoggable(any<String>(), any<Int>()) } returns false
 
         mockWebServer = MockWebServer()
         mockWebServer.start()
 
         mockkObject(AuthManager)
         every { AuthManager.wsUrl() } returns mockWebServer.url("/").toString().replace("http://", "ws://")
+        every { AuthManager.wsUrlWithCredential(any(), any()) } returns
+            mockWebServer.url("/").toString().replace("http://", "ws://")
         every { AuthManager.isAutoReconnect() } returns false
         every { AuthManager.getSessionCookie() } returns null
+        // Non-gated by default (token mode) so the gated ticket path is exercised
+        // only by the explicit gated-mode test below.
+        every { AuthManager.serverStore } returns
+            mockk<com.m57.hermescontrol.data.config.ServerStore>().also {
+                every { it.getLatestState() } returns
+                    com.m57.hermescontrol.data.config.ServerStoreState()
+            }
 
         // Issue #470: clients are built through OkHttpProvider, which now
         // resolves the shared CookieManager.cookieJar. Inject a fake jar so
@@ -476,5 +490,326 @@ class HermesWsClientTest {
         HermesWsClient.disconnect()
         assertEquals(ConnectionStatus.DISCONNECTED, HermesWsClient.connectionStatus.value)
         assertFalse(HermesWsClient.isConnected)
+    }
+
+    @Test
+    fun testStaleTerminalCallbacksDoNotClobberFreshConnection() {
+        val activeSocket = mockk<WebSocket>(relaxed = true)
+        val staleSocket = mockk<WebSocket>(relaxed = true)
+
+        val socketField = HermesWsClient::class.java.getDeclaredField("webSocket")
+        socketField.isAccessible = true
+        socketField.set(HermesWsClient, activeSocket)
+
+        val connectedField = HermesWsClient::class.java.getDeclaredField("connected")
+        connectedField.isAccessible = true
+        (connectedField.get(HermesWsClient) as java.util.concurrent.atomic.AtomicBoolean).set(true)
+
+        val statusField = HermesWsClient::class.java.getDeclaredField("_connectionStatus")
+        statusField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val status = statusField.get(HermesWsClient) as MutableStateFlow<ConnectionStatus>
+        status.value = ConnectionStatus.CONNECTED
+
+        val listenerClass =
+            HermesWsClient::class.java.declaredClasses.first {
+                it.simpleName == "WsListenerImpl"
+            }
+        val constructor = listenerClass.getDeclaredConstructor()
+        constructor.isAccessible = true
+        val staleListener = constructor.newInstance() as WebSocketListener
+
+        staleListener.onClosed(staleSocket, 4401, "auth: ticket_invalid")
+        staleListener.onFailure(staleSocket, java.io.IOException("late failure"), null)
+
+        assertTrue(HermesWsClient.isConnected)
+        assertEquals(ConnectionStatus.CONNECTED, HermesWsClient.connectionStatus.value)
+        assertTrue(socketField.get(HermesWsClient) === activeSocket)
+    }
+
+    // ── Issue #635: gated-mode WS ticket fetch must not be blocked by a
+    // missing bare-name session cookie (HTTPS deployments prefix it with
+    // __Host- / __Secure-). ────────────────────────────────────────────────
+
+    @Test
+    fun testGatedMode_attemptsTicketFetchWithoutBareCookie() {
+        // Force gated mode (ws auth via ticket, not loopback token).
+        every { AuthManager.serverStore } returns
+            mockk<com.m57.hermescontrol.data.config.ServerStore>().also {
+                every { it.getLatestState() } returns
+                    com.m57.hermescontrol.data.config.ServerStoreState(wsAuthParam = "ticket")
+            }
+        // No bare-name session cookie present (the prefixed one is server-side).
+        every { AuthManager.getSessionCookie() } returns null
+
+        // Separate server for the ticket endpoint so its queue can't interleave
+        // with the WebSocket upgrade on the main mockWebServer.
+        val ticketServer = MockWebServer()
+        ticketServer.start()
+        every { AuthManager.endpointForBuild() } returns
+            ServerEndpoint.parse(
+                ticketServer.url("/").toString(),
+                CleartextPolicy.ALLOW_WITH_WARNING,
+            )
+        ticketServer.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"ticket":"refreshed-ticket"}"""),
+        )
+
+        val connectLatch = CountDownLatch(1)
+        mockWebServer.enqueue(
+            MockResponse().withWebSocketUpgrade(
+                object : WebSocketListener() {
+                    override fun onOpen(
+                        ws: WebSocket,
+                        response: okhttp3.Response,
+                    ) {
+                        connectLatch.countDown()
+                    }
+                },
+            ),
+        )
+
+        HermesWsClient.connect()
+
+        // Before the fix, a null bare cookie short-circuited to AUTH_EXPIRED and
+        // the ticket endpoint was NEVER called. After the fix it is attempted,
+        // so the connection reaches CONNECTED.
+        assertTrue(
+            "Gated WS ticket fetch should be attempted even without a bare cookie",
+            connectLatch.await(5, TimeUnit.SECONDS),
+        )
+        // The server-side onOpen latch fires a hair before the client receives
+        // the 101 handshake and WsListenerImpl sets CONNECTED — await the real
+        // status transition (as every other connect test does) instead of a
+        // racy read that can observe CONNECTING.
+        runBlocking {
+            withTimeout(5000) {
+                HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED }
+            }
+        }
+        assertEquals(ConnectionStatus.CONNECTED, HermesWsClient.connectionStatus.value)
+
+        ticketServer.shutdown()
+    }
+
+    @Test
+    fun testGatedMode_transientTicketFailureReconnectsWithoutRelogin() {
+        every { AuthManager.serverStore } returns
+            mockk<com.m57.hermescontrol.data.config.ServerStore>().also {
+                every { it.getLatestState() } returns
+                    com.m57.hermescontrol.data.config.ServerStoreState(wsAuthParam = "ticket")
+            }
+        every { AuthManager.isAutoReconnect() } returns true
+
+        val ticketServer = MockWebServer()
+        ticketServer.start()
+        try {
+            every { AuthManager.endpointForBuild() } returns
+                ServerEndpoint.parse(
+                    ticketServer.url("/").toString(),
+                    CleartextPolicy.ALLOW_WITH_WARNING,
+                )
+            ticketServer.enqueue(MockResponse().setResponseCode(503))
+            ticketServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"ticket":"refreshed-ticket"}"""),
+            )
+
+            mockWebServer.enqueue(
+                MockResponse().withWebSocketUpgrade(
+                    object : WebSocketListener() {},
+                ),
+            )
+
+            HermesWsClient.connect()
+
+            runBlocking {
+                withTimeout(6_000) {
+                    HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED }
+                }
+            }
+            assertEquals(2, ticketServer.requestCount)
+        } finally {
+            ticketServer.shutdown()
+        }
+    }
+
+    @Test
+    fun testGatedMode_unauthorizedTicketRequiresRelogin() {
+        every { AuthManager.serverStore } returns
+            mockk<com.m57.hermescontrol.data.config.ServerStore>().also {
+                every { it.getLatestState() } returns
+                    com.m57.hermescontrol.data.config.ServerStoreState(wsAuthParam = "ticket")
+            }
+        every { AuthManager.isAutoReconnect() } returns true
+
+        val ticketServer = MockWebServer()
+        ticketServer.start()
+        try {
+            every { AuthManager.endpointForBuild() } returns
+                ServerEndpoint.parse(
+                    ticketServer.url("/").toString(),
+                    CleartextPolicy.ALLOW_WITH_WARNING,
+                )
+            ticketServer.enqueue(MockResponse().setResponseCode(401))
+
+            HermesWsClient.connect()
+
+            runBlocking {
+                withTimeout(5_000) {
+                    HermesWsClient.connectionStatus.first { it == ConnectionStatus.AUTH_EXPIRED }
+                }
+            }
+            Thread.sleep(1_500)
+            assertEquals(1, ticketServer.requestCount)
+        } finally {
+            ticketServer.shutdown()
+        }
+    }
+
+    @Test
+    fun testGatedMode_rejectedWebSocketTicketRetriesOnceWithFreshTicket() {
+        every { AuthManager.serverStore } returns
+            mockk<com.m57.hermescontrol.data.config.ServerStore>().also {
+                every { it.getLatestState() } returns
+                    com.m57.hermescontrol.data.config.ServerStoreState(wsAuthParam = "ticket")
+            }
+
+        val ticketServer = MockWebServer()
+        ticketServer.start()
+        try {
+            every { AuthManager.endpointForBuild() } returns
+                ServerEndpoint.parse(
+                    ticketServer.url("/").toString(),
+                    CleartextPolicy.ALLOW_WITH_WARNING,
+                )
+            repeat(2) { index ->
+                ticketServer.enqueue(
+                    MockResponse()
+                        .setResponseCode(200)
+                        .setBody("""{"ticket":"fresh-ticket-$index"}"""),
+                )
+            }
+
+            mockWebServer.enqueue(MockResponse().setResponseCode(401))
+            mockWebServer.enqueue(
+                MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}),
+            )
+
+            HermesWsClient.connect()
+
+            runBlocking {
+                withTimeout(5_000) {
+                    HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED }
+                }
+            }
+            assertEquals(2, ticketServer.requestCount)
+            verify(exactly = 0) { AuthManager.setToken(any()) }
+        } finally {
+            ticketServer.shutdown()
+        }
+    }
+
+    @Test
+    fun testGatedMode_webSocketClose4401RetriesOnceWithFreshTicket() {
+        every { AuthManager.serverStore } returns
+            mockk<com.m57.hermescontrol.data.config.ServerStore>().also {
+                every { it.getLatestState() } returns
+                    com.m57.hermescontrol.data.config.ServerStoreState(wsAuthParam = "ticket")
+            }
+
+        val ticketServer = MockWebServer()
+        ticketServer.start()
+        try {
+            every { AuthManager.endpointForBuild() } returns
+                ServerEndpoint.parse(
+                    ticketServer.url("/").toString(),
+                    CleartextPolicy.ALLOW_WITH_WARNING,
+                )
+            repeat(2) { index ->
+                ticketServer.enqueue(
+                    MockResponse()
+                        .setResponseCode(200)
+                        .setBody("""{"ticket":"close-ticket-$index"}"""),
+                )
+            }
+
+            mockWebServer.enqueue(
+                MockResponse().withWebSocketUpgrade(
+                    object : WebSocketListener() {
+                        override fun onOpen(
+                            webSocket: WebSocket,
+                            response: okhttp3.Response,
+                        ) {
+                            webSocket.close(4401, "auth: ticket_invalid")
+                        }
+                    },
+                ),
+            )
+            val secondOpen = CountDownLatch(1)
+            mockWebServer.enqueue(
+                MockResponse().withWebSocketUpgrade(
+                    object : WebSocketListener() {
+                        override fun onOpen(
+                            webSocket: WebSocket,
+                            response: okhttp3.Response,
+                        ) {
+                            secondOpen.countDown()
+                        }
+                    },
+                ),
+            )
+
+            HermesWsClient.connect()
+
+            assertTrue(
+                "4401 should trigger one fresh-ticket WebSocket handshake",
+                secondOpen.await(5, TimeUnit.SECONDS),
+            )
+            assertEquals(2, ticketServer.requestCount)
+        } finally {
+            ticketServer.shutdown()
+        }
+    }
+
+    @Test
+    fun testGatedMode_secondRejectedWebSocketTicketRequiresRelogin() {
+        every { AuthManager.serverStore } returns
+            mockk<com.m57.hermescontrol.data.config.ServerStore>().also {
+                every { it.getLatestState() } returns
+                    com.m57.hermescontrol.data.config.ServerStoreState(wsAuthParam = "ticket")
+            }
+
+        val ticketServer = MockWebServer()
+        ticketServer.start()
+        try {
+            every { AuthManager.endpointForBuild() } returns
+                ServerEndpoint.parse(
+                    ticketServer.url("/").toString(),
+                    CleartextPolicy.ALLOW_WITH_WARNING,
+                )
+            repeat(2) { index ->
+                ticketServer.enqueue(
+                    MockResponse()
+                        .setResponseCode(200)
+                        .setBody("""{"ticket":"rejected-ticket-$index"}"""),
+                )
+                mockWebServer.enqueue(MockResponse().setResponseCode(401))
+            }
+
+            HermesWsClient.connect()
+
+            runBlocking {
+                withTimeout(5_000) {
+                    HermesWsClient.connectionStatus.first { it == ConnectionStatus.AUTH_EXPIRED }
+                }
+            }
+            assertEquals(2, ticketServer.requestCount)
+        } finally {
+            ticketServer.shutdown()
+        }
     }
 }

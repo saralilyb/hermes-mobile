@@ -443,7 +443,10 @@ object AuthManager {
                         profile
                     }
                 }
-            state.copy(connectionProfiles = profiles)
+            state.copy(
+                baseUrl = normalized,
+                connectionProfiles = profiles,
+            )
         }
     }
 
@@ -499,9 +502,17 @@ object AuthManager {
     fun wsUrl(): String {
         val raw = serverStore.getLatestState().wsAuthParam
         val authParam = if (raw.isBlank()) "token" else raw
+        return wsUrlWithCredential(getToken().orEmpty(), authParam)
+    }
+
+    /** Build a WebSocket URL with a handshake-local credential. */
+    fun wsUrlWithCredential(
+        credential: String,
+        authParameter: String = "ticket",
+    ): String {
         return endpointForBuild().webSocketUrl(
-            authParameter = authParam,
-            credential = getToken().orEmpty(),
+            authParameter = authParameter,
+            credential = credential,
         )
     }
 

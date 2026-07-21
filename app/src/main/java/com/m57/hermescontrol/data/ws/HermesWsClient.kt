@@ -74,6 +74,7 @@ object HermesWsClient {
     private val requestId = AtomicInteger(0)
     private val connected = AtomicBoolean(false)
     private val intentionalClose = AtomicBoolean(false)
+    private val ticketAuthRetryUsed = AtomicBoolean(false)
     private val messageQueue = ConcurrentLinkedQueue<String>()
 
     @Volatile
@@ -226,6 +227,7 @@ object HermesWsClient {
             return
         }
         intentionalClose.set(false)
+        ticketAuthRetryUsed.set(false)
         currentBackoff = INITIAL_BACKOFF_MS
         _connectionStatus.value = ConnectionStatus.CONNECTING
         openSocket()
@@ -240,11 +242,12 @@ object HermesWsClient {
      * shared CookieJar on [OkHttpProvider.probe]. The ticket endpoint decides
      * whether those cookies represent a live or refreshable session.
      *
-     * Returns true if the token is ready (either because we are not in gated mode,
-     * or because ticket refresh succeeded). Returns false if we are in gated mode
-     * and ticket refresh failed or cannot be performed.
+     * Distinguishes a definitive authentication rejection from a retryable
+     * transport/server failure. Only the former should force the user to sign
+     * in again; treating every ticket-mint failure as expired authentication
+     * turns brief gateway or network interruptions into logout loops.
      */
-    private fun refreshWsTicketIfNeeded(): Boolean {
+    private fun refreshWsTicketIfNeeded(): TicketRefreshResult {
         val isGated =
             try {
                 AuthManager.serverStore.getLatestState().wsAuthParam == "ticket"
@@ -260,7 +263,7 @@ object HermesWsClient {
             // restart. Refresh it before each WebSocket handshake so automatic
             // reconnect does not get stuck in AUTH_EXPIRED with a stale token.
             DashboardSessionTokenRefresher.refresh()
-            return true
+            return TicketRefreshResult(TicketRefreshStatus.READY)
         }
 
         // Do not preflight on a client-known access-cookie name. HTTPS
@@ -289,8 +292,11 @@ object HermesWsClient {
                             TAG,
                             "WS ticket refresh failed: HTTP ${response.code}",
                         )
-                        _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
-                        return@use false
+                        return@use if (response.code == 401 || response.code == 403) {
+                            TicketRefreshResult(TicketRefreshStatus.AUTHENTICATION_FAILED)
+                        } else {
+                            TicketRefreshResult(TicketRefreshStatus.TRANSIENT_FAILURE)
+                        }
                     }
 
                     val ticket =
@@ -300,25 +306,34 @@ object HermesWsClient {
                             TAG,
                             "WS ticket refresh failed: invalid response",
                         )
-                        _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
-                        return@use false
+                        return@use TicketRefreshResult(TicketRefreshStatus.TRANSIENT_FAILURE)
                     }
 
-                    AuthManager.setToken(ticket)
                     if (BuildConfig.DEBUG) Log.d(TAG, "WS ticket refreshed")
-                    true
+                    TicketRefreshResult(TicketRefreshStatus.READY, ticket)
                 }
             }
         } catch (e: Exception) {
             Log.w(TAG, "WS ticket refresh failed: ${e.javaClass.simpleName}")
-            _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
-            return false
+            return TicketRefreshResult(TicketRefreshStatus.TRANSIENT_FAILURE)
         }
+    }
+
+    private data class TicketRefreshResult(
+        val status: TicketRefreshStatus,
+        val ticket: String? = null,
+    )
+
+    private enum class TicketRefreshStatus {
+        READY,
+        AUTHENTICATION_FAILED,
+        TRANSIENT_FAILURE,
     }
 
     /** Cleanly close the WebSocket and stop auto-reconnect. */
     fun disconnect() {
         intentionalClose.set(true)
+        ticketAuthRetryUsed.set(false)
         reconnectJob?.cancel()
         reconnectJob = null
         stopHealthTracking()
@@ -459,13 +474,28 @@ object HermesWsClient {
     // ── Internal ─────────────────────────────────────────────────────────
 
     private fun openSocket() {
-        if (!refreshWsTicketIfNeeded()) {
-            Log.w(TAG, "Aborting openSocket: WS ticket refresh failed")
-            return
+        val ticketResult = refreshWsTicketIfNeeded()
+        when (ticketResult.status) {
+            TicketRefreshStatus.READY -> Unit
+
+            TicketRefreshStatus.AUTHENTICATION_FAILED -> {
+                Log.w(TAG, "Aborting openSocket: dashboard authentication rejected")
+                intentionalClose.set(true)
+                _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
+                return
+            }
+
+            TicketRefreshStatus.TRANSIENT_FAILURE -> {
+                Log.w(TAG, "Deferring openSocket: WS ticket refresh temporarily unavailable")
+                _connectionStatus.value = ConnectionStatus.RECONNECTING
+                scheduleReconnect()
+                return
+            }
         }
         val url =
             try {
-                AuthManager.wsUrl()
+                ticketResult.ticket?.let(AuthManager::wsUrlWithCredential)
+                    ?: AuthManager.wsUrl()
             } catch (e: IllegalArgumentException) {
                 Log.w(TAG, "WebSocket blocked by transport policy")
                 _connectionStatus.value = ConnectionStatus.DISCONNECTED
@@ -506,6 +536,29 @@ object HermesWsClient {
             }
     }
 
+    /**
+     * A WebSocket ticket is single-use and can be rejected after the dashboard
+     * session has already refreshed successfully. In gated mode, mint and try
+     * one fresh ticket before declaring the dashboard session expired.
+     */
+    private fun handleAuthenticationRejected() {
+        val isGated =
+            runCatching {
+                AuthManager.serverStore.getLatestState().wsAuthParam == "ticket"
+            }.getOrDefault(false)
+        if (isGated && !intentionalClose.get() &&
+            ticketAuthRetryUsed.compareAndSet(false, true)
+        ) {
+            Log.w(TAG, "WebSocket ticket rejected; retrying once with a fresh ticket")
+            _connectionStatus.value = ConnectionStatus.RECONNECTING
+            wsScope.launch { openSocket() }
+            return
+        }
+
+        intentionalClose.set(true)
+        _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
+    }
+
     // ── Listener ─────────────────────────────────────────────────────────
 
     private class WsListenerImpl : WebSocketListener() {
@@ -513,6 +566,11 @@ object HermesWsClient {
             webSocket: WebSocket,
             response: Response,
         ) {
+            if (webSocket !== HermesWsClient.webSocket) {
+                Log.d(TAG, "Ignoring stale WebSocket onOpen callback")
+                webSocket.close(1000, "Superseded connection")
+                return
+            }
             Log.i(TAG, "WebSocket opened")
             connected.set(true)
             _connectionStatus.value = ConnectionStatus.CONNECTED
@@ -531,6 +589,10 @@ object HermesWsClient {
             webSocket: WebSocket,
             text: String,
         ) {
+            if (webSocket !== HermesWsClient.webSocket) {
+                Log.d(TAG, "Ignoring stale WebSocket message")
+                return
+            }
             lastPongTimestamp = System.currentTimeMillis()
             // Resolve any in-flight `request()` awaiting this RPC result/error
             // (issue #526) before fanning the parsed event out to collectors.
@@ -545,6 +607,12 @@ object HermesWsClient {
                     )
                     WsEvent.Unknown(text)
                 }
+            // A parsed gateway frame proves that the fresh ticket established
+            // a usable session. Do not reset on unknown/auth-noise frames: that
+            // could otherwise permit an immediate rejection loop.
+            if (event !is WsEvent.Unknown) {
+                ticketAuthRetryUsed.set(false)
+            }
             when (event) {
                 is WsEvent.RpcResult -> resolvePending(event.id, event.result, null)
                 is WsEvent.RpcError -> resolvePending(event.id, null, event.error)
@@ -563,6 +631,9 @@ object HermesWsClient {
         ) {
             Log.d(TAG, "WebSocket closing: $code")
             webSocket.close(code, reason)
+            if (webSocket !== HermesWsClient.webSocket) {
+                Log.d(TAG, "Ignoring stale WebSocket onClosing callback")
+            }
         }
 
         override fun onClosed(
@@ -570,6 +641,11 @@ object HermesWsClient {
             code: Int,
             reason: String,
         ) {
+            if (webSocket !== HermesWsClient.webSocket) {
+                Log.d(TAG, "Ignoring stale WebSocket onClosed callback")
+                return
+            }
+            HermesWsClient.webSocket = null
             Log.i(TAG, "WebSocket closed: $code")
             connected.set(false)
             stopHealthTracking()
@@ -577,7 +653,7 @@ object HermesWsClient {
                 reason.contains("unauthorized", ignoreCase = true) ||
                 reason.startsWith("auth:", ignoreCase = true)
             ) {
-                _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
+                handleAuthenticationRejected()
             } else {
                 _connectionStatus.value = ConnectionStatus.RECONNECTING
                 scheduleReconnect()
@@ -589,6 +665,11 @@ object HermesWsClient {
             t: Throwable,
             response: Response?,
         ) {
+            if (webSocket !== HermesWsClient.webSocket) {
+                Log.d(TAG, "Ignoring stale WebSocket onFailure callback")
+                return
+            }
+            HermesWsClient.webSocket = null
             Log.e(TAG, "WebSocket failure (${t.javaClass.simpleName})")
             connected.set(false)
             stopHealthTracking()
@@ -597,7 +678,7 @@ object HermesWsClient {
                     "401",
                 ) == true || t.message?.contains("unauthorized", ignoreCase = true) == true
             ) {
-                _connectionStatus.value = ConnectionStatus.AUTH_EXPIRED
+                handleAuthenticationRejected()
             } else {
                 _connectionStatus.value = ConnectionStatus.RECONNECTING
                 scheduleReconnect()

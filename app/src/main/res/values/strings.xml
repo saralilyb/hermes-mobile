@@ -94,7 +94,6 @@
     <string name="screen_config">Config</string>
     <string name="screen_mcp_servers">MCP Servers</string>
     <string name="screen_models">Models</string>
-    <string name="screen_pairing">Pairing</string>
     <string name="screen_keys">Keys</string>
     <string name="screen_channels">Channels</string>
     <string name="screen_logs">Logs</string>
@@ -121,6 +120,16 @@
     <!-- Chat Screen & Bubble -->
     <string name="chat_action_search">Search</string>
     <string name="chat_action_close_search">Close search</string>
+    <string name="chat_action_switch_model">Switch model for this chat</string>
+    <string name="chat_action_switch_model_current">Switch model for this chat. Current: %1$s</string>
+    <string name="chat_model_picker_title">Switch model for this chat</string>
+    <string name="chat_model_picker_title_current">Switch model (current: %1$s)</string>
+    <string name="chat_model_confirm_title">Confirm model switch</string>
+    <string name="chat_model_confirm_action">Switch model</string>
+    <string name="chat_model_confirm_default_message">This model may incur additional cost.</string>
+    <string name="chat_model_switch_no_session">No active live session</string>
+    <string name="chat_model_switch_session_changed">The active session changed; choose the model again</string>
+    <string name="chat_model_switch_failed">Failed to switch model: %1$s</string>
     <string name="chat_action_reconnect">Reconnect</string>
     <string name="chat_action_relogin">Re-login</string>
     <string name="chat_relogin_title">Re-login to Hermes</string>
@@ -256,8 +265,7 @@
     <string name="connect_error_malformed">Malformed pairing string — expected URL or Base64-encoded JSON</string>
     <string name="connect_error_parse_failed">Failed to parse pairing string: %1$s</string>
 
-    <string name="connect_pairing_string">Pairing string</string>
-    <string name="connect_placeholder_pairing">Paste hermes://\u2026 or Base64 config</string>
+    <string name="connect_placeholder_pairing">Paste hermes://… or Base64 config</string>
     <string name="connect_save_profile">Save connection profile</string>
     <string name="connect_profile_name">Profile Name</string>
     <string name="connect_placeholder_profile_name">e.g. Local Hermit, Remote Server</string>
@@ -266,6 +274,9 @@
     <string name="connect_placeholder_token">API token</string>
     <string name="connect_placeholder_host">127.0.0.1</string>
     <string name="connect_placeholder_port">9119</string>
+    <string name="connect_server_url_label">Server URL</string>
+    <string name="connect_placeholder_server_url">https://host:9119/ or http://127.0.0.1:9119/</string>
+    <string name="connect_error_url_invalid">Enter a valid server URL (https:// or http://)</string>
     <string name="action_connect">Connect</string>
 
     <!-- Kanban Screen -->
@@ -538,16 +549,6 @@
     <string name="webhooks_no_matching">No matching subscriptions</string>
     <string name="webhooks_no_matching_desc">Try adjusting your search.</string>
 
-    <!-- Pairing Screen -->
-    <string name="pairing_screen_title">Device Pairing</string>
-    <string name="pairing_sec_pending">Pending Approvals</string>
-    <string name="pairing_action_clear_all">Clear All</string>
-    <string name="pairing_action_approve">Approve</string>
-    <string name="pairing_sec_approved">Approved Devices</string>
-    <string name="pairing_empty_approved">No approved devices paired yet.</string>
-    <string name="pairing_label_user_id">User ID: %1$s</string>
-    <string name="pairing_action_revoke">Revoke</string>
-
     <!-- Config Screen -->
     <string name="config_screen_title">Configuration</string>
     <string name="config_action_reset">Reset</string>
@@ -704,7 +705,7 @@
     <string name="mcp_servers_auth_header">Header</string>
     <string name="mcp_servers_auth_oauth">OAuth</string>
     <string name="mcp_servers_field_bearer_token">Bearer token</string>
- 
+
      <!-- Gateway Screen -->
     <string name="gateway_status_running">GATEWAY RUNNING</string>
     <string name="gateway_status_stopped">GATEWAY STOPPED</string>
@@ -809,9 +810,9 @@
     <!-- Auth Login Screen -->
     <string name="auth_login_title">Auth Login</string>
     <string name="auth_login_desc">Connect to your Hermes dashboard</string>
+    <string name="auth_login_base_url_label">Server URL</string>
     <string name="auth_login_host_label">Host</string>
     <string name="auth_login_port_label">Port</string>
-    <string name="auth_login_base_url_label">Server URL</string>
     <string name="auth_login_token_label">Session Token</string>
     <string name="auth_login_username_label">Username</string>
     <string name="auth_login_password_label">Password</string>
@@ -824,6 +825,8 @@
     <string name="auth_login_error_username_required">Username is required</string>
     <string name="auth_login_error_password_required">Password is required</string>
     <string name="auth_login_error_unreachable">Dashboard unreachable — check IP and port</string>
+    <string name="auth_login_error_oauth_unsupported">OAuth login (Nous Portal) is not supported in this app version yet. Switch the dashboard to basic auth or token mode. (issue #639)</string>
+    <string name="auth_login_oauth_coming_soon">This dashboard uses OAuth (Nous Portal) login, which is coming soon to Hermes Mobile.</string>
     <string name="auth_login_existing_profiles_title">Use existing logged-in profile:</string>
     <string name="auth_login_use_profile">Enter as %1$s</string>
 
@@ -831,12 +834,6 @@
     <string name="landing_title">Hermes Mobile</string>
     <string name="landing_subtitle">Control panel for Hermes Agent</string>
     <string name="landing_action_auth_login">Auth Login</string>
-    <string name="landing_action_pairing_login">Pairing Login</string>
-
-    <!-- Pairing Code Entry Screen -->
-    <string name="pairing_code_entry_title">Pairing Login</string>
-    <string name="pairing_code_entry_manual_desc">Paste the pairing string from your Hermes dashboard below.</string>
-    <string name="pairing_code_entry_code_label">Pairing Code</string>
 
     <!-- Loading State -->
     <string name="loading_state_subtitle_models">Fetching model providers…</string>

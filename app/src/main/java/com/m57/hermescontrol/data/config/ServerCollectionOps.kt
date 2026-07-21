@@ -39,7 +39,7 @@ fun ServerStoreState.selfHealed(): ServerStoreState {
 val ServerStoreState.resolvedBaseUrl: String
     get() {
         val selected = connectionProfiles.firstOrNull { it.id == selectedProfileId }
-        if (selected != null) return selected.resolvedBaseUrl
+        if (selected != null) return selected.resolveBaseUrl(baseUrl)
         return baseUrl
             ?.let {
                 ServerEndpoint.parse(

@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.ScreenRegistry
 import com.m57.hermescontrol.data.config.ConnectionProfile
+import com.m57.hermescontrol.data.config.resolveBaseUrl
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.CleartextPolicy
@@ -176,10 +177,10 @@ class SettingsViewModel(
                 showProfileDialog = true,
                 editingProfileId = profileId,
                 dialogProfileName = profile.name,
-                dialogProfileBaseUrl = profile.resolvedBaseUrl,
+                dialogProfileBaseUrl = profile.resolveBaseUrl(AuthManager.getBaseUrl()),
                 dialogProfileTransportWarning =
                     ServerEndpoint.parse(
-                        profile.resolvedBaseUrl,
+                        profile.resolveBaseUrl(AuthManager.getBaseUrl()),
                         CleartextPolicy.ALLOW_WITH_WARNING,
                     ).securityWarning,
                 dialogProfileError = null,

@@ -30,13 +30,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -335,6 +339,25 @@ fun ChatScreen(
             }
         },
         actions = {
+            IconButton(
+                onClick = viewModel::openModelPicker,
+                enabled = state.isConnected && state.currentSessionId != null,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Psychology,
+                    contentDescription =
+                        state.currentSessionModel?.let {
+                            stringResource(R.string.chat_action_switch_model_current, it)
+                        } ?: stringResource(R.string.chat_action_switch_model),
+                    tint =
+                        if (state.currentSessionModel != null) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                )
+            }
+
             // Search toggle
             IconButton(onClick = { viewModel.toggleSearch() }) {
                 Icon(
@@ -518,17 +541,38 @@ fun ChatScreen(
             )
         }
 
-        // In-session model picker (issue #589) — opens on "/model".
+        // In-session model picker (issue #589) — opens from the top bar or /model.
         if (state.showModelPicker) {
             ModelPickerDialog(
                 providers = state.modelPickerProviders,
-                title = "Switch model (this chat)",
+                title =
+                    state.currentSessionModel?.let {
+                        stringResource(R.string.chat_model_picker_title_current, it)
+                    } ?: stringResource(R.string.chat_model_picker_title),
                 isLoading = state.modelPickerLoading && state.modelPickerProviders.isEmpty(),
                 pinnedModels = state.modelPickerPinned,
                 onSelect = { provider, model ->
                     viewModel.sendSlashModel(provider, model)
                 },
                 onDismiss = { viewModel.closeModelPicker() },
+            )
+        }
+
+        state.modelSwitchConfirmation?.let { confirmation ->
+            AlertDialog(
+                onDismissRequest = viewModel::cancelModelSwitchConfirmation,
+                title = { Text(stringResource(R.string.chat_model_confirm_title)) },
+                text = { Text(confirmation.message) },
+                confirmButton = {
+                    TextButton(onClick = viewModel::confirmModelSwitch) {
+                        Text(stringResource(R.string.chat_model_confirm_action))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = viewModel::cancelModelSwitchConfirmation) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
+                },
             )
         }
     }

@@ -6,6 +6,7 @@ import android.app.Application
 import android.content.ContentResolver
 import android.net.Uri
 import android.util.Log
+import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.local.HermesDatabase
 import com.m57.hermescontrol.data.remote.ApiClient
@@ -77,6 +78,10 @@ class ChatViewModelTest {
         mockkObject(HermesDatabase)
 
         app = mockk(relaxed = true)
+        every { app.getString(R.string.chat_model_switch_failed, any()) } answers {
+            val formatArgs = arg<Array<out Any>>(1)
+            "Failed to switch model: ${formatArgs.first()}"
+        }
         fakeRepo = FakeChatPersistenceRepository()
 
         mockConnectionStatus.value = ConnectionStatus.DISCONNECTED
@@ -105,6 +110,8 @@ class ChatViewModelTest {
             arg<((String) -> Unit)?>(2)?.invoke(id)
             id
         }
+        every { HermesWsClient.request(WsMethods.CONFIG_SET, any(), any()) } returns
+            CompletableDeferred<Any?>(mapOf("ok" to true))
 
         // Stub model-options so preloadModelOptions() (fired at GatewayReady) is safe.
         val mockApi = mockk<com.m57.hermescontrol.data.remote.HermesApiService>(relaxed = true)
@@ -363,7 +370,7 @@ class ChatViewModelTest {
         }
 
     @Test
-    fun testModelPickerSelection_hotSwapsCurrentSessionViaSlash() =
+    fun testModelPickerSelection_hotSwapsCurrentSessionViaConfigSet() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
 
@@ -371,14 +378,10 @@ class ChatViewModelTest {
             advanceUntilIdle()
             assertTrue(viewModel.uiState.value.showModelPicker)
 
-            // Selecting a model must send the bare spec "gpt-4o --provider openai
-            // --session" via the `config.set` RPC with key="model" (the gateway
-            // routes key=="model" to _apply_model_switch; the /model prefix is
-            // stripped before send because config.set does not parse slash
-            // commands). NOT command.dispatch (4018s on /model), NOT prompt.submit
-            // (LLM would treat it as text). Capture the config.set params.
+            // Selecting a model sends the bare spec through the awaited
+            // config.set RPC. It never reaches prompt.submit.
             val modelCalls = mutableListOf<Triple<String, String, String>>()
-            every { HermesWsClient.send(WsMethods.CONFIG_SET, any(), any()) } answers {
+            every { HermesWsClient.request(WsMethods.CONFIG_SET, any(), any()) } answers {
                 val params = arg<Map<String, Any>>(1)
                 modelCalls.add(
                     Triple(
@@ -387,7 +390,7 @@ class ChatViewModelTest {
                         params["session_id"] as String,
                     ),
                 )
-                "req-cfg-${modelCalls.size}"
+                CompletableDeferred<Any?>(mapOf("ok" to true))
             }
 
             viewModel.sendSlashModel("openai", "gpt-4o")
@@ -398,11 +401,41 @@ class ChatViewModelTest {
                 "openai/gpt-4o",
                 viewModel.uiState.value.currentSessionModel,
             )
-            verify { HermesWsClient.send(WsMethods.CONFIG_SET, any(), any()) }
+            verify { HermesWsClient.request(WsMethods.CONFIG_SET, any(), any()) }
             val call = modelCalls.firstOrNull { it.first == "model" }
             assertNotNull("selection must route through config.set key=model", call)
             assertEquals("gpt-4o --provider openai --session", call!!.second)
             assertEquals(sessionId, call.third)
+        }
+
+    @Test
+    fun testSessionInfo_tracksModelForCurrentSessionOnly() =
+        runTest {
+            val (viewModel, sessionId) = createViewModelWithSession()
+
+            mockEventsFlow.emit(
+                WsEvent.SessionInfo(
+                    data = mapOf("provider" to "openai-codex", "model" to "gpt-5.6-sol"),
+                    sessionId = sessionId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(
+                "openai-codex/gpt-5.6-sol",
+                viewModel.uiState.value.currentSessionModel,
+            )
+
+            mockEventsFlow.emit(
+                WsEvent.SessionInfo(
+                    data = mapOf("provider" to "fireworks", "model" to "glm-5p2"),
+                    sessionId = "another-session",
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(
+                "openai-codex/gpt-5.6-sol",
+                viewModel.uiState.value.currentSessionModel,
+            )
         }
 
     @Test
@@ -423,7 +456,7 @@ class ChatViewModelTest {
             // (key="model"), which the gateway routes to _apply_model_switch. NOT
             // command.dispatch (4018s on /model) and NOT prompt.submit (LLM would
             // treat it as text).
-            verify { HermesWsClient.send(WsMethods.CONFIG_SET, any(), any()) }
+            verify { HermesWsClient.request(WsMethods.CONFIG_SET, any(), any()) }
         }
 
     @Test
@@ -436,7 +469,7 @@ class ChatViewModelTest {
             // slash prefix must be stripped, or parse_model_flags on the
             // backend won't recognize it and the hot-swap silently fails.
             val modelCalls = mutableListOf<Triple<String, String, String>>()
-            every { HermesWsClient.send(WsMethods.CONFIG_SET, any(), any()) } answers {
+            every { HermesWsClient.request(WsMethods.CONFIG_SET, any(), any()) } answers {
                 val params = arg<Map<String, Any>>(1)
                 modelCalls.add(
                     Triple(
@@ -445,7 +478,7 @@ class ChatViewModelTest {
                         params["session_id"] as String,
                     ),
                 )
-                "req-cfg-ci-${modelCalls.size}"
+                CompletableDeferred<Any?>(mapOf("ok" to true))
             }
 
             viewModel.sendMessage("/MODEL gpt-4o --provider openai --session")
@@ -463,6 +496,70 @@ class ChatViewModelTest {
                 call.second.startsWith("/"),
             )
             assertEquals(sessionId, call.third)
+        }
+
+    @Test
+    fun testModelPickerSelection_confirmsExpensiveModelBeforeUpdatingLabel() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val calls = mutableListOf<Map<String, Any>>()
+            every { HermesWsClient.request(WsMethods.CONFIG_SET, any(), any()) } answers {
+                val params = arg<Map<String, Any>>(1)
+                calls.add(params)
+                if (params["confirm_expensive_model"] == true) {
+                    CompletableDeferred<Any?>(
+                        mapOf(
+                            "ok" to true,
+                            "provider" to "openai",
+                            "model" to "gpt-expensive",
+                        ),
+                    )
+                } else {
+                    CompletableDeferred<Any?>(
+                        mapOf(
+                            "confirm_required" to true,
+                            "confirm_message" to "This model costs more.",
+                        ),
+                    )
+                }
+            }
+
+            viewModel.sendSlashModel("openai", "gpt-expensive")
+            advanceUntilIdle()
+
+            assertNull(viewModel.uiState.value.currentSessionModel)
+            assertEquals(
+                "This model costs more.",
+                viewModel.uiState.value.modelSwitchConfirmation?.message,
+            )
+
+            viewModel.confirmModelSwitch()
+            advanceUntilIdle()
+
+            assertEquals("openai/gpt-expensive", viewModel.uiState.value.currentSessionModel)
+            assertNull(viewModel.uiState.value.modelSwitchConfirmation)
+            assertEquals(true, calls.last()["confirm_expensive_model"])
+        }
+
+    @Test
+    fun testModelPickerSelection_rpcFailureDoesNotUpdateLabel() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            every { HermesWsClient.request(WsMethods.CONFIG_SET, any(), any()) } returns
+                CompletableDeferred<Any?>().also {
+                    it.completeExceptionally(
+                        HermesWsClient.HermesRpcException("Session is busy"),
+                    )
+                }
+
+            viewModel.sendSlashModel("openai", "gpt-4o")
+            advanceUntilIdle()
+
+            assertNull(viewModel.uiState.value.currentSessionModel)
+            assertEquals(
+                "Failed to switch model: Session is busy",
+                viewModel.uiState.value.errorMessage,
+            )
         }
 
     // ── Connection / init tests ──────────────────────────────────────────────
