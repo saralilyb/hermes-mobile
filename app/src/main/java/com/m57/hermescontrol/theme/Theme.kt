@@ -96,7 +96,7 @@ fun HermesControlTheme(
 
     val context = LocalContext.current
     val dynamicAvailable =
-        useDynamicColors && themePreset == ThemePreset.DEFAULT && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        useDynamicColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val colorScheme =
         if (dynamicAvailable) {
             if (darkTheme) {

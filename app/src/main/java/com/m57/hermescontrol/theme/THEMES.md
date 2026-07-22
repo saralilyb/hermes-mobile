@@ -64,8 +64,8 @@ private fun resolveStatusColors(preset: ThemePreset, darkTheme: Boolean) = when 
 }
 ```
 
-Dynamic (Material You) color on API 31+ overrides the DEFAULT scheme when
-`useDynamicColors = true` and `themePreset == ThemePreset.DEFAULT`.
+Dynamic (Material You) color on API 31+ overrides the preset scheme when
+`useDynamicColors = true`.
 
 ## DEFAULT uses design tokens — that's intentional
 
