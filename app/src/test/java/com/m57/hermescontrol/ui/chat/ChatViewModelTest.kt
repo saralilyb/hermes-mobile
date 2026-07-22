@@ -1504,6 +1504,13 @@ class ChatViewModelTest {
                                         content = "Archived turn",
                                     ),
                                 ),
+                            pagination =
+                                com.m57.hermescontrol.data.model.SessionMessagePagination(
+                                    limit = 150,
+                                    offset = 2600,
+                                    returned = 1,
+                                    total = 2885,
+                                ),
                         ),
                     )
                 }
@@ -1524,6 +1531,10 @@ class ChatViewModelTest {
             assertEquals(
                 listOf("Archived turn", "Recent turn", "Recent reply"),
                 viewModel.uiState.value.messages.map { it.content },
+            )
+            assertEquals(
+                "rest-session-root-2600",
+                viewModel.uiState.value.messages.first().id,
             )
             assertTrue(viewModel.uiState.value.hasOlderMessages)
         }

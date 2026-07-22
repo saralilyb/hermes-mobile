@@ -1539,15 +1539,29 @@ class ChatViewModel(
         viewModelScope.launch {
             when (val result = fetchMessagePage(sessionId, newOffset, limit)) {
                 is NetworkResult.Success -> {
-                    val older = mapServerMessages(sessionId, result.data.messages.orEmpty(), newOffset)
-                    loadedMessageOffset = newOffset
-                    withContext(Dispatchers.IO) { repo.persistMessages(older, sessionId) }
+                    val effectiveOffset =
+                        result.data.pagination?.offset ?: newOffset
+                    val older =
+                        mapServerMessages(
+                            sessionId,
+                            result.data.messages.orEmpty(),
+                            effectiveOffset,
+                        )
+                    withContext(Dispatchers.IO) {
+                        repo.persistMessages(older, sessionId)
+                    }
                     _uiState.update { current ->
-                        if (current.currentSessionId != sessionId) return@update current
+                        if (current.currentSessionId != sessionId) {
+                            return@update current
+                        }
+                        loadedMessageOffset = effectiveOffset
                         current.copy(
-                            messages = (older + current.messages).distinctBy { it.id },
+                            messages =
+                                (older + current.messages)
+                                    .distinctBy { it.id },
                             isLoadingOlder = false,
-                            hasOlderMessages = newOffset > 0,
+                            hasOlderMessages =
+                                effectiveOffset > 0 && older.isNotEmpty(),
                         )
                     }
                 }
