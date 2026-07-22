@@ -76,7 +76,6 @@ import com.m57.hermescontrol.data.model.SkillContentResponse
 import com.m57.hermescontrol.data.model.SkillHubInstallRequest
 import com.m57.hermescontrol.data.model.SkillHubSearchResponse
 import com.m57.hermescontrol.data.model.SkillHubUninstallRequest
-import com.m57.hermescontrol.data.model.SkillScanResponse
 import com.m57.hermescontrol.data.model.StatusResponse
 import com.m57.hermescontrol.data.model.SystemStatsResponse
 import com.m57.hermescontrol.data.model.TelegramOnboardingApplyRequest
@@ -210,14 +209,6 @@ interface HermesApiService {
     suspend fun previewHubSkill(
         @Query("identifier") identifier: String,
     ): Response<SkillContentResponse>
-
-    @GET("api/skills/hub/scan")
-    suspend fun scanHubSkill(
-        @Query("identifier") identifier: String,
-    ): Response<SkillScanResponse>
-
-    @GET("api/skills/hub/sources")
-    suspend fun getHubSources(): Response<List<String>>
 
     @POST("api/skills/hub/install")
     suspend fun installHubSkill(
