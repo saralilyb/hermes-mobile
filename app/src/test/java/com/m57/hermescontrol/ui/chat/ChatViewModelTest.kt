@@ -1238,7 +1238,13 @@ class ChatViewModelTest {
             val (viewModel, _) = createViewModelWithSession()
             val resumeRequestId = "resume-history"
             coEvery {
-                ApiClient.hermesApi.getSessionMessages(any(), any(), any())
+                ApiClient.hermesApi.getSessionMessages(
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                )
             } returns
                 retrofit2.Response.success(
                     com.m57.hermescontrol.data.model.SessionMessagesResponse(
@@ -1363,7 +1369,7 @@ class ChatViewModelTest {
                     ),
                 )
             coEvery {
-                api.getSessionMessages("session-root", 150, 50)
+                api.getSessionMessages("session-root", 150, 50, true, true)
             } returns
                 retrofit2.Response.success(
                     com.m57.hermescontrol.data.model.SessionMessagesResponse(
@@ -1382,7 +1388,7 @@ class ChatViewModelTest {
                 )
             var olderPageRequested = false
             coEvery {
-                api.getSessionMessages("session-root", 50, 0)
+                api.getSessionMessages("session-root", 50, 0, true, null)
             } answers {
                 olderPageRequested = true
                 retrofit2.Response.success(
@@ -1429,6 +1435,111 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun testCompactedHistory_usesServerTailOffsetAndPagesBackward() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val api = ApiClient.hermesApi
+            coEvery { api.getSessions(any(), any(), any()) } returns
+                retrofit2.Response.success(
+                    com.m57.hermescontrol.data.model.SessionListResponse(
+                        sessions =
+                            listOf(
+                                com.m57.hermescontrol.data.model.SessionInfo(
+                                    id = "session-root",
+                                    message_count = 200,
+                                ),
+                            ),
+                    ),
+                )
+
+            data class PageRequest(
+                val limit: Int?,
+                val offset: Int,
+                val includeCompacted: Boolean?,
+                val fromEnd: Boolean?,
+            )
+
+            val pageRequests = mutableListOf<PageRequest>()
+            coEvery {
+                api.getSessionMessages(any(), any(), any(), any(), any())
+            } answers {
+                val request =
+                    PageRequest(
+                        limit = arg(1),
+                        offset = arg(2),
+                        includeCompacted = arg(3),
+                        fromEnd = arg(4),
+                    )
+                pageRequests += request
+                if (request.fromEnd == true) {
+                    retrofit2.Response.success(
+                        com.m57.hermescontrol.data.model.SessionMessagesResponse(
+                            messages =
+                                listOf(
+                                    com.m57.hermescontrol.data.model.SessionMessage(
+                                        role = "user",
+                                        content = "Recent turn",
+                                    ),
+                                    com.m57.hermescontrol.data.model.SessionMessage(
+                                        role = "assistant",
+                                        content = "Recent reply",
+                                    ),
+                                ),
+                            pagination =
+                                com.m57.hermescontrol.data.model.SessionMessagePagination(
+                                    limit = 150,
+                                    offset = 2835,
+                                    returned = 2,
+                                    total = 2885,
+                                ),
+                        ),
+                    )
+                } else {
+                    retrofit2.Response.success(
+                        com.m57.hermescontrol.data.model.SessionMessagesResponse(
+                            messages =
+                                listOf(
+                                    com.m57.hermescontrol.data.model.SessionMessage(
+                                        role = "user",
+                                        content = "Archived turn",
+                                    ),
+                                ),
+                            pagination =
+                                com.m57.hermescontrol.data.model.SessionMessagePagination(
+                                    limit = 150,
+                                    offset = 2600,
+                                    returned = 1,
+                                    total = 2885,
+                                ),
+                        ),
+                    )
+                }
+            }
+
+            viewModel.switchSession("session-root")
+            advanceUntilIdle()
+            viewModel.loadOlderMessages()
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(
+                    PageRequest(150, 50, true, true),
+                    PageRequest(150, 2685, true, null),
+                ),
+                pageRequests,
+            )
+            assertEquals(
+                listOf("Archived turn", "Recent turn", "Recent reply"),
+                viewModel.uiState.value.messages.map { it.content },
+            )
+            assertEquals(
+                "rest-session-root-2600",
+                viewModel.uiState.value.messages.first().id,
+            )
+            assertTrue(viewModel.uiState.value.hasOlderMessages)
+        }
+
+    @Test
     fun testEmptyInitialRestPage_disablesOlderPagination() =
         runTest {
             val (viewModel, _) = createViewModelWithSession()
@@ -1450,7 +1561,7 @@ class ChatViewModelTest {
             }
             val pageRequests = mutableListOf<Triple<String, Int, Int>>()
             coEvery {
-                api.getSessionMessages(any(), any(), any())
+                api.getSessionMessages(any(), any(), any(), any(), any())
             } answers {
                 pageRequests += Triple(arg(0), arg(1), arg(2))
                 retrofit2.Response.success(
