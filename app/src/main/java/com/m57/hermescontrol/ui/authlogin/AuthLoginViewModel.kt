@@ -12,6 +12,7 @@ import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.AuthPayloads
+import com.m57.hermescontrol.data.remote.AuthSessionState
 import com.m57.hermescontrol.data.remote.ServerEndpoint
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.data.ws.HermesWsClient
@@ -82,6 +83,8 @@ class AuthLoginViewModel(
     }
 
     fun useExistingProfile(profileId: String) {
+        if (AuthSessionState.signInRequired.value) return
+
         AuthManager.setSelectedProfileId(profileId)
         ApiClient.rebuild()
         HermesWsClient.connect()
@@ -314,6 +317,7 @@ class AuthLoginViewModel(
                 }
 
             if (result != null) {
+                AuthSessionState.markAuthenticated()
                 AuthManager.setBaseUrl(endpoint.baseUrl.toString())
                 if (state.authMode == DashboardAuthMode.TOKEN_ONLY) {
                     AuthManager.setToken(result.loopbackToken)
@@ -358,7 +362,7 @@ class AuthLoginViewModel(
                 endpoint.baseUrl.toString(),
                 token,
             )
-        val result = safeApiCall { tempApi.getSessions() }
+        val result = safeApiCall(reportAuthExpiry = false) { tempApi.getSessions() }
 
         return when (result) {
             is com.m57.hermescontrol.data.remote.NetworkResult.Success -> {

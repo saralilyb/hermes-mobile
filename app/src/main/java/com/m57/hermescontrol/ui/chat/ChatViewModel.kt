@@ -18,6 +18,7 @@ import com.m57.hermescontrol.data.model.PinnedModel
 import com.m57.hermescontrol.data.model.SessionMessage
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.AuthPayloads
+import com.m57.hermescontrol.data.remote.AuthSessionState
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.OkHttpProvider
 import com.m57.hermescontrol.data.remote.safeApiCall
@@ -2109,6 +2110,7 @@ class ChatViewModel(
                 // reconnect() lets HermesWsClient mint it for the handshake.
                 AuthManager.setToken(null)
                 AuthManager.setWsAuthParam("ticket")
+                AuthSessionState.markAuthenticated()
 
                 withContext(Dispatchers.Main) {
                     onResult(true, null)

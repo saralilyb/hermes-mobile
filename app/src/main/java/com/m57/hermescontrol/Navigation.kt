@@ -50,6 +50,7 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.m57.hermescontrol.data.local.AuthManager
+import com.m57.hermescontrol.data.remote.AuthSessionState
 import com.m57.hermescontrol.data.ws.ConnectionStatus
 import com.m57.hermescontrol.data.ws.HermesWsClient
 import com.m57.hermescontrol.theme.BottomNavDisplayMode
@@ -97,6 +98,7 @@ internal fun Modifier.bottomNavigationHeight(displayMode: BottomNavDisplayMode):
 private fun appEntryProvider(
     sessionId: String?,
     openDrawer: () -> Unit,
+    signInRequired: Boolean,
 ) = entryProvider {
     entry<LandingScreen> {
         // B7 (Jun 30 2026, kanban t_424): route landing screen buttons through navigateTo to prevent duplicate screens
@@ -115,8 +117,12 @@ private fun appEntryProvider(
                 NavigationController.resetTo(ChatScreen)
             },
             onBack = {
-                NavigationController.goBack()
+                navigateBackUnlessSignInRequired(
+                    signInRequired = AuthSessionState.signInRequired.value,
+                    navigateBack = { NavigationController.goBack() },
+                )
             },
+            showExistingProfiles = !signInRequired,
         )
         DisableDrawerGestures()
     }
@@ -171,9 +177,30 @@ private fun appEntryProvider(
     }
 }
 
+internal fun routeExpiredAuthentication(
+    signInRequired: Boolean,
+    disconnect: () -> Unit,
+    showLogin: () -> Unit,
+) {
+    if (!signInRequired) return
+
+    disconnect()
+    showLogin()
+}
+
+internal fun navigateBackUnlessSignInRequired(
+    signInRequired: Boolean,
+    navigateBack: () -> Unit,
+) {
+    if (signInRequired) return
+
+    navigateBack()
+}
+
 @Composable
 fun MainNavigation(sessionId: String? = null) {
     val token by AuthManager.tokenFlow.collectAsState()
+    val signInRequired by AuthSessionState.signInRequired.collectAsState()
     val hasToken = !token.isNullOrBlank()
     val usesTicketAuth =
         runCatching {
@@ -183,6 +210,14 @@ fun MainNavigation(sessionId: String? = null) {
 
     val backStack = remember(startScreen) { NavBackStack(startScreen) }
     NavigationController.backStack = backStack
+
+    LaunchedEffect(signInRequired) {
+        routeExpiredAuthentication(
+            signInRequired = signInRequired,
+            disconnect = { HermesWsClient.disconnect() },
+            showLogin = { NavigationController.resetTo(AuthLoginScreen) },
+        )
+    }
 
     val currentScreen = backStack.lastOrNull() ?: startScreen
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -369,9 +404,14 @@ fun MainNavigation(sessionId: String? = null) {
             ) { paddingValues ->
                 NavDisplay(
                     backStack = backStack,
-                    onBack = { NavigationController.goBack() },
+                    onBack = {
+                        navigateBackUnlessSignInRequired(
+                            signInRequired = signInRequired,
+                            navigateBack = { NavigationController.goBack() },
+                        )
+                    },
                     entryProvider =
-                        appEntryProvider(sessionId, openDrawer),
+                        appEntryProvider(sessionId, openDrawer, signInRequired),
                     modifier =
                         Modifier
                             .padding(paddingValues)
