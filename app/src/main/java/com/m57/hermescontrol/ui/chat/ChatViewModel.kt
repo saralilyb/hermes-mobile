@@ -1485,7 +1485,8 @@ class ChatViewModel(
                             state.copy(
                                 messages = chatMessages,
                                 isLoading = false,
-                                hasOlderMessages = offset > 0,
+                                hasOlderMessages =
+                                    offset > 0 && chatMessages.isNotEmpty(),
                                 isLoadingOlder = false,
                             )
                         }
