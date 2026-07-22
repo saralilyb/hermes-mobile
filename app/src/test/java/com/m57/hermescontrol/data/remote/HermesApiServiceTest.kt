@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.data.remote
 
+import com.m57.hermescontrol.data.model.BulkDeleteRequest
 import com.m57.hermescontrol.data.model.ToggleSkillRequest
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
@@ -225,6 +226,35 @@ class HermesApiServiceTest {
             }
         }
     }
+
+    @Test
+    fun testBulkDeleteSessions_postsBackendContract() =
+        runTest {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"ok":true,"deleted":1}"""),
+            )
+
+            val response =
+                apiService.bulkDeleteSessions(
+                    BulkDeleteRequest(
+                        ids = listOf("session_1"),
+                        delete_all = false,
+                    ),
+                )
+
+            assertTrue(response.isSuccessful)
+            assertEquals(1, response.body()?.deleted)
+
+            val recordedRequest = mockWebServer.takeRequest()
+            assertEquals("/api/sessions/bulk-delete", recordedRequest.path)
+            assertEquals("POST", recordedRequest.method)
+            assertEquals(
+                """{"ids":["session_1"]}""",
+                recordedRequest.body.readUtf8(),
+            )
+        }
 
     @Test
     fun testGetSkills_malformedJsonResponse_throwsException() =
