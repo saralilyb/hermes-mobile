@@ -1429,6 +1429,48 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun testEmptyInitialRestPage_disablesOlderPagination() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val api = ApiClient.hermesApi
+            var countRequested = false
+            coEvery { api.getSessions(any(), any(), any()) } answers {
+                countRequested = true
+                retrofit2.Response.success(
+                    com.m57.hermescontrol.data.model.SessionListResponse(
+                        sessions =
+                            listOf(
+                                com.m57.hermescontrol.data.model.SessionInfo(
+                                    id = "session-root",
+                                    message_count = 200,
+                                ),
+                            ),
+                    ),
+                )
+            }
+            val pageRequests = mutableListOf<Triple<String, Int, Int>>()
+            coEvery {
+                api.getSessionMessages(any(), any(), any())
+            } answers {
+                pageRequests += Triple(arg(0), arg(1), arg(2))
+                retrofit2.Response.success(
+                    com.m57.hermescontrol.data.model.SessionMessagesResponse(
+                        messages = emptyList(),
+                    ),
+                )
+            }
+
+            viewModel.switchSession("session-root")
+            advanceUntilIdle()
+
+            assertTrue(countRequested)
+            assertEquals(listOf(Triple("session-root", 150, 50)), pageRequests)
+            assertFalse(viewModel.uiState.value.isLoading)
+            assertTrue(viewModel.uiState.value.messages.isEmpty())
+            assertFalse(viewModel.uiState.value.hasOlderMessages)
+        }
+
+    @Test
     fun testInterruptSession_withSessionId_sendsRpc() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
