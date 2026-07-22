@@ -1462,11 +1462,25 @@ class ChatViewModel(
     private fun loadSessionMessages(sessionId: String) {
         viewModelScope.launch {
             val messageCount = fetchServerMessageCount(sessionId)
-            val offset = (messageCount - MESSAGE_PAGE_SIZE).coerceAtLeast(0)
-            val result = fetchMessagePage(sessionId, offset, MESSAGE_PAGE_SIZE)
+            val requestedOffset =
+                (messageCount - MESSAGE_PAGE_SIZE).coerceAtLeast(0)
+            val result =
+                fetchMessagePage(
+                    sessionId,
+                    requestedOffset,
+                    MESSAGE_PAGE_SIZE,
+                    fromEnd = true,
+                )
             when (result) {
                 is NetworkResult.Success -> {
-                    val chatMessages = mapServerMessages(sessionId, result.data.messages.orEmpty(), offset)
+                    val offset =
+                        result.data.pagination?.offset ?: requestedOffset
+                    val chatMessages =
+                        mapServerMessages(
+                            sessionId,
+                            result.data.messages.orEmpty(),
+                            offset,
+                        )
                     withContext(Dispatchers.IO) {
                         repo.persistMessages(chatMessages, sessionId)
                     }
@@ -1634,8 +1648,17 @@ class ChatViewModel(
         sessionId: String,
         offset: Int,
         limit: Int,
+        fromEnd: Boolean? = null,
     ) = withContext(Dispatchers.IO) {
-        safeApiCall { ApiClient.hermesApi.getSessionMessages(sessionId, limit = limit, offset = offset) }
+        safeApiCall {
+            ApiClient.hermesApi.getSessionMessages(
+                sessionId = sessionId,
+                limit = limit,
+                offset = offset,
+                includeCompacted = true,
+                fromEnd = fromEnd,
+            )
+        }
     }
 
     private fun mapServerMessages(

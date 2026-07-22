@@ -144,6 +144,8 @@ interface HermesApiService {
         @Path("id", encoded = true) sessionId: String,
         @Query("limit") limit: Int? = null,
         @Query("offset") offset: Int = 0,
+        @Query("include_compacted") includeCompacted: Boolean? = null,
+        @Query("from_end") fromEnd: Boolean? = null,
     ): Response<SessionMessagesResponse>
 
     @GET("api/sessions/stats")

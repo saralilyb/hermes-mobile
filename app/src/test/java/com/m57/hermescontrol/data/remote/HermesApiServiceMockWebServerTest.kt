@@ -258,6 +258,39 @@ class HermesApiServiceMockWebServerTest {
         }
 
     @Test
+    fun getSessionMessages_parsesStructuredToolContent() =
+        runBlocking {
+            mockServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody(
+                        """
+                        {
+                            "messages": [
+                                {
+                                    "role": "tool",
+                                    "content": {
+                                        "output": "command result",
+                                        "exit_code": 0
+                                    },
+                                    "timestamp": 1718000020
+                                }
+                            ]
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+
+            val response = api.getSessionMessages("tool-history")
+
+            assertTrue(response.isSuccessful)
+            assertEquals(
+                "{\"output\":\"command result\",\"exit_code\":0}",
+                response.body()!!.messages.single().content,
+            )
+        }
+
+    @Test
     fun getSessionMessages_sendsPaginationQuery() =
         runBlocking {
             mockServer.enqueue(
@@ -271,6 +304,46 @@ class HermesApiServiceMockWebServerTest {
             assertTrue(response.isSuccessful)
             assertEquals(
                 "/api/sessions/desktop/session/messages?limit=150&offset=300",
+                mockServer.takeRequest().path,
+            )
+        }
+
+    @Test
+    fun getSessionMessages_requestsAndParsesCompactedTailPage() =
+        runBlocking {
+            mockServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody(
+                        """
+                        {
+                            "messages": [],
+                            "pagination": {
+                                "limit": 50,
+                                "offset": 2835,
+                                "returned": 50,
+                                "total": 2885
+                            }
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+
+            val response =
+                api.getSessionMessages(
+                    sessionId = "long-session",
+                    limit = 50,
+                    offset = 66,
+                    includeCompacted = true,
+                    fromEnd = true,
+                )
+
+            assertTrue(response.isSuccessful)
+            assertEquals(2835, response.body()!!.pagination!!.offset)
+            assertEquals(2885, response.body()!!.pagination!!.total)
+            assertEquals(
+                "/api/sessions/long-session/messages?limit=50&offset=66" +
+                    "&include_compacted=true&from_end=true",
                 mockServer.takeRequest().path,
             )
         }
