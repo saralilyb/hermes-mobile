@@ -11,6 +11,7 @@ import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.config.resolveBaseUrl
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.AuthSessionState
 import com.m57.hermescontrol.data.remote.CleartextPolicy
 import com.m57.hermescontrol.data.remote.NetworkError
 import com.m57.hermescontrol.data.remote.NetworkResult
@@ -144,10 +145,11 @@ class ConnectViewModel(
             val result =
                 withContext(Dispatchers.IO) {
                     val tempApi = ApiClient.createTempService(endpoint.baseUrl.toString(), state.token)
-                    safeApiCall { tempApi.getStatus() }
+                    safeApiCall(reportAuthExpiry = false) { tempApi.getStatus() }
                 }
             when (result) {
                 is NetworkResult.Success -> {
+                    AuthSessionState.markAuthenticated()
                     // Persist credentials to the selected (Default) profile upon successful verification.
                     AuthManager.setToken(state.token)
                     AuthManager.setBaseUrl(state.baseUrl)

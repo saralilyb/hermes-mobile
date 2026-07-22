@@ -90,6 +90,7 @@ fun jitteredBackoff(baseMs: Long): Long {
 
 suspend inline fun <reified T> safeApiCall(
     retries: Int = 2,
+    reportAuthExpiry: Boolean = true,
     crossinline call: suspend () -> Response<T>,
 ): NetworkResult<T> {
     var lastException: IOException? = null
@@ -118,7 +119,11 @@ suspend inline fun <reified T> safeApiCall(
                     delay(backoff)
                     continue
                 }
-                return NetworkResult.Failure(mapHttpError(code, errorBody))
+                val error = mapHttpError(code, errorBody)
+                if (reportAuthExpiry && error is NetworkError.AuthExpired) {
+                    AuthSessionState.requireSignIn()
+                }
+                return NetworkResult.Failure(error)
             }
         } catch (e: IOException) {
             lastException = e

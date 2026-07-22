@@ -6,12 +6,14 @@ import android.app.Application
 import android.util.Log
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.local.AuthManager
+import com.m57.hermescontrol.data.remote.AuthSessionState
 import com.m57.hermescontrol.data.remote.OkHttpProvider
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
+import io.mockk.verify
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
@@ -30,6 +32,7 @@ class AuthLoginViewModelTest {
 
     @Before
     fun setup() {
+        AuthSessionState.markAuthenticated()
         mockkObject(AuthManager)
         every { AuthManager.getBaseUrl() } returns "https://localhost:9119/"
         every { AuthManager.getConnectionProfiles() } returns emptyList()
@@ -48,6 +51,7 @@ class AuthLoginViewModelTest {
 
     @After
     fun teardown() {
+        AuthSessionState.markAuthenticated()
         unmockkAll()
     }
 
@@ -70,6 +74,16 @@ class AuthLoginViewModelTest {
         assertFalse(state.connectionSuccess)
         assertFalse(state.isLoading)
         assertNull(state.errorMessage)
+    }
+
+    @Test
+    fun `expired authentication blocks existing profile shortcut`() {
+        AuthSessionState.requireSignIn()
+
+        viewModel.useExistingProfile("expired-profile")
+
+        verify(exactly = 0) { AuthManager.setSelectedProfileId(any()) }
+        assertFalse(viewModel.uiState.value.connectionSuccess)
     }
 
     @Test

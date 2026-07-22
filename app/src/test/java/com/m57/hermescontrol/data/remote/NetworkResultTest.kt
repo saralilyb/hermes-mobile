@@ -110,6 +110,51 @@ class NetworkResultTest {
         }
 
     @Test
+    fun testSafeApiCall_authExpiredRequiresSignIn() =
+        runBlocking {
+            AuthSessionState.markAuthenticated()
+            try {
+                val result =
+                    safeApiCall<String> {
+                        Response.error(
+                            401,
+                            "Unauthorized".toResponseBody("text/plain".toMediaTypeOrNull()),
+                        )
+                    }
+
+                assertTrue(result is NetworkResult.Failure)
+                assertTrue((result as NetworkResult.Failure).error is NetworkError.AuthExpired)
+                assertTrue(AuthSessionState.signInRequired.value)
+
+                AuthSessionState.markAuthenticated()
+                assertTrue(!AuthSessionState.signInRequired.value)
+            } finally {
+                AuthSessionState.markAuthenticated()
+            }
+        }
+
+    @Test
+    fun testSafeApiCall_authValidationDoesNotRequireSignIn() =
+        runBlocking {
+            AuthSessionState.markAuthenticated()
+            try {
+                val result =
+                    safeApiCall<String>(reportAuthExpiry = false) {
+                        Response.error(
+                            401,
+                            "Unauthorized".toResponseBody("text/plain".toMediaTypeOrNull()),
+                        )
+                    }
+
+                assertTrue(result is NetworkResult.Failure)
+                assertTrue((result as NetworkResult.Failure).error is NetworkError.AuthExpired)
+                assertTrue(!AuthSessionState.signInRequired.value)
+            } finally {
+                AuthSessionState.markAuthenticated()
+            }
+        }
+
+    @Test
     fun testSafeApiCall_httpFailure_retryable_eventuallySucceeds() =
         runBlocking {
             var callCount = 0

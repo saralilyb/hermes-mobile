@@ -56,6 +56,7 @@ import com.m57.hermescontrol.R
 fun AuthLoginScreen(
     onConnected: () -> Unit,
     onBack: () -> Unit,
+    showExistingProfiles: Boolean = true,
     modifier: Modifier = Modifier,
     viewModel: AuthLoginViewModel =
         viewModel(
@@ -130,7 +131,7 @@ fun AuthLoginScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (state.loggedInProfiles.isNotEmpty()) {
+            if (showExistingProfiles && state.loggedInProfiles.isNotEmpty()) {
                 Text(
                     text = stringResource(R.string.auth_login_existing_profiles_title),
                     style = MaterialTheme.typography.titleSmall,

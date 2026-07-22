@@ -11,6 +11,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -35,6 +36,7 @@ class ApiClientTest {
         mockWebServer.start()
 
         mockkObject(AuthManager)
+        AuthSessionState.markAuthenticated()
 
         // Issue #470: ApiClient builds through OkHttpProvider, which resolves
         // the shared CookieManager.cookieJar. Inject a fake jar so the test
@@ -59,6 +61,7 @@ class ApiClientTest {
 
     @AfterEach
     fun tearDown() {
+        AuthSessionState.markAuthenticated()
         mockWebServer.shutdown()
         unmockkAll()
     }
@@ -166,9 +169,10 @@ class ApiClientTest {
                 MockResponse().setResponseCode(200).setBody("""{"sessions":[],"total":0}"""),
             )
 
-            val response = ApiClient.hermesApi.getSessions()
+            val result = safeApiCall { ApiClient.hermesApi.getSessions() }
 
-            assertTrue(response.isSuccessful)
+            assertTrue(result is NetworkResult.Success)
+            assertFalse(AuthSessionState.signInRequired.value)
             assertEquals("fresh-token", savedToken)
             assertEquals("Bearer expired-token", mockWebServer.takeRequest().getHeader("Authorization"))
             assertEquals("/", mockWebServer.takeRequest().path)
