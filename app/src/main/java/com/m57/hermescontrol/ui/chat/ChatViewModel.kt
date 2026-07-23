@@ -91,7 +91,7 @@ data class ChatUiState(
     // Commands catalog
     val commandCatalog: CommandCatalog = CommandCatalog(),
     // In-session model picker (issue #589) — surfaced when the user types /model
-    // (or taps the top-bar model chip). Mirror of the global model screen's
+    // or taps the composer model chip. Mirror of the global model screen's
     // picker, but the selection hot-swaps the CURRENT session via config.set.
     val showModelPicker: Boolean = false,
     val modelPickerProviders: List<ModelProvider> = emptyList(),
