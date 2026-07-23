@@ -1,61 +1,76 @@
 package com.m57.hermescontrol
 
+import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.NavKey
+import com.m57.hermescontrol.data.local.AuthSessionState
+import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class AuthenticationRoutingTest {
-    @Test
-    fun `expired authentication disconnects and routes to login`() {
-        var disconnected = false
-        var routedToLogin = false
+    @Before
+    fun setup() {
+        AuthSessionState.resetForTest()
+    }
 
-        routeExpiredAuthentication(
-            signInRequired = true,
-            disconnect = { disconnected = true },
-            showLogin = { routedToLogin = true },
-        )
-
-        assertTrue(disconnected)
-        assertTrue(routedToLogin)
+    @After
+    fun teardown() {
+        AuthSessionState.resetForTest()
+        NavigationController.backStack = null
     }
 
     @Test
-    fun `valid authentication leaves connection and navigation unchanged`() {
-        var disconnected = false
-        var routedToLogin = false
+    fun testExpiryPropagationState() {
+        assertFalse(AuthSessionState.signInRequired.value)
 
-        routeExpiredAuthentication(
-            signInRequired = false,
-            disconnect = { disconnected = true },
-            showLogin = { routedToLogin = true },
-        )
+        AuthSessionState.requireSignIn()
+        assertTrue(AuthSessionState.signInRequired.value)
 
-        assertFalse(disconnected)
-        assertFalse(routedToLogin)
+        AuthSessionState.markAuthenticated()
+        assertFalse(AuthSessionState.signInRequired.value)
     }
 
     @Test
-    fun `expired authentication blocks back navigation`() {
-        var navigatedBack = false
-
-        navigateBackUnlessSignInRequired(
-            signInRequired = true,
-            navigateBack = { navigatedBack = true },
-        )
-
-        assertFalse(navigatedBack)
+    fun testGatedCookieSessionStartsInChatWithoutBearerToken() {
+        assertEquals(ChatScreen, authenticatedStartScreen(null, "ticket"))
     }
 
     @Test
-    fun `valid authentication allows back navigation`() {
-        var navigatedBack = false
+    fun testLoggedOutSessionStartsOnLanding() {
+        assertEquals(LandingScreen, authenticatedStartScreen(null, "token"))
+    }
 
-        navigateBackUnlessSignInRequired(
-            signInRequired = false,
-            navigateBack = { navigatedBack = true },
-        )
+    @Test
+    fun testGoBackFallbackGuardsChatWhenSignInRequired() {
+        val stack = NavBackStack<NavKey>(AuthLoginScreen)
+        NavigationController.backStack = stack
 
-        assertTrue(navigatedBack)
+        AuthSessionState.requireSignIn()
+        assertTrue(AuthSessionState.signInRequired.value)
+
+        // Attempting to go back from AuthLoginScreen when single element stack
+        NavigationController.goBack(fallback = ChatScreen)
+
+        // Must fall back to LandingScreen, not ChatScreen
+        assertEquals(LandingScreen, stack.lastOrNull())
+    }
+
+    @Test
+    fun testGoBackClearsToLandingWhenSignInRequiredAndExposingProtectedScreen() {
+        val stack = NavBackStack<NavKey>(ChatScreen)
+        stack.add(AuthLoginScreen)
+        NavigationController.backStack = stack
+
+        AuthSessionState.requireSignIn()
+        assertTrue(AuthSessionState.signInRequired.value)
+
+        // Attempting to pop AuthLoginScreen when ChatScreen is underneath
+        NavigationController.goBack()
+
+        // Must not expose ChatScreen
+        assertEquals(LandingScreen, stack.lastOrNull())
     }
 }

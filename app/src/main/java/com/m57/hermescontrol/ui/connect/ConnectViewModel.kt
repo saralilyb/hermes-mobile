@@ -10,8 +10,8 @@ import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.config.resolveBaseUrl
 import com.m57.hermescontrol.data.local.AuthManager
+import com.m57.hermescontrol.data.local.AuthSessionState
 import com.m57.hermescontrol.data.remote.ApiClient
-import com.m57.hermescontrol.data.remote.AuthSessionState
 import com.m57.hermescontrol.data.remote.CleartextPolicy
 import com.m57.hermescontrol.data.remote.NetworkError
 import com.m57.hermescontrol.data.remote.NetworkResult
@@ -112,20 +112,6 @@ class ConnectViewModel(
         _uiState.update { it.copy(baseUrl = trimmed, transportWarning = warning, errorMessage = null) }
     }
 
-    fun onHostChange(value: String) {
-        val endpoint = AuthManager.endpoint()
-        val next = endpoint.baseUrl.newBuilder().host(value.trim()).build().toString()
-        onBaseUrlChange(next)
-    }
-
-    fun onPortChange(value: String) {
-        val portText = value.filter { c -> c.isDigit() }
-        val port = portText.toIntOrNull() ?: return
-        val endpoint = AuthManager.endpoint()
-        val next = endpoint.baseUrl.newBuilder().port(port).build().toString()
-        onBaseUrlChange(next)
-    }
-
     fun connect() {
         val state = _uiState.value
         if (state.token.isBlank()) {
@@ -149,11 +135,16 @@ class ConnectViewModel(
                 }
             when (result) {
                 is NetworkResult.Success -> {
-                    AuthSessionState.markAuthenticated()
                     // Persist credentials to the selected (Default) profile upon successful verification.
                     AuthManager.setToken(state.token)
                     AuthManager.setBaseUrl(state.baseUrl)
+                    // Direct mode uses the bearer token for REST and WebSocket
+                    // auth. Clear any gated-session state left by a previous
+                    // endpoint before rebuilding the clients.
+                    AuthManager.setSessionCookie(null)
+                    AuthManager.setWsAuthParam("token")
                     ApiClient.rebuild()
+                    AuthSessionState.markAuthenticated()
 
                     if (state.saveProfile) {
                         val currentProfiles = AuthManager.getConnectionProfiles()

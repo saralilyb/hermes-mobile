@@ -40,16 +40,16 @@ class ModelPickerDialogTest {
         val imeBottom =
             imeHeight.value * composeTestRule.activity.resources.displayMetrics.density
         val keyboardTop = composeTestRule.activity.window.decorView.height - imeBottom
-        val actionBottom =
+        val closeButtonBottom =
             composeTestRule
-                .onNodeWithTag("model_picker_cancel")
+                .onNodeWithTag("model_picker_close")
                 .fetchSemanticsNode()
                 .boundsInRoot
                 .bottom
 
         assertTrue(
-            "Cancel action bottom ($actionBottom) must stay above keyboard top ($keyboardTop)",
-            actionBottom <= keyboardTop,
+            "Close button bottom ($closeButtonBottom) must stay above keyboard top ($keyboardTop)",
+            closeButtonBottom <= keyboardTop,
         )
     }
 }

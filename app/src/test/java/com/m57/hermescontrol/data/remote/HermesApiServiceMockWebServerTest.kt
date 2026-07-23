@@ -247,11 +247,11 @@ class HermesApiServiceMockWebServerTest {
             assertEquals(3, messages.size)
 
             assertEquals("user", messages[0].role)
-            assertEquals("Hello Hermes", messages[0].content)
+            assertEquals("Hello Hermes", messages[0].contentText)
             assertEquals("1718000000", messages[0].timestampText)
 
             assertEquals("assistant", messages[1].role)
-            assertEquals("Hi! How can I help?", messages[1].content)
+            assertEquals("Hi! How can I help?", messages[1].contentText)
 
             assertEquals("tool", messages[2].role)
             assertEquals("tool_execution", messages[2].type)
@@ -306,6 +306,37 @@ class HermesApiServiceMockWebServerTest {
                 "/api/sessions/desktop/session/messages?limit=150&offset=300",
                 mockServer.takeRequest().path,
             )
+        }
+
+    @Test
+    fun getSessionMessages_withJsonObjectToolResult_deserializesSuccessfully() =
+        runBlocking {
+            mockServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody(
+                        """
+                        {
+                            "messages": [
+                                {
+                                    "role": "tool",
+                                    "content": {"status": "ok", "items": [1, 2]},
+                                    "type": "tool_result"
+                                }
+                            ]
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+
+            val response = api.getSessionMessages("test-session-id")
+            assertTrue(response.isSuccessful)
+
+            val body = response.body()
+            assertNotNull(body)
+            assertEquals(1, body!!.messages.size)
+            assertEquals("tool", body.messages[0].role)
+            assertEquals("{\"status\":\"ok\",\"items\":[1,2]}", body.messages[0].contentText)
         }
 
     @Test
@@ -376,7 +407,7 @@ class HermesApiServiceMockWebServerTest {
             assertNotNull(body)
             assertEquals(1, body!!.messages.size)
             assertNull(body.messages[0].role)
-            assertEquals("Plain content", body.messages[0].content)
+            assertEquals("Plain content", body.messages[0].contentText)
             assertNull(body.messages[0].timestamp)
         }
 

@@ -59,6 +59,8 @@ class ConnectViewModelTest {
         every { AuthManager.getBaseUrl() } returns "https://127.0.0.1:9119/"
         every { AuthManager.setToken(any()) } returns Unit
         every { AuthManager.setBaseUrl(any()) } returns Unit
+        every { AuthManager.setSessionCookie(any()) } returns Unit
+        every { AuthManager.setWsAuthParam(any()) } returns Unit
         every {
             AuthManager.endpoint()
         } answers { ServerEndpoint.parse("https://127.0.0.1:9119/", CleartextPolicy.ALLOW_WITH_WARNING) }
@@ -79,13 +81,6 @@ class ConnectViewModelTest {
         every { mockApp.getString(R.string.connect_error_refused) } returns "Connection refused – is Hermes running?"
         every { mockApp.getString(R.string.connect_error_timeout) } returns "Connection timed out"
         every { mockApp.getString(R.string.connect_error_connection_failed) } returns "Connection failed: %1\$s"
-        every {
-            mockApp.getString(R.string.connect_error_malformed)
-        } returns "Malformed pairing string — expected URL or Base64-encoded JSON"
-        every {
-            mockApp.getString(R.string.connect_error_missing_fields)
-        } returns "Malformed pairing string — missing host, port, or token"
-        every { mockApp.getString(R.string.connect_error_parse_failed) } returns "Failed to parse pairing string: %1\$s"
     }
 
     @After
@@ -114,22 +109,6 @@ class ConnectViewModelTest {
         val viewModel = ConnectViewModel(mockApp)
         viewModel.onTokenChange("  new-token  ")
         assertEquals("new-token", viewModel.uiState.value.token)
-        assertNull(viewModel.uiState.value.errorMessage)
-    }
-
-    @Test
-    fun testOnHostChange() {
-        val viewModel = ConnectViewModel(mockApp)
-        viewModel.onHostChange("  192.168.1.50  ")
-        assertEquals("https://192.168.1.50:9119/", viewModel.uiState.value.baseUrl)
-        assertNull(viewModel.uiState.value.errorMessage)
-    }
-
-    @Test
-    fun testOnPortChange() {
-        val viewModel = ConnectViewModel(mockApp)
-        viewModel.onPortChange("90abc90")
-        assertEquals("https://127.0.0.1:9090/", viewModel.uiState.value.baseUrl)
         assertNull(viewModel.uiState.value.errorMessage)
     }
 
@@ -182,6 +161,8 @@ class ConnectViewModelTest {
 
             verify { AuthManager.setToken("valid-token") }
             verify { AuthManager.setBaseUrl("https://127.0.0.1:9119/") }
+            verify { AuthManager.setSessionCookie(null) }
+            verify { AuthManager.setWsAuthParam("token") }
             verify { ApiClient.rebuild() }
 
             val state = viewModel.uiState.value

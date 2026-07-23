@@ -33,11 +33,11 @@ Every file in `presets/` is uniform — it exports the same four tokens:
 | `XxxDarkStatusColors` | `HermesStatusColors` | dark semantic status colors |
 | `XxxLightStatusColors` | `HermesStatusColors` | light semantic status colors |
 
-A preset with no bespoke status set (MONOCHROME, AMOLED) aliases the defaults:
+A preset with no bespoke status set (AMOLED) aliases the defaults:
 
 ```kotlin
-val MonochromeDarkStatusColors = DefaultDarkStatusColors
-val MonochromeLightStatusColors = DefaultLightStatusColors
+val AmoledDarkStatusColors = DefaultDarkStatusColors
+val AmoledLightStatusColors = DefaultLightStatusColors
 ```
 
 AMOLED has no bespoke light scheme, so it aliases the default light scheme too:
@@ -64,7 +64,7 @@ private fun resolveStatusColors(preset: ThemePreset, darkTheme: Boolean) = when 
 }
 ```
 
-Dynamic (Material You) color on API 31+ overrides the resolved scheme when
+Dynamic (Material You) color on API 31+ overrides the preset scheme when
 `useDynamicColors = true`.
 
 ## DEFAULT uses design tokens — that's intentional

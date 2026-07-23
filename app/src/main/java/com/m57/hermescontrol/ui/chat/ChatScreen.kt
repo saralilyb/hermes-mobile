@@ -13,6 +13,12 @@ import android.speech.SpeechRecognizer
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -23,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -39,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -78,7 +86,9 @@ import com.m57.hermescontrol.ui.chat.components.ChatMessageList
 import com.m57.hermescontrol.ui.chat.components.ChatScrollToBottomFab
 import com.m57.hermescontrol.ui.chat.components.ReactionHeartsOverlay
 import com.m57.hermescontrol.ui.chat.components.ReloginDialog
-import com.m57.hermescontrol.ui.chat.components.scrollToBottom
+import com.m57.hermescontrol.ui.chat.components.SearchBarRow
+import com.m57.hermescontrol.ui.chat.components.rememberChatScrollController
+import com.m57.hermescontrol.ui.chat.components.tailContentKey
 import com.m57.hermescontrol.ui.common.AutoScrollingTitleText
 import com.m57.hermescontrol.ui.common.CredentialWarningBanner
 import com.m57.hermescontrol.ui.common.HermesScaffold
@@ -125,6 +135,8 @@ fun ChatScreen(
             inventoryResolved = state.modelInventoryResolved,
         )
     val listState = rememberLazyListState()
+    val scrollScope = rememberCoroutineScope()
+    val scrollController = rememberChatScrollController(listState, scrollScope)
     var isOlderPagingArmed by remember(state.currentSessionId) { mutableStateOf(false) }
 
     // Periodic session sync while connected.
@@ -136,6 +148,10 @@ fun ChatScreen(
     }
 
     // Arm + trigger older-message paging when the user scrolls near the top.
+    // Before prepending, capture the anchor (first visible message id + offset)
+    // so the same content stays under the reader's eye after the insert
+    // (issue #682). Restored in a LaunchedEffect once the page actually lands.
+    val pagingAnchor = remember { mutableStateOf<Pair<String, Int>?>(null) }
     LaunchedEffect(listState, state.currentSessionId, state.hasOlderMessages, state.isLoadingOlder) {
         if (!state.hasOlderMessages || state.isLoadingOlder) return@LaunchedEffect
         snapshotFlow { listState.firstVisibleItemIndex }
@@ -144,16 +160,59 @@ fun ChatScreen(
                 if (firstVisibleIndex > 2) {
                     isOlderPagingArmed = true
                 } else if (isOlderPagingArmed) {
+                    val anchorId = state.messages.getOrNull(firstVisibleIndex)?.id
+                    val offset = scrollController.captureAnchorOffset()
+                    pagingAnchor.value = if (anchorId != null) anchorId to offset else null
                     viewModel.loadOlderMessages()
                 }
             }
     }
-    val showScrollToBottom by remember {
-        derivedStateOf {
-            state.messages.isNotEmpty() && listState.canScrollForward
+
+    // After older history is prepended, restore the anchor message (by id, so
+    // streaming-token inserts during paging don't skew the index) plus offset.
+    LaunchedEffect(state.messages) {
+        val anchor = pagingAnchor.value ?: return@LaunchedEffect
+        val (anchorId, offset) = anchor
+        val index = state.messages.indexOfFirst { it.id == anchorId }
+        if (index >= 0) {
+            scrollController.scrollToItem(index, offset)
+            pagingAnchor.value = null
         }
     }
-    val scrollScope = rememberCoroutineScope()
+
+    // Continuous bottom-follow tracking from LazyListState (issue #682).
+    LaunchedEffect(Unit) {
+        scrollController.observeUserScrollPosition()
+    }
+
+    // Drive follow + unseen tracking from a stable tail-content key covering
+    // messages, streaming, thinking, subagent cards, and clarify prompts
+    // (issue #682). Replaces the old item-count heuristic that ignored the
+    // streaming tail.
+    LaunchedEffect(
+        state.messages,
+        streamingState.streamingMessage,
+        streamingState.isThinking,
+        state.subagentIndicators,
+        state.clarifyRequest,
+    ) {
+        scrollController.onTailChanged(
+            tailKey =
+                tailContentKey(
+                    messages = state.messages,
+                    streamingMessage = streamingState.streamingMessage,
+                    isThinking = streamingState.isThinking,
+                    subagentIndicators = state.subagentIndicators,
+                    clarifyRequest = state.clarifyRequest,
+                ),
+            messageCount = state.messages.size,
+        )
+    }
+    val showScrollToBottom by remember {
+        derivedStateOf {
+            scrollController.showFab(state.messages.isNotEmpty())
+        }
+    }
     var inputFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(""))
     }
@@ -284,8 +343,6 @@ fun ChatScreen(
         connectionStatus = state.connectionStatus,
         currentSessionId = state.currentSessionId,
         messages = state.messages,
-        streamingMessage = streamingState.streamingMessage,
-        isThinking = streamingState.isThinking,
         errorMessage = state.errorMessage,
         backgroundCompleteMessage = state.backgroundCompleteMessage,
         isSearchActive = state.isSearchActive,
@@ -295,6 +352,7 @@ fun ChatScreen(
         sudoPrompt = state.sudoPrompt,
         secretPrompt = state.secretPrompt,
         listState = listState,
+        scrollController = scrollController,
         snackbarHostState = snackbarHostState,
         viewModel = viewModel,
     )
@@ -410,6 +468,35 @@ fun ChatScreen(
                 )
             }
 
+            AnimatedVisibility(
+                visible = state.isSearchActive,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    tonalElevation = 2.dp,
+                    border =
+                        BorderStroke(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                        ),
+                ) {
+                    Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        SearchBarRow(
+                            searchQuery = state.searchQuery,
+                            onQueryChange = { viewModel.setSearchQuery(it) },
+                            searchMatchCount = state.searchMatchIndices.size,
+                            currentMatchIndex = state.currentSearchMatchIndex,
+                            onNavigateUp = { viewModel.navigateSearchMatch(-1) },
+                            onNavigateDown = { viewModel.navigateSearchMatch(1) },
+                            onClose = { viewModel.clearSearch() },
+                        )
+                    }
+                }
+            }
+
             Box(
                 modifier =
                     Modifier
@@ -435,19 +522,20 @@ fun ChatScreen(
                     onLastAnimatedMessageIdChange = { lastAnimatedMessageId = it },
                     viewModel = viewModel,
                     subagentIndicators = state.subagentIndicators,
+                    clarifyRequest = state.clarifyRequest,
+                    onRespondClarify = viewModel::respondToClarify,
+                    onDismissClarify = viewModel::dismissClarify,
                 )
 
                 // Loading overlay
                 ChatLoadingOverlay(isLoading = state.isLoading)
 
-                // Scroll-to-bottom FAB
+                // Scroll-to-bottom FAB (issue #682): shows while follow is
+                // paused and renders the unseen-message badge.
                 ChatScrollToBottomFab(
-                    showScrollToBottom = showScrollToBottom,
-                    scrollScope = scrollScope,
-                    listState = listState,
-                    messages = state.messages,
-                    streamingMessage = streamingState.streamingMessage,
-                    isThinking = streamingState.isThinking,
+                    show = showScrollToBottom,
+                    pendingCount = scrollController.pendingCount,
+                    onScrollToBottom = scrollController::resumeFollowing,
                 )
 
                 // Reaction heartsanimation (purely cosmetic — fades out
@@ -465,15 +553,8 @@ fun ChatScreen(
                 onSend = {
                     viewModel.sendMessage(inputFieldValue.text)
                     inputFieldValue = TextFieldValue("")
-                    scrollScope.launch {
-                        val totalItems =
-                            state.messages.size +
-                                (if (streamingState.streamingMessage != null) 1 else 0) +
-                                (if (streamingState.isThinking) 1 else 0)
-                        if (totalItems > 0) {
-                            listState.scrollToBottom(animated = true)
-                        }
-                    }
+                    // Jump to bottom after send (serialized through the controller).
+                    scrollController.jumpToBottom(animated = true)
                 },
                 onMicTap = {
                     if (isListening) {
@@ -536,6 +617,11 @@ fun ChatScreen(
                 onImageTap = { filePickerLauncher.launch("image/*") },
                 onFileTap = { filePickerLauncher.launch("*/*") },
                 onRemoveAttachment = viewModel::removeAttachment,
+                // Composer toolbar wiring (PR 1)
+                currentSessionModel = state.currentSessionModel,
+                reasoningLevel = state.reasoningLevel,
+                onModelTap = { viewModel.openModelPicker() },
+                onReasoningTap = { level -> viewModel.setReasoningLevel(level) },
             )
         }
 
@@ -558,6 +644,7 @@ fun ChatScreen(
                     } ?: stringResource(R.string.chat_model_picker_title),
                 isLoading = state.modelPickerLoading && state.modelPickerProviders.isEmpty(),
                 pinnedModels = state.modelPickerPinned,
+                onPinToggle = { provider, model -> viewModel.togglePinModel(provider, model) },
                 onSelect = { provider, model ->
                     viewModel.sendSlashModel(provider, model)
                 },

@@ -5,13 +5,9 @@
 
     <!-- Chat -->
     <string name="chat_send_desc">Send</string>
-    <string name="chat_mic_desc">Voice input</string>
     <string name="chat_mic_listening">Listening…</string>
     <string name="stt_permission_denied">Microphone permission is required for voice input</string>
     <string name="stt_not_available">Speech recognition is not available on this device</string>
-    <string name="chat_clarify_title">Clarification Needed</string>
-    <string name="chat_clarify_hint">Tap an option to copy to input, or long-press to send directly.</string>
-    <string name="chat_clarify_response">Response</string>
     <string name="chat_send">Send</string>
     <string name="chat_dismiss">Dismiss</string>
     <string name="chat_sudo_title">Sudo Password Required</string>
@@ -44,11 +40,9 @@
     <string name="empty_action_retry_search">Retry search</string>
     <string name="empty_action_create_job">Create your first job</string>
     <string name="empty_action_add_server">Add a server</string>
-    <string name="empty_action_create_subscription">Create subscription</string>
     <string name="empty_action_connect_telegram">Connect a Telegram channel</string>
     <string name="empty_action_configure_model">Configure model</string>
     <string name="empty_action_start_chat">Start a new chat</string>
-    <string name="empty_action_install_plugin">Install from URL</string>
     <string name="empty_action_explore">Explore Skills or Cron jobs</string>
     <string name="empty_action_clear_search">Clear search</string>
     <string name="common_cancel">Cancel</string>
@@ -58,13 +52,8 @@
     <string name="error_unknown">Unknown error</string>
     <string name="billing_free_plan">Free</string>
     <string name="billing_usage">Usage</string>
-    <string name="billing_resume">Resume</string>
     <string name="billing_cancel">Cancel</string>
     <string name="billing_renews">Renews: %1$s</string>
-    <string name="billing_status_unknown">Unknown</string>
-    <string name="billing_status_active">Active</string>
-    <string name="billing_status_cancelled">Cancelled</string>
-    <string name="billing_status_paused">Paused</string>
     <string name="billing_feature_unavailable">Billing is unavailable on this server (method not supported)</string>
     <string name="billing_no_active_plan">No active plan — you\'re on the free tier.</string>
     <string name="billing_login_required">Log in to Nous Portal to view your plan.</string>
@@ -165,7 +154,6 @@
     <string name="content_desc_edit">Edit</string>
 
     <!-- Attachment / File Picker -->
-    <string name="chat_attach_desc">Attach file</string>
     <string name="chat_attach_remove_desc">Remove attachment</string>
 
     <!-- Camera -->
@@ -173,8 +161,6 @@
 
     <!-- Settings Screen -->
     <string name="settings_sec_connection">Connection</string>
-    <string name="settings_field_host">Host</string>
-    <string name="settings_field_port">Port</string>
     <string name="settings_field_token">Auth Token</string>
     <string name="settings_sec_behavior">Behavior</string>
     <string name="settings_item_auto_reconnect">Auto-Reconnect</string>
@@ -187,14 +173,6 @@
     <string name="settings_item_typing_delay">Delay: %1$d ms</string>
     <string name="settings_delay_10ms">10 ms</string>
     <string name="settings_delay_100ms">100 ms</string>
-    <string name="settings_sec_nav_bar">Navigation Bar</string>
-    <string name="settings_item_nav_items">Bottom bar items (%1$d/5)</string>
-    <string name="settings_action_add_item">Add Item</string>
-    <string name="settings_nav_max_reached">Maximum of 5 items</string>
-    <string name="settings_item_bottom_nav_display_mode">Bottom Bar Display Mode</string>
-    <string name="settings_display_mode_icon_and_text">Icon &amp; Text</string>
-    <string name="settings_display_mode_icon_only">Icons Only</string>
-    <string name="settings_display_mode_text_only">Text Only</string>
     <string name="settings_action_test_connection">Test Connection</string>
     <string name="settings_sec_about">About</string>
     <string name="settings_about_app_name">⚡ Hermes Mobile</string>
@@ -224,9 +202,6 @@
     <string name="content_desc_delete_profile">Delete Profile</string>
     <string name="content_desc_hide_token">Hide token</string>
     <string name="content_desc_show_token">Show token</string>
-    <string name="content_desc_move_up">Move up</string>
-    <string name="content_desc_move_down">Move down</string>
-    <string name="content_desc_remove_item">Remove %1$s</string>
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
@@ -252,8 +227,6 @@
 
     <!-- Connect Error Messages -->
     <string name="connect_error_token_required">Token is required</string>
-    <string name="connect_error_host_required">Host is required</string>
-    <string name="connect_error_port_invalid">Port must be between 1 and 65535</string>
     <string name="connect_error_401">Invalid token (401 Unauthorized)</string>
     <string name="connect_error_403">Access denied (403 Forbidden)</string>
     <string name="connect_error_http_code">Server returned HTTP %1$d</string>
@@ -261,19 +234,13 @@
     <string name="connect_error_refused">Connection refused – is Hermes running?</string>
     <string name="connect_error_resolve">Could not resolve host</string>
     <string name="connect_error_connection_failed">Connection failed: %1$s</string>
-    <string name="connect_error_missing_fields">Malformed pairing string — missing host, port, or token</string>
-    <string name="connect_error_malformed">Malformed pairing string — expected URL or Base64-encoded JSON</string>
-    <string name="connect_error_parse_failed">Failed to parse pairing string: %1$s</string>
 
-    <string name="connect_placeholder_pairing">Paste hermes://… or Base64 config</string>
     <string name="connect_save_profile">Save connection profile</string>
     <string name="connect_profile_name">Profile Name</string>
     <string name="connect_placeholder_profile_name">e.g. Local Hermit, Remote Server</string>
     <string name="connect_action_hide_manual">Hide manual entry</string>
     <string name="connect_action_show_manual">Enter manually instead</string>
     <string name="connect_placeholder_token">API token</string>
-    <string name="connect_placeholder_host">127.0.0.1</string>
-    <string name="connect_placeholder_port">9119</string>
     <string name="connect_server_url_label">Server URL</string>
     <string name="connect_placeholder_server_url">https://host:9119/ or http://127.0.0.1:9119/</string>
     <string name="connect_error_url_invalid">Enter a valid server URL (https:// or http://)</string>
@@ -811,16 +778,12 @@
     <string name="auth_login_title">Auth Login</string>
     <string name="auth_login_desc">Connect to your Hermes dashboard</string>
     <string name="auth_login_base_url_label">Server URL</string>
-    <string name="auth_login_host_label">Host</string>
-    <string name="auth_login_port_label">Port</string>
     <string name="auth_login_token_label">Session Token</string>
     <string name="auth_login_username_label">Username</string>
     <string name="auth_login_password_label">Password</string>
     <string name="auth_login_action_connect">Connect</string>
     <string name="auth_login_action_probing">Probing dashboard…</string>
     <string name="auth_login_probing_dashboard">Checking dashboard configuration…</string>
-    <string name="auth_login_error_host_required">Host is required</string>
-    <string name="auth_login_error_port_invalid">Invalid port (1–65535)</string>
     <string name="auth_login_error_token_required">Session token is required</string>
     <string name="auth_login_error_username_required">Username is required</string>
     <string name="auth_login_error_password_required">Password is required</string>
@@ -836,9 +799,6 @@
     <string name="landing_action_auth_login">Auth Login</string>
 
     <!-- Loading State -->
-    <string name="loading_state_subtitle_models">Fetching model providers…</string>
-    <string name="loading_state_subtitle_channels">Loading channels…</string>
-    <string name="loading_state_subtitle_providers">Loading OAuth providers…</string>
 
     <!-- Providers Screen (issue #534) -->
     <string name="providers_empty_title">No OAuth providers</string>

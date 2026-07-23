@@ -41,9 +41,6 @@ enum class ThemePreference { SYSTEM, LIGHT, DARK }
 @Serializable
 enum class ThemePreset { DEFAULT, MONOCHROME, GRUVBOX, CATPPUCCIN, AMOLED, NEON_NOIR }
 
-@Serializable
-enum class BottomNavDisplayMode { ICON_AND_TEXT, ICON_ONLY, TEXT_ONLY }
-
 val LocalThemePreference = compositionLocalOf { ThemePreference.SYSTEM }
 val LocalThemePreset = compositionLocalOf { ThemePreset.DEFAULT }
 
@@ -98,7 +95,8 @@ fun HermesControlTheme(
         }
 
     val context = LocalContext.current
-    val dynamicAvailable = useDynamicColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val dynamicAvailable =
+        useDynamicColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val colorScheme =
         if (dynamicAvailable) {
             if (darkTheme) {
