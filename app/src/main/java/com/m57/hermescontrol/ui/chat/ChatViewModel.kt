@@ -91,15 +91,15 @@ data class ChatUiState(
     // Commands catalog
     val commandCatalog: CommandCatalog = CommandCatalog(),
     // In-session model picker (issue #589) — surfaced when the user types /model
-    // (or taps the top-bar model chip). Mirror of the global model screen's
+    // or taps the composer model chip. Mirror of the global model screen's
     // picker, but the selection hot-swaps the CURRENT session via config.set.
     val showModelPicker: Boolean = false,
     val modelPickerProviders: List<ModelProvider> = emptyList(),
     val modelPickerPinned: List<PinnedModel> = emptyList(),
     val modelPickerLoading: Boolean = false,
     val modelInventoryResolved: Boolean = false,
-    // Current session's active provider/model label, used by the model action
-    // accessibility text and picker title.
+    // Current session's active provider/model label, used by the composer
+    // model chip and picker title.
     val currentSessionModel: String? = null,
     val modelSwitchConfirmation: ModelSwitchConfirmation? = null,
     // Reasoning effort level for the current session

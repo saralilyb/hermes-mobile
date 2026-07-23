@@ -37,7 +37,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -404,25 +403,6 @@ fun ChatScreen(
             }
         },
         actions = {
-            IconButton(
-                onClick = viewModel::openModelPicker,
-                enabled = state.isConnected && state.currentSessionId != null,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Psychology,
-                    contentDescription =
-                        state.currentSessionModel?.let {
-                            stringResource(R.string.chat_action_switch_model_current, it)
-                        } ?: stringResource(R.string.chat_action_switch_model),
-                    tint =
-                        if (state.currentSessionModel != null) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                )
-            }
-
             // Search toggle
             IconButton(onClick = { viewModel.toggleSearch() }) {
                 Icon(
@@ -634,7 +614,7 @@ fun ChatScreen(
             )
         }
 
-        // In-session model picker (issue #589) — opens from the top bar or /model.
+        // In-session model picker — opens from the composer model chip or /model.
         if (state.showModelPicker) {
             ModelPickerDialog(
                 providers = state.modelPickerProviders,
