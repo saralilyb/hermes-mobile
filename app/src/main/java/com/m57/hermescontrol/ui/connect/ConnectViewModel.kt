@@ -135,10 +135,14 @@ class ConnectViewModel(
                 }
             when (result) {
                 is NetworkResult.Success -> {
-                    AuthSessionState.markAuthenticated()
                     // Persist credentials to the selected (Default) profile upon successful verification.
                     AuthManager.setToken(state.token)
                     AuthManager.setBaseUrl(state.baseUrl)
+                    // Direct mode uses the bearer token for REST and WebSocket
+                    // auth. Clear any gated-session state left by a previous
+                    // endpoint before rebuilding the clients.
+                    AuthManager.setSessionCookie(null)
+                    AuthManager.setWsAuthParam("token")
                     ApiClient.rebuild()
                     AuthSessionState.markAuthenticated()
 

@@ -100,6 +100,8 @@ class E2eIntegrationTest {
         every { AuthManager.getBaseUrl() } returns "https://127.0.0.1:9119/"
         every { AuthManager.setToken(any()) } returns Unit
         every { AuthManager.setBaseUrl(any()) } returns Unit
+        every { AuthManager.setSessionCookie(any()) } returns Unit
+        every { AuthManager.setWsAuthParam(any()) } returns Unit
         every {
             AuthManager.endpoint()
         } answers { ServerEndpoint.parse("https://127.0.0.1:9119/", CleartextPolicy.ALLOW_WITH_WARNING) }

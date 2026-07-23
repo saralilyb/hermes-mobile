@@ -59,6 +59,8 @@ class ConnectViewModelTest {
         every { AuthManager.getBaseUrl() } returns "https://127.0.0.1:9119/"
         every { AuthManager.setToken(any()) } returns Unit
         every { AuthManager.setBaseUrl(any()) } returns Unit
+        every { AuthManager.setSessionCookie(any()) } returns Unit
+        every { AuthManager.setWsAuthParam(any()) } returns Unit
         every {
             AuthManager.endpoint()
         } answers { ServerEndpoint.parse("https://127.0.0.1:9119/", CleartextPolicy.ALLOW_WITH_WARNING) }
@@ -159,6 +161,8 @@ class ConnectViewModelTest {
 
             verify { AuthManager.setToken("valid-token") }
             verify { AuthManager.setBaseUrl("https://127.0.0.1:9119/") }
+            verify { AuthManager.setSessionCookie(null) }
+            verify { AuthManager.setWsAuthParam("token") }
             verify { ApiClient.rebuild() }
 
             val state = viewModel.uiState.value
