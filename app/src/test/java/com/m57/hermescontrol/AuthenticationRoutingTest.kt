@@ -34,6 +34,16 @@ class AuthenticationRoutingTest {
     }
 
     @Test
+    fun testGatedCookieSessionStartsInChatWithoutBearerToken() {
+        assertEquals(ChatScreen, authenticatedStartScreen(null, "ticket"))
+    }
+
+    @Test
+    fun testLoggedOutSessionStartsOnLanding() {
+        assertEquals(LandingScreen, authenticatedStartScreen(null, "token"))
+    }
+
+    @Test
     fun testGoBackFallbackGuardsChatWhenSignInRequired() {
         val stack = NavBackStack<NavKey>(AuthLoginScreen)
         NavigationController.backStack = stack

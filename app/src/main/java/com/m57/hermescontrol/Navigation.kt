@@ -143,8 +143,8 @@ fun MainNavigation(sessionId: String? = null) {
     }
 
     val token by AuthManager.tokenFlow.collectAsState()
-    val hasToken = !token.isNullOrBlank()
-    val startScreen: NavKey = if (hasToken) ChatScreen else LandingScreen
+    val serverState by AuthManager.serverStore.stateFlow.collectAsState()
+    val startScreen = authenticatedStartScreen(token, serverState.wsAuthParam)
 
     val backStack = remember(startScreen) { NavBackStack(startScreen) }
     NavigationController.backStack = backStack
@@ -275,3 +275,13 @@ fun MainNavigation(sessionId: String? = null) {
         }
     }
 }
+
+internal fun authenticatedStartScreen(
+    token: String?,
+    wsAuthParam: String,
+): NavKey =
+    if (!token.isNullOrBlank() || wsAuthParam == "ticket") {
+        ChatScreen
+    } else {
+        LandingScreen
+    }
