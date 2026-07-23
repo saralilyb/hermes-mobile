@@ -164,6 +164,53 @@ class SystemViewModel :
         }
     }
 
+    // ── Targeted Data Reloads ──────────────────────────────────────────
+
+    fun loadCredentials() {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getCredentialPool() } }
+            if (result is NetworkResult.Success) {
+                _uiState.update { it.copy(credentials = result.data.providers ?: emptyList()) }
+            }
+        }
+    }
+
+    fun loadHooks() {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getHooks() } }
+            if (result is NetworkResult.Success) {
+                _uiState.update { it.copy(hooks = result.data) }
+            }
+        }
+    }
+
+    fun loadCurator() {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getCurator() } }
+            if (result is NetworkResult.Success) {
+                _uiState.update { it.copy(curator = result.data) }
+            }
+        }
+    }
+
+    fun loadMemory() {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getMemory() } }
+            if (result is NetworkResult.Success) {
+                _uiState.update { it.copy(memory = result.data) }
+            }
+        }
+    }
+
+    fun loadStatus() {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getStatus() } }
+            if (result is NetworkResult.Success) {
+                _uiState.update { it.copy(status = result.data) }
+            }
+        }
+    }
+
     // ── Gateway actions ────────────────────────────────────────────────
 
     fun startGateway() {
@@ -187,7 +234,7 @@ class SystemViewModel :
             when (result) {
                 is NetworkResult.Success -> {
                     _uiState.update { it.copy(toastMessage = "Gateway ${name}ed successfully") }
-                    loadAll()
+                    loadStatus()
                 }
 
                 is NetworkResult.Failure -> {
@@ -254,7 +301,7 @@ class SystemViewModel :
                             toastMessage = "Curator ${if (!currentlyPaused) "paused" else "resumed"}",
                         )
                     }
-                    loadAll()
+                    loadCurator()
                 }
 
                 is NetworkResult.Failure -> {
@@ -282,7 +329,7 @@ class SystemViewModel :
             when (result) {
                 is NetworkResult.Success -> {
                     _uiState.update { it.copy(toastMessage = "Memory ($target) reset successfully") }
-                    loadAll()
+                    loadMemory()
                 }
 
                 is NetworkResult.Failure -> {
@@ -334,7 +381,7 @@ class SystemViewModel :
                             toastMessage = "Credential added",
                         )
                     }
-                    loadAll()
+                    loadCredentials()
                 }
 
                 is NetworkResult.Failure -> {
@@ -358,7 +405,7 @@ class SystemViewModel :
             when (result) {
                 is NetworkResult.Success -> {
                     _uiState.update { it.copy(toastMessage = "Credential removed") }
-                    loadAll()
+                    loadCredentials()
                 }
 
                 is NetworkResult.Failure -> {
@@ -566,7 +613,7 @@ class SystemViewModel :
                             toastMessage = "Hook created",
                         )
                     }
-                    loadAll()
+                    loadHooks()
                 }
 
                 is NetworkResult.Failure -> {
@@ -593,7 +640,7 @@ class SystemViewModel :
             when (result) {
                 is NetworkResult.Success -> {
                     _uiState.update { it.copy(toastMessage = "Hook deleted") }
-                    loadAll()
+                    loadHooks()
                 }
 
                 is NetworkResult.Failure -> {
@@ -657,24 +704,5 @@ class SystemViewModel :
 
     override fun clearToast() {
         _uiState.update { it.copy(toastMessage = null) }
-    }
-
-    fun clearTransientState() {
-        actionPollingJob?.cancel()
-        _uiState.update {
-            it.copy(
-                errorMessage = null,
-                toastMessage = null,
-                activeAction = null,
-                actionLog = null,
-                isLoading = false,
-                addingCred = false,
-                creatingHook = false,
-                sharing = false,
-                checkingUpdate = false,
-                updateConfirmOpen = false,
-                hookModalOpen = false,
-            )
-        }
     }
 }

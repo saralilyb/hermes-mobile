@@ -20,6 +20,9 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
   kotlinx-serialization
 - **Auth:** encrypted bearer tokens for direct mode; endpoint-scoped encrypted
   cookies plus short-lived WebSocket tickets for gated mode
+- **Upstream base:** reconciled through `Hy4ri/hermes-mobile` `v1.18.0`; retain
+  downstream HTTPS enforcement, profile-scoped credentials, single-use ticket
+  handling, complete-history pagination, signing, and release automation
 
 ## Build & Test Commands
 
@@ -108,6 +111,9 @@ no `closeDrawer` callback on `NavigationController`.
 (provided via `LocalDrawerGestureController`) and passes it to Material's
 `gesturesEnabled` parameter. To change a screen's gesture behavior, edit the
 screen — not `Navigation.kt`.
+
+Primary destinations live in the drawer. There is intentionally no bottom
+navigation bar or bottom-navigation appearance preference.
 
 ### Activity-Scoped ViewModels
 
@@ -203,10 +209,25 @@ repository reference document.
 - Room 2.7.x requires `room { schemaDirectory("$projectDir/schemas") }` DSL.
 - `ChatViewModel` extends `AndroidViewModel` (needs Application for DB access).
 
+### Chat Rendering and History
+
+- `ChatScrollController` owns bottom-follow, unread counts, and history prepend
+  position. Do not recreate independent bottom-state heuristics in composables.
+- `MessageCards` renders structured tool, approval, and status messages; plain
+  text continues through `MarkdownText`.
+- `ComposerToolbar` and `ChatComposer` form the two-row input surface. Keep the
+  text field independent of the model, reasoning, attachment, and send actions.
+- The downstream server contract uses `pagination.offset` and
+  `pagination.total`, with `include_compacted=true` and `from_end=true` only for
+  complete-history loading. Do not restore compacted history as an API-wide
+  default; it makes unrelated requests substantially more expensive.
+
 ### Theme
 
-`Theme.kt` has `ENABLE_DYNAMIC_COLOR = true` (Material You on API 31+). Semantic
-status colors (success/warning/error/info) are ALWAYS brand-defined via
+`HermesControlTheme` accepts the persisted `useDynamicColors` setting. On API
+31+, dynamic colors override the selected preset while enabled; the appearance
+screen disables preset selection to make that precedence explicit. Semantic
+status colors (success/warning/error/info) remain preset-defined via
 `LocalHermesStatusColors`, never dynamic. Access them via
 `LocalHermesStatusColors.current.success`, not `MaterialTheme.colorScheme`.
 
@@ -256,8 +277,6 @@ gh pr create --title "fix(#N): description" --body "Closes #N"
 - Don't run `./gradlew` tasks without an Android SDK — CI handles compilation, lint, and tests.
 - Don't remove `@OptIn(ExperimentalMaterial3Api::class)` from screens that use
   `SegmentedButton`, `PullToRefreshBox`, or other experimental M3 APIs.
-- Don't use `remember { AuthManager.getBottomNavItems() }` without a key —
-  SharedPreferences is not Compose state; the value goes stale. Read it directly.
 - Don't access `MaterialTheme.colorScheme.*` inside non-`@Composable` lambdas
   (`remember {}`, `buildAnnotatedString`, `LaunchedEffect`). Extract to a local
   `val` at the composable scope first.

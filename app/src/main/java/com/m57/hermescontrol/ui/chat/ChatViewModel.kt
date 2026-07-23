@@ -11,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.local.AuthManager
+import com.m57.hermescontrol.data.local.AuthSessionState
 import com.m57.hermescontrol.data.local.HermesDatabase
 import com.m57.hermescontrol.data.model.Attachment
 import com.m57.hermescontrol.data.model.ModelProvider
@@ -18,7 +19,6 @@ import com.m57.hermescontrol.data.model.PinnedModel
 import com.m57.hermescontrol.data.model.SessionMessage
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.AuthPayloads
-import com.m57.hermescontrol.data.remote.AuthSessionState
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.OkHttpProvider
 import com.m57.hermescontrol.data.remote.safeApiCall
@@ -102,6 +102,8 @@ data class ChatUiState(
     // accessibility text and picker title.
     val currentSessionModel: String? = null,
     val modelSwitchConfirmation: ModelSwitchConfirmation? = null,
+    // Reasoning effort level for the current session
+    val reasoningLevel: String? = null,
     // Attachment state
     val pendingAttachments: List<Attachment> = emptyList(),
     // Reaction animation — set when a reaction WS event arrives, auto-clears
@@ -251,7 +253,12 @@ class ChatViewModel(
         connectWebSocket(setLoading = false)
         viewModelScope.launch {
             wsClient.events.collect { event ->
-                handleWsEvent(event)
+                try {
+                    handleWsEvent(event)
+                } catch (e: Exception) {
+                    android.util.Log.e("ChatVM", "Uncaught in event loop", e)
+                    _uiState.update { it.copy(isLoading = false) }
+                }
             }
         }
         // B7 (Jun 30 2026, kanban t_connection_loading): clear loading state on connection failure or status change
@@ -398,16 +405,24 @@ class ChatViewModel(
 
             is WsEvent.SessionInfo -> {
                 if (isCurrentSession(event.sessionId)) {
-                    val model = (event.data?.get("model") as? String)?.trim().orEmpty()
-                    val provider = (event.data?.get("provider") as? String)?.trim().orEmpty()
-                    if (model.isNotEmpty()) {
-                        val label =
-                            if (provider.isEmpty() || model.startsWith("$provider/")) {
-                                model
-                            } else {
-                                "$provider/$model"
-                            }
-                        _uiState.update { it.copy(currentSessionModel = label) }
+                    val info = event.data
+                    val model = (info?.get("model") as? String)?.trim().orEmpty()
+                    val provider = (info?.get("provider") as? String)?.trim().orEmpty()
+                    val reasoningEffort = (info?.get("reasoning_effort") as? String)?.trim()
+                    _uiState.update { state ->
+                        state.copy(
+                            currentSessionModel =
+                                if (model.isNotEmpty()) {
+                                    if (provider.isEmpty() || model.startsWith("$provider/")) {
+                                        model
+                                    } else {
+                                        "$provider/$model"
+                                    }
+                                } else {
+                                    state.currentSessionModel
+                                },
+                            reasoningLevel = reasoningEffort?.takeIf { it.isNotEmpty() },
+                        )
                     }
                 }
             }
@@ -607,6 +622,12 @@ class ChatViewModel(
                         ?: selectedSessionId
                 runtimeSessionId = resultMap?.get("session_id") as? String
 
+                // Parse session info from backend — model, provider, reasoning_effort
+                val infoMap = resultMap?.get("info") as? Map<String, Any?>
+                val model = infoMap?.get("model") as? String
+                val provider = infoMap?.get("provider") as? String
+                val reasoningEffort = infoMap?.get("reasoning_effort") as? String
+
                 // B8 (Jun 20 2026, kanban t_session_resume): do NOT reload
                 // cached messages here — switchSession() already did so before
                 // the WS round-trip. Calling loadCachedMessages() here would
@@ -616,6 +637,18 @@ class ChatViewModel(
                     it.copy(
                         isLoading = false,
                         currentSessionId = sessionId,
+                        currentSessionModel =
+                            if (model != null && provider != null) {
+                                "$provider/$model"
+                            } else {
+                                model ?: it.currentSessionModel
+                            },
+                        reasoningLevel =
+                            if (reasoningEffort.isNullOrEmpty()) {
+                                null
+                            } else {
+                                reasoningEffort
+                            },
                     )
                 }
                 if (sessionId != null) {
@@ -1115,6 +1148,8 @@ class ChatViewModel(
         }
     }
 
+    private var sessionCreateCounter = 0L
+
     fun createNewSession(setLoading: Boolean = true) {
         _uiState.update {
             it.copy(
@@ -1131,6 +1166,18 @@ class ChatViewModel(
                 params = mapOf("source" to "desktop"),
                 onSent = { id -> trackRequest(id, WsMethods.SESSION_CREATE) },
             )
+        }
+        // B7 safety timeout: clear loading state if RPC response never arrives
+        if (setLoading && !isTestEnvironment()) {
+            val generation = ++sessionCreateCounter
+            viewModelScope.launch {
+                delay(10_000L)
+                // Only clear if no newer session creation has started — prevents a
+                // stale timeout from wiping the loading flag of a subsequent request.
+                if (generation == sessionCreateCounter && _uiState.value.isLoading) {
+                    _uiState.update { it.copy(isLoading = false) }
+                }
+            }
         }
     }
 
@@ -1280,6 +1327,21 @@ class ChatViewModel(
         _uiState.update { it.copy(showModelPicker = false, modelPickerLoading = false) }
     }
 
+    fun togglePinModel(
+        providerSlug: String,
+        modelName: String,
+    ) {
+        val currentPinned = AuthManager.getPinnedModels().toMutableList()
+        val target = PinnedModel(providerSlug, modelName)
+        if (currentPinned.contains(target)) {
+            currentPinned.remove(target)
+        } else {
+            currentPinned.add(target)
+        }
+        AuthManager.savePinnedModels(currentPinned)
+        _uiState.update { it.copy(modelPickerPinned = currentPinned) }
+    }
+
     /** Hot-swap only the current live session through the awaited config.set RPC. */
     fun sendSlashModel(
         provider: String,
@@ -1405,6 +1467,32 @@ class ChatViewModel(
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * Set the reasoning effort level for the current session.
+     *
+     * Updates the UI optimistically and sends a `config.set` RPC to the
+     * backend. The level applies per-session via the runtime session ID.
+     * If [level] is null it resets to the model's default.
+     *
+     * @param level One of "low", "medium", "high", or null for default.
+     */
+    fun setReasoningLevel(level: String?) {
+        _uiState.update { it.copy(reasoningLevel = level) }
+        val sessionId = runtimeSessionId ?: return
+        if (level == null) return // null = model default, no need to send WS
+        viewModelScope.launch(Dispatchers.IO) {
+            wsClient.send(
+                WsMethods.CONFIG_SET,
+                mapOf(
+                    "key" to "reasoning",
+                    "value" to level,
+                    "session_id" to sessionId,
+                ),
+                onSent = { id -> trackRequest(id, WsMethods.CONFIG_SET) },
+            )
         }
     }
 
@@ -1699,7 +1787,7 @@ class ChatViewModel(
             ChatMessage(
                 id = "rest-$sessionId-$globalIndex",
                 role = role,
-                content = msg.content.orEmpty(),
+                content = msg.contentText,
                 timestamp = timestamp,
                 isStreaming = false,
             )
@@ -1798,10 +1886,6 @@ class ChatViewModel(
             }
 
     // ── UI actions ───────────────────────────────────────────────────────
-
-    fun toggleSessionPicker() {
-        _uiState.update { it.copy(showSessionPicker = !it.showSessionPicker) }
-    }
 
     /**
      * Dismiss the active clarify prompt and reject it (tell the agent no answer
@@ -2041,6 +2125,7 @@ class ChatViewModel(
     }
 
     fun reconnect() {
+        AuthSessionState.markAuthenticated()
         _uiState.update {
             it.copy(
                 isLoading = true,

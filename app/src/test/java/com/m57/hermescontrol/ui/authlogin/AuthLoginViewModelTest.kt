@@ -6,7 +6,7 @@ import android.app.Application
 import android.util.Log
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.local.AuthManager
-import com.m57.hermescontrol.data.remote.AuthSessionState
+import com.m57.hermescontrol.data.local.AuthSessionState
 import com.m57.hermescontrol.data.remote.OkHttpProvider
 import io.mockk.every
 import io.mockk.mockk

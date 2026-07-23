@@ -1,4 +1,5 @@
 package com.m57.hermescontrol.data.model
+
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -35,6 +36,9 @@ data class SessionMessage(
 ) {
     val timestampText: String?
         get() = (timestamp as? JsonPrimitive)?.content
+
+    val contentText: String
+        get() = content.orEmpty()
 }
 
 internal object JsonElementStringSerializer : KSerializer<String?> {

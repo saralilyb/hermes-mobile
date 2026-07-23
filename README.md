@@ -26,19 +26,25 @@
 **Hermes Mobile** is an unofficial native Android client for
 [Hermes Agent](https://hermes-agent.nousresearch.com). This security-focused
 fork is based on [Hy4ri/hermes-mobile](https://github.com/Hy4ri/hermes-mobile)
-and uses generic Hermes branding for its public release. The optional `iris`
-flavor exists only to distinguish a side-by-side personal installation.
+and currently incorporates upstream through `v1.18.0`. It retains downstream
+security, complete-history pagination, signing, and distribution changes. The
+public release uses generic Hermes branding; the optional `iris` flavor exists
+only to distinguish a side-by-side personal installation.
 
 ---
 
 ## Features
 
-- **Real-Time Chat:** Message your agent with Room-backed local database history.
+- **Real-Time Chat:** Room-backed history, rich tool and approval cards,
+  bottom-follow with unread counts, reasoning controls, and a two-row composer.
 - **System Config:** Manage active profiles, installed skills, plugins, and LLM model selections.
 - **Operations:** Stream and filter live logs, manage cron jobs, edit environment keys, and test webhooks.
 - **Gateway Status:** Monitor WebSocket connection, MCP servers, and messaging channel status.
 - **Productivity:** View and manage tasks via integrated Kanban boards and track agent milestones.
-- **Modern UX:** Native Material You design supporting dynamic color theming, scroll-aware TopBar, and pull-to-refresh.
+- **Modern UX:** Drawer-first Navigation3, dynamic Material You colors, theme
+  presets, scroll-aware controls, and pull-to-refresh.
+- **Responsive Data Loading:** Two-phase model loading and compacted-history
+  requests only where complete session history requires them.
 
 ---
 
@@ -88,11 +94,11 @@ https://hermes.example.com/
 https://hermes.example.com:9119/dashboard/
 ```
 
-The app probes `/api/status`, discovers the configured authentication mode, and
-shows only the required fields. Basic authentication uses the username and
-password configured on the dashboard; the app exchanges them for a session
-cookie and a short-lived WebSocket ticket. Do not use example or default
-passwords.
+The app probes the dashboard and follows the server's authentication challenge.
+Basic authentication uses the username and password configured on the
+dashboard; the app exchanges them for an endpoint-scoped session cookie.
+WebSocket connections request a fresh, single-use ticket for every handshake
+and reconnect. Do not use example or default passwords.
 
 Release builds require HTTPS and derive `wss://` WebSocket URLs from the same
 base URL. Debug builds can use explicit HTTP URLs for local development and

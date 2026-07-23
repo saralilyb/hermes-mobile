@@ -30,6 +30,8 @@ val HermesAmberDark = Color(0xFFC68400)
 val DarkBackground = Color(0xFF0B0B11)
 val DarkSurface = Color(0xFF121218)
 val DarkSurfaceVariant = Color(0xFF1C1C26)
+val DarkSurfaceContainerLowest = Color(0xFF07070C)
+val DarkSurfaceContainerLow = Color(0xFF0F0F14)
 val DarkSurfaceContainer = Color(0xFF1C1C26)
 val DarkSurfaceContainerHigh = Color(0xFF262633)
 val DarkSurfaceContainerHighest = Color(0xFF30303D)
@@ -46,6 +48,8 @@ val DarkScrim = Color(0xFF000000)
 val LightBackground = Color(0xFFF7F6FB)
 val LightSurface = Color(0xFFFFFFFF)
 val LightSurfaceVariant = Color(0xFFEFEDF4)
+val LightSurfaceContainerLowest = Color(0xFFFFFFFF)
+val LightSurfaceContainerLow = Color(0xFFF3F1F8)
 val LightSurfaceContainer = Color(0xFFEFEDF4)
 val LightSurfaceContainerHigh = Color(0xFFE6E3EE)
 val LightSurfaceContainerHighest = Color(0xFFDDD9EA)
@@ -73,17 +77,24 @@ val StatusGreyLight = Color(0xFFF5F5F5)
 
 // ── Chat-specific colours (always brand-defined for consistency) ───────
 
-val UserBubble = HermesPurple
-val UserBubbleDark = HermesPurpleDark
 val AssistantBubble = Color(0xFF1C1C26)
 val AssistantBubbleLight = Color(0xFFEDEAF4)
 val SystemMessageColor = Color(0xFF8B879A)
 val ToolChipColor = Color(0xFF262633)
 val ToolChipColorLight = Color(0xFFE6E3EE)
 
-// ── Skeleton shimmer colours ───────────────────────────────────────────
+// ── Syntax highlighting tokens (code blocks) ─────────────────────────────
+// VS Code Dark+ palette — good general readability across all presets.
+// These are consumed exclusively by CodeBlockCard (MessageCards.kt).
 
-val SkeletonBase = Color(0xFF1C1C26)
-val SkeletonHighlight = Color(0xFF2F2F3D)
-val SkeletonBaseLight = Color(0xFFE6E3EE)
-val SkeletonHighlightLight = Color(0xFFEFEDF4)
+val CodeKeyword = Color(0xFF569CD6) // blue — for val, fun, class, etc.
+val CodeString = Color(0xFFCE9178) // orange — for "string literals"
+val CodeComment = Color(0xFF6A9955) // green — for // comments
+val CodeNumber = Color(0xFFB5CEA8) // light green — for 42, 0xFF
+val CodePunctuation = Color(0xFFD4D4D4) // gray — for {, (, ;, etc.
+
+// ── Code block / terminal surface colours (issue #659) ───────────────
+val CodeTerminalBg = Color(0xFF1E1E1E)
+val CodeTerminalBorder = Color(0xFF333333)
+val CodeTerminalText = Color(0xFFD4D4D4)
+val CodeTerminalMuted = Color(0xFF808080)

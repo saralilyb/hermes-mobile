@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,9 +21,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Scaffold
@@ -39,8 +35,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,10 +44,9 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.m57.hermescontrol.data.local.AuthManager
-import com.m57.hermescontrol.data.remote.AuthSessionState
+import com.m57.hermescontrol.data.local.AuthSessionState
 import com.m57.hermescontrol.data.ws.ConnectionStatus
 import com.m57.hermescontrol.data.ws.HermesWsClient
-import com.m57.hermescontrol.theme.BottomNavDisplayMode
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
 import com.m57.hermescontrol.ui.common.DisableDrawerGestures
 import com.m57.hermescontrol.ui.common.DrawerGestureController
@@ -63,42 +56,14 @@ import com.m57.hermescontrol.ui.settings.SettingsAppearancePage
 import com.m57.hermescontrol.ui.settings.SettingsBehaviorPage
 import com.m57.hermescontrol.ui.settings.SettingsChatPage
 import com.m57.hermescontrol.ui.settings.SettingsConnectionPage
-import com.m57.hermescontrol.ui.settings.SettingsNavBarPage
 import com.m57.hermescontrol.ui.settings.SettingsViewModel
 import kotlinx.coroutines.launch
 import com.m57.hermescontrol.ui.authlogin.AuthLoginScreen as AuthLoginScreenContent
 import com.m57.hermescontrol.ui.landing.LandingScreen as LandingScreenContent
 
-private fun resolveBottomNavItems(names: List<String>): List<ScreenDefinition> =
-    names.mapNotNull { name -> ScreenRegistry.ALL_SCREENS.firstOrNull { it.key::class.simpleName == name } }
-
-private val settingsDestinations: Set<NavKey> =
-    setOf(
-        SettingsScreen,
-        SettingsConnection,
-        SettingsAppearance,
-        SettingsChat,
-        SettingsNavBar,
-        SettingsBehavior,
-        SettingsAbout,
-    )
-
-/** Keep Settings selected while one of its drill-down pages is visible. */
-internal fun selectedBottomNavDestination(currentScreen: NavKey): NavKey =
-    if (currentScreen in settingsDestinations) SettingsScreen else currentScreen
-
-/** Preserve compact display modes while allowing the standard bar to grow. */
-internal fun Modifier.bottomNavigationHeight(displayMode: BottomNavDisplayMode): Modifier =
-    when (displayMode) {
-        BottomNavDisplayMode.ICON_ONLY -> height(56.dp)
-        BottomNavDisplayMode.TEXT_ONLY -> height(44.dp)
-        BottomNavDisplayMode.ICON_AND_TEXT -> heightIn(min = 80.dp)
-    }
-
 private fun appEntryProvider(
     sessionId: String?,
     openDrawer: () -> Unit,
-    signInRequired: Boolean,
 ) = entryProvider {
     entry<LandingScreen> {
         // B7 (Jun 30 2026, kanban t_424): route landing screen buttons through navigateTo to prevent duplicate screens
@@ -117,12 +82,8 @@ private fun appEntryProvider(
                 NavigationController.resetTo(ChatScreen)
             },
             onBack = {
-                navigateBackUnlessSignInRequired(
-                    signInRequired = AuthSessionState.signInRequired.value,
-                    navigateBack = { NavigationController.goBack() },
-                )
+                NavigationController.goBack()
             },
-            showExistingProfiles = !signInRequired,
         )
         DisableDrawerGestures()
     }
@@ -157,12 +118,6 @@ private fun appEntryProvider(
             viewModel = viewModel { SettingsViewModel() },
         )
     }
-    entry<SettingsNavBar> {
-        SettingsNavBarPage(
-            onBack = { NavigationController.goBack() },
-            viewModel = viewModel { SettingsViewModel() },
-        )
-    }
     entry<SettingsBehavior> {
         SettingsBehaviorPage(
             onBack = { NavigationController.goBack() },
@@ -177,47 +132,22 @@ private fun appEntryProvider(
     }
 }
 
-internal fun routeExpiredAuthentication(
-    signInRequired: Boolean,
-    disconnect: () -> Unit,
-    showLogin: () -> Unit,
-) {
-    if (!signInRequired) return
-
-    disconnect()
-    showLogin()
-}
-
-internal fun navigateBackUnlessSignInRequired(
-    signInRequired: Boolean,
-    navigateBack: () -> Unit,
-) {
-    if (signInRequired) return
-
-    navigateBack()
-}
-
 @Composable
 fun MainNavigation(sessionId: String? = null) {
-    val token by AuthManager.tokenFlow.collectAsState()
     val signInRequired by AuthSessionState.signInRequired.collectAsState()
+    LaunchedEffect(signInRequired) {
+        if (signInRequired) {
+            HermesWsClient.disconnect()
+            NavigationController.resetTo(AuthLoginScreen)
+        }
+    }
+
+    val token by AuthManager.tokenFlow.collectAsState()
     val hasToken = !token.isNullOrBlank()
-    val usesTicketAuth =
-        runCatching {
-            AuthManager.serverStore.getLatestState().wsAuthParam == "ticket"
-        }.getOrDefault(false)
-    val startScreen: NavKey = if (hasToken || usesTicketAuth) ChatScreen else LandingScreen
+    val startScreen: NavKey = if (hasToken) ChatScreen else LandingScreen
 
     val backStack = remember(startScreen) { NavBackStack(startScreen) }
     NavigationController.backStack = backStack
-
-    LaunchedEffect(signInRequired) {
-        routeExpiredAuthentication(
-            signInRequired = signInRequired,
-            disconnect = { HermesWsClient.disconnect() },
-            showLogin = { NavigationController.resetTo(AuthLoginScreen) },
-        )
-    }
 
     val currentScreen = backStack.lastOrNull() ?: startScreen
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -233,19 +163,6 @@ fun MainNavigation(sessionId: String? = null) {
         remember(drawerState, scope) {
             DrawerGestureController(drawerState, scope)
         }
-
-    val bottomNavItemsState by AuthManager.bottomNavItemsFlow.collectAsState()
-    val bottomNavDisplayMode by AuthManager.bottomNavDisplayModeFlow.collectAsState()
-    val bottomNavItems = resolveBottomNavItems(bottomNavItemsState)
-    val bottomNavKeys = remember(bottomNavItems) { bottomNavItems.mapTo(mutableSetOf()) { it.key } }
-
-    LaunchedEffect(bottomNavKeys) {
-        NavigationController.updatePrimaryScreens(bottomNavKeys)
-    }
-
-    val showBottomBar =
-        currentScreen != LandingScreen &&
-            currentScreen != AuthLoginScreen
 
     val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
 
@@ -342,76 +259,12 @@ fun MainNavigation(sessionId: String? = null) {
         ) {
             Scaffold(
                 contentWindowInsets = WindowInsets.navigationBars,
-                bottomBar = {
-                    if (showBottomBar) {
-                        val selectedDestination =
-                            selectedBottomNavDestination(currentScreen)
-                        NavigationBar(
-                            modifier =
-                                Modifier.bottomNavigationHeight(
-                                    bottomNavDisplayMode,
-                                ),
-                        ) {
-                            bottomNavItems.forEach { item ->
-                                val showIcon =
-                                    bottomNavDisplayMode == BottomNavDisplayMode.ICON_AND_TEXT ||
-                                        bottomNavDisplayMode == BottomNavDisplayMode.ICON_ONLY
-                                val showLabel =
-                                    bottomNavDisplayMode == BottomNavDisplayMode.ICON_AND_TEXT ||
-                                        bottomNavDisplayMode == BottomNavDisplayMode.TEXT_ONLY
-
-                                val isSelected = selectedDestination == item.key
-
-                                NavigationBarItem(
-                                    selected = isSelected,
-                                    onClick = { NavigationController.navigateTo(item.key) },
-                                    colors =
-                                        if (bottomNavDisplayMode == BottomNavDisplayMode.TEXT_ONLY) {
-                                            NavigationBarItemDefaults.colors(
-                                                indicatorColor = Color.Transparent,
-                                            )
-                                        } else {
-                                            NavigationBarItemDefaults.colors()
-                                        },
-                                    icon = {
-                                        if (showIcon) {
-                                            Icon(item.icon, contentDescription = stringResource(item.labelRes))
-                                        } else {
-                                            Text(
-                                                text = stringResource(item.labelRes),
-                                                style = MaterialTheme.typography.labelMedium,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            )
-                                        }
-                                    },
-                                    label =
-                                        if (showLabel && showIcon) {
-                                            { Text(stringResource(item.labelRes)) }
-                                        } else {
-                                            null
-                                        },
-                                    modifier =
-                                        Modifier.testTag(
-                                            "nav_${item.key::class.simpleName?.lowercase()?.removeSuffix(
-                                                "screen",
-                                            ) ?: ""}",
-                                        ),
-                                )
-                            }
-                        }
-                    }
-                },
             ) { paddingValues ->
                 NavDisplay(
                     backStack = backStack,
-                    onBack = {
-                        navigateBackUnlessSignInRequired(
-                            signInRequired = signInRequired,
-                            navigateBack = { NavigationController.goBack() },
-                        )
-                    },
+                    onBack = { NavigationController.goBack() },
                     entryProvider =
-                        appEntryProvider(sessionId, openDrawer, signInRequired),
+                        appEntryProvider(sessionId, openDrawer),
                     modifier =
                         Modifier
                             .padding(paddingValues)

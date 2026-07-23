@@ -7,7 +7,6 @@ import androidx.datastore.core.Serializer
 import com.m57.hermescontrol.data.remote.ServerEndpoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,7 +23,6 @@ class ServerStore(
 ) {
     private val _stateFlow: MutableStateFlow<ServerStoreState>
     val stateFlow: StateFlow<ServerStoreState>
-    val state: Flow<ServerStoreState>
 
     init {
         val initial =
@@ -37,7 +35,6 @@ class ServerStore(
             }
         _stateFlow = MutableStateFlow(initial)
         stateFlow = _stateFlow.asStateFlow()
-        state = stateFlow
     }
 
     fun getLatestState(): ServerStoreState = _stateFlow.value
