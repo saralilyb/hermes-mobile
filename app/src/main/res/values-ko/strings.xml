@@ -96,8 +96,6 @@
     <!-- Chat Screen & Bubble -->
     <string name="chat_action_search">검색</string>
     <string name="chat_action_close_search">검색 닫기</string>
-    <string name="chat_action_switch_model">이 채팅의 모델 변경</string>
-    <string name="chat_action_switch_model_current">이 채팅의 모델 변경. 현재: %1$s</string>
     <string name="chat_model_picker_title">이 채팅의 모델 변경</string>
     <string name="chat_model_picker_title_current">모델 전환 (현재: %1$s)</string>
     <string name="chat_model_confirm_title">모델 전환 확인</string>

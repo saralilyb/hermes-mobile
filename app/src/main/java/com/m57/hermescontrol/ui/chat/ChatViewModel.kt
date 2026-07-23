@@ -98,8 +98,8 @@ data class ChatUiState(
     val modelPickerPinned: List<PinnedModel> = emptyList(),
     val modelPickerLoading: Boolean = false,
     val modelInventoryResolved: Boolean = false,
-    // Current session's active provider/model label, used by the model action
-    // accessibility text and picker title.
+    // Current session's active provider/model label, used by the composer
+    // model chip and picker title.
     val currentSessionModel: String? = null,
     val modelSwitchConfirmation: ModelSwitchConfirmation? = null,
     // Reasoning effort level for the current session
