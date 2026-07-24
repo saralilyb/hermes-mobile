@@ -200,6 +200,49 @@ class ChatWsEventReducerTest {
     }
 
     @Test
+    fun testMessageStart_preservesReasoningFromPrecedingDelta() {
+        val result =
+            ChatWsEventReducer.reduce(
+                state = ChatUiState(currentSessionId = "session-1"),
+                streamingState =
+                    StreamingState(
+                        isReasoning = true,
+                        reasoningText = "Preserved reasoning",
+                    ),
+                event = WsEvent.MessageStart("session-1"),
+                currentSessionId = "session-1",
+            )
+
+        assertEquals("Preserved reasoning", result.streamingState.reasoningText)
+        assertEquals(
+            "Preserved reasoning",
+            result.streamingState.streamingMessage?.reasoningText,
+        )
+    }
+
+    @Test
+    fun testMessageComplete_fallsBackToMessageReasoning() {
+        val result =
+            ChatWsEventReducer.reduce(
+                state = ChatUiState(currentSessionId = "session-1"),
+                streamingState =
+                    StreamingState(
+                        streamingMessage =
+                            ChatMessage(
+                                role = MessageRole.ASSISTANT,
+                                content = "",
+                                reasoningText = "Preserved reasoning",
+                                isStreaming = true,
+                            ),
+                    ),
+                event = WsEvent.MessageComplete("Answer", "session-1"),
+                currentSessionId = "session-1",
+            )
+
+        assertEquals("Preserved reasoning", result.state.messages.single().reasoningText)
+    }
+
+    @Test
     fun testSessionMismatch_isIgnored() {
         val initialMessage =
             ChatMessage(
