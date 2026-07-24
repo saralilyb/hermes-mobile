@@ -22,12 +22,18 @@ data class SessionInfo(
     val parent_session_id: String? = null,
     val display_name: String? = null,
     val model: String? = null,
+    val _lineage_root_id: String? = null,
 )
 
 @Serializable
 data class SessionStatsResponse(
     val total: Int = 0,
     val active: Int = 0,
+)
+
+@Serializable
+data class SessionLatestDescendantResponse(
+    val session_id: String,
 )
 
 @Serializable

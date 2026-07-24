@@ -1,10 +1,13 @@
 package com.m57.hermescontrol.data.config
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ServerStoreTest {
@@ -66,4 +69,37 @@ class ServerStoreTest {
         assertEquals("127.0.0.1", unselectedState.resolvedHost)
         assertEquals(9119, unselectedState.resolvedPort)
     }
+
+    @Test
+    fun `pinned session IDs persist by profile`() =
+        runTest {
+            val expected =
+                mapOf(
+                    "default" to listOf("root-a", "root-b"),
+                    "remote" to listOf("root-c"),
+                )
+            val output = ByteArrayOutputStream()
+
+            ServerStoreSerializer.writeTo(
+                ServerStoreState(pinnedSessionIdsByProfile = expected),
+                output,
+            )
+            val restored =
+                ServerStoreSerializer.readFrom(
+                    ByteArrayInputStream(output.toByteArray()),
+                )
+
+            assertEquals(expected, restored.pinnedSessionIdsByProfile)
+        }
+
+    @Test
+    fun `legacy state defaults to no pinned sessions`() =
+        runTest {
+            val restored =
+                ServerStoreSerializer.readFrom(
+                    ByteArrayInputStream("{\"host\":\"127.0.0.1\"}".toByteArray()),
+                )
+
+            assertTrue(restored.pinnedSessionIdsByProfile.isEmpty())
+        }
 }

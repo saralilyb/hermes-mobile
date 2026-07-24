@@ -36,9 +36,11 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -77,10 +79,10 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.m57.hermescontrol.ChatScreen
 import com.m57.hermescontrol.NavigationController
 import com.m57.hermescontrol.R
+import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.model.SessionInfo
 import com.m57.hermescontrol.data.model.SessionSearchResult
 import com.m57.hermescontrol.data.model.SessionTreeItem
@@ -187,6 +189,7 @@ private fun SessionSearchResult.toSessionInfo(): SessionInfo =
         source = source,
         model = model,
         started_at = session_started,
+        _lineage_root_id = lineage_root,
         // message_count/status aren't in the search payload; leave null so the
         // search card hides those normal-list affordances.
     )
@@ -280,9 +283,18 @@ private fun displayedSessions(state: SessionsUiState): List<SessionTreeItem> =
 fun SessionsScreen(
     modifier: Modifier = Modifier,
     onOpenDrawer: (() -> Unit)? = null,
-    viewModel: SessionsViewModel = viewModel { SessionsViewModel() },
+    viewModel: SessionsViewModel? = null,
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val activeProfileId =
+        AuthManager.getSelectedProfileId() ?: AuthManager.DEFAULT_PROFILE_ID
+    val screenViewModel =
+        viewModel
+            ?: androidx.lifecycle.viewmodel.compose.viewModel(
+                key = "sessions-$activeProfileId",
+            ) {
+                SessionsViewModel(AuthManagerSessionPinStore(activeProfileId))
+            }
+    val state by screenViewModel.uiState.collectAsStateWithLifecycle()
     val spacing = LocalSpacing.current
     val statusColors = LocalHermesStatusColors.current
     val primaryContainer = MaterialTheme.colorScheme.primaryContainer
@@ -290,14 +302,25 @@ fun SessionsScreen(
 
     var pruneDays by remember { mutableStateOf("7") }
 
+    val sessionSections =
+        remember(state.sessions, state.pinnedSessionIds) {
+            buildSessionSections(
+                sessions = state.sessions,
+                pinnedSessionIds = state.pinnedSessionIds,
+            )
+        }
     val sessionsToDisplay =
         remember(
             state.isSearchMode,
             state.searchQuery,
-            state.sessions,
             state.searchResults,
+            sessionSections,
         ) {
-            displayedSessions(state)
+            if (state.isSearchMode) {
+                displayedSessions(state)
+            } else {
+                sessionSections.pinned + sessionSections.recent
+            }
         }
 
     val hasSelection = state.selectedIds.isNotEmpty()
@@ -315,21 +338,21 @@ fun SessionsScreen(
             bottom = if (hasSelection) 72.dp else 8.dp,
         )
 
-    LaunchedEffect(Unit) {
-        viewModel.loadSessions()
-        viewModel.loadStats()
+    LaunchedEffect(screenViewModel) {
+        screenViewModel.loadSessions()
+        screenViewModel.loadStats()
     }
 
     // Toast effect
     ToastEffect(
         toastMessage = state.toastMessage,
-        onClearToast = { viewModel.clearToast() },
+        onClearToast = { screenViewModel.clearToast() },
     )
 
     // Prune dialog
     if (state.showPruneDialog) {
         AlertDialog(
-            onDismissRequest = { viewModel.hidePruneDialog() },
+            onDismissRequest = { screenViewModel.hidePruneDialog() },
             title = { Text(stringResource(R.string.sessions_prune_title)) },
             text = {
                 Column {
@@ -346,7 +369,7 @@ fun SessionsScreen(
                             KeyboardActions(
                                 onDone = {
                                     val days = pruneDays.toIntOrNull()
-                                    if (days != null && days > 0) viewModel.pruneSessions(days)
+                                    if (days != null && days > 0) screenViewModel.pruneSessions(days)
                                 },
                             ),
                     )
@@ -356,7 +379,7 @@ fun SessionsScreen(
                 Button(
                     onClick = {
                         val days = pruneDays.toIntOrNull()
-                        if (days != null && days > 0) viewModel.pruneSessions(days)
+                        if (days != null && days > 0) screenViewModel.pruneSessions(days)
                     },
                     colors =
                         ButtonDefaults.buttonColors(
@@ -367,7 +390,7 @@ fun SessionsScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.hidePruneDialog() }) {
+                TextButton(onClick = { screenViewModel.hidePruneDialog() }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -389,14 +412,14 @@ fun SessionsScreen(
                     ?.take(80)
                 ?: stringResource(R.string.history_untitled)
         AlertDialog(
-            onDismissRequest = { viewModel.cancelDeleteSession() },
+            onDismissRequest = { screenViewModel.cancelDeleteSession() },
             title = { Text(stringResource(R.string.sessions_delete_title)) },
             text = {
                 Text(stringResource(R.string.sessions_delete_message, sessionTitle))
             },
             confirmButton = {
                 Button(
-                    onClick = { viewModel.confirmDeleteSession() },
+                    onClick = { screenViewModel.confirmDeleteSession() },
                     colors =
                         ButtonDefaults.buttonColors(
                             containerColor = statusColors.error,
@@ -406,7 +429,7 @@ fun SessionsScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.cancelDeleteSession() }) {
+                TextButton(onClick = { screenViewModel.cancelDeleteSession() }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -416,7 +439,7 @@ fun SessionsScreen(
     // Bulk delete confirmation dialog
     if (state.showBulkDeleteConfirm) {
         AlertDialog(
-            onDismissRequest = { viewModel.cancelBulkDelete() },
+            onDismissRequest = { screenViewModel.cancelBulkDelete() },
             title = { Text(stringResource(R.string.sessions_bulk_delete_title)) },
             text = {
                 Text(
@@ -428,7 +451,7 @@ fun SessionsScreen(
             },
             confirmButton = {
                 Button(
-                    onClick = { viewModel.confirmBulkDelete() },
+                    onClick = { screenViewModel.confirmBulkDelete() },
                     colors =
                         ButtonDefaults.buttonColors(
                             containerColor = statusColors.error,
@@ -438,7 +461,7 @@ fun SessionsScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.cancelBulkDelete() }) {
+                TextButton(onClick = { screenViewModel.cancelBulkDelete() }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -449,7 +472,7 @@ fun SessionsScreen(
         title = { Text(stringResource(R.string.screen_history)) },
         navigationIcon = onOpenDrawer?.let { NavIcon.Menu(it) },
         isRefreshing = state.isLoading,
-        onRefresh = { viewModel.loadSessions() },
+        onRefresh = { screenViewModel.loadSessions() },
         modifier = modifier,
     ) {
         // Single scrolling column: search bar pinned on top, list fills below.
@@ -466,12 +489,12 @@ fun SessionsScreen(
             ) {
                 SearchBar(
                     query = state.searchQuery,
-                    onQueryChange = { viewModel.setSearchQuery(it) },
+                    onQueryChange = { screenViewModel.setSearchQuery(it) },
                     placeholder = stringResource(R.string.sessions_search_placeholder),
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(modifier = Modifier.width(spacing.sm))
-                IconButton(onClick = { viewModel.toggleSelecting() }) {
+                IconButton(onClick = { screenViewModel.toggleSelecting() }) {
                     Icon(
                         imageVector = if (state.isSelecting) Icons.Filled.Close else Icons.Filled.SelectAll,
                         contentDescription =
@@ -499,7 +522,7 @@ fun SessionsScreen(
                                         message =
                                             state.searchError
                                                 ?: stringResource(R.string.error_unknown),
-                                        onRetry = { viewModel.setSearchQuery(state.searchQuery) },
+                                        onRetry = { screenViewModel.setSearchQuery(state.searchQuery) },
                                     )
                                 }
 
@@ -547,11 +570,13 @@ fun SessionsScreen(
                                                     isSelecting = state.isSelecting,
                                                     isSelected = session.id in state.selectedIds,
                                                     isDeleting = session.id in state.deletingSessionIds,
+                                                    isPinned =
+                                                        state.pinnedSessionIds.any(session::matchesPin),
                                                     highlightBackground = primaryContainer,
                                                     highlightForeground = onPrimaryContainer,
                                                     onCardClick = {
                                                         if (state.isSelecting) {
-                                                            viewModel.toggleSessionSelection(session.id)
+                                                            screenViewModel.toggleSessionSelection(session.id)
                                                         } else {
                                                             NavigationController.pendingSessionId = session.id
                                                             NavigationController.navigateTo(ChatScreen)
@@ -559,16 +584,19 @@ fun SessionsScreen(
                                                     },
                                                     onCardLongClick = {
                                                         if (!state.isSelecting) {
-                                                            viewModel.toggleSelecting()
-                                                            viewModel.toggleSessionSelection(session.id)
+                                                            screenViewModel.toggleSelecting()
+                                                            screenViewModel.toggleSessionSelection(session.id)
                                                         }
                                                     },
                                                     onToggleSelection = {
-                                                        viewModel.toggleSessionSelection(
+                                                        screenViewModel.toggleSessionSelection(
                                                             session.id,
                                                         )
                                                     },
-                                                    onDelete = { viewModel.requestDeleteSession(session.id) },
+                                                    onTogglePin = {
+                                                        screenViewModel.toggleSessionPin(session)
+                                                    },
+                                                    onDelete = { screenViewModel.requestDeleteSession(session.id) },
                                                 )
                                             }
                                         }
@@ -586,7 +614,7 @@ fun SessionsScreen(
                         val errorMsg = state.errorMessage
                         ErrorState(
                             message = errorMsg ?: stringResource(R.string.error_unknown),
-                            onRetry = { viewModel.loadSessions() },
+                            onRetry = { screenViewModel.loadSessions() },
                         )
                     }
 
@@ -630,7 +658,7 @@ fun SessionsScreen(
                                         CardDefaults.cardColors(
                                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
                                         ),
-                                    onClick = { viewModel.showPruneDialog() },
+                                    onClick = { screenViewModel.showPruneDialog() },
                                 ) {
                                     Box(
                                         modifier = Modifier.padding(spacing.md),
@@ -665,41 +693,79 @@ fun SessionsScreen(
                             }
 
                             // ── Session list ────────────────────────────────────
+                            val sessionRow: @Composable (SessionTreeItem) -> Unit = { item ->
+                                val session = item.session
+                                SessionCard(
+                                    session = session,
+                                    displayTitle = item.displayTitle,
+                                    depth = item.depth,
+                                    branchStem = item.branchStem,
+                                    query = state.searchQuery,
+                                    isSelecting = state.isSelecting,
+                                    isSelected = session.id in state.selectedIds,
+                                    isDeleting = session.id in state.deletingSessionIds,
+                                    isPinned = state.pinnedSessionIds.any(session::matchesPin),
+                                    highlightBackground = primaryContainer,
+                                    highlightForeground = onPrimaryContainer,
+                                    onCardClick = {
+                                        if (state.isSelecting) {
+                                            screenViewModel.toggleSessionSelection(session.id)
+                                        } else {
+                                            NavigationController.pendingSessionId = session.id
+                                            NavigationController.navigateTo(ChatScreen)
+                                        }
+                                    },
+                                    onCardLongClick = {
+                                        if (!state.isSelecting) {
+                                            screenViewModel.toggleSelecting()
+                                            screenViewModel.toggleSessionSelection(session.id)
+                                        }
+                                    },
+                                    onToggleSelection = {
+                                        screenViewModel.toggleSessionSelection(session.id)
+                                    },
+                                    onTogglePin = { screenViewModel.toggleSessionPin(session) },
+                                    onDelete = { screenViewModel.requestDeleteSession(session.id) },
+                                )
+                            }
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = listPadding,
                                 verticalArrangement = listItemSpacing,
                             ) {
-                                items(sessionsToDisplay, key = { it.session.id }) { item ->
-                                    val session = item.session
-                                    SessionCard(
-                                        session = session,
-                                        displayTitle = item.displayTitle,
-                                        depth = item.depth,
-                                        branchStem = item.branchStem,
-                                        query = state.searchQuery,
-                                        isSelecting = state.isSelecting,
-                                        isSelected = session.id in state.selectedIds,
-                                        isDeleting = session.id in state.deletingSessionIds,
-                                        highlightBackground = primaryContainer,
-                                        highlightForeground = onPrimaryContainer,
-                                        onCardClick = {
-                                            if (state.isSelecting) {
-                                                viewModel.toggleSessionSelection(session.id)
-                                            } else {
-                                                NavigationController.pendingSessionId = session.id
-                                                NavigationController.navigateTo(ChatScreen)
-                                            }
-                                        },
-                                        onCardLongClick = {
-                                            if (!state.isSelecting) {
-                                                viewModel.toggleSelecting()
-                                                viewModel.toggleSessionSelection(session.id)
-                                            }
-                                        },
-                                        onToggleSelection = { viewModel.toggleSessionSelection(session.id) },
-                                        onDelete = { viewModel.requestDeleteSession(session.id) },
-                                    )
+                                if (sessionSections.pinned.isNotEmpty()) {
+                                    item(key = "pinned_sessions_header") {
+                                        SessionSectionHeader(
+                                            title =
+                                                stringResource(
+                                                    R.string.sessions_section_pinned,
+                                                ),
+                                            icon = Icons.Filled.PushPin,
+                                        )
+                                    }
+                                    items(
+                                        items = sessionSections.pinned,
+                                        key = { "pinned_${it.session.id}" },
+                                    ) { item ->
+                                        sessionRow(item)
+                                    }
+                                    if (sessionSections.recent.isNotEmpty()) {
+                                        item(key = "recent_sessions_header") {
+                                            SessionSectionHeader(
+                                                title =
+                                                    stringResource(
+                                                        R.string.sessions_section_recent,
+                                                    ),
+                                                icon = Icons.Filled.History,
+                                            )
+                                        }
+                                    }
+                                }
+                                items(
+                                    items = sessionSections.recent,
+                                    key = { it.session.id },
+                                ) { item ->
+                                    sessionRow(item)
                                 }
 
                                 // Load more
@@ -726,7 +792,7 @@ fun SessionsScreen(
                                                         Modifier
                                                             .testTag("load_more_sessions")
                                                             .clickable(role = Role.Button) {
-                                                                viewModel.loadMore()
+                                                                screenViewModel.loadMore()
                                                             },
                                                 )
                                             }
@@ -769,9 +835,9 @@ fun SessionsScreen(
                         OutlinedButton(
                             onClick = {
                                 if (allVisibleSessionsSelected) {
-                                    viewModel.clearSelection()
+                                    screenViewModel.clearSelection()
                                 } else {
-                                    viewModel.selectAll(visibleSessionIds)
+                                    screenViewModel.selectAll(visibleSessionIds)
                                 }
                             },
                         ) {
@@ -797,7 +863,7 @@ fun SessionsScreen(
 
                         // Delete selected
                         Button(
-                            onClick = { viewModel.requestBulkDelete() },
+                            onClick = { screenViewModel.requestBulkDelete() },
                             enabled = !state.isDeletingBulk,
                             colors =
                                 ButtonDefaults.buttonColors(
@@ -832,6 +898,72 @@ fun SessionsScreen(
     }
 }
 
+@Composable
+private fun SessionSectionHeader(
+    title: String,
+    icon: ImageVector,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun SessionPinButton(
+    sessionId: String,
+    isPinned: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        modifier =
+            Modifier
+                .size(32.dp)
+                .testTag("session_pin_$sessionId"),
+    ) {
+        Icon(
+            imageVector =
+                if (isPinned) {
+                    Icons.Filled.PushPin
+                } else {
+                    Icons.Outlined.PushPin
+                },
+            contentDescription =
+                stringResource(
+                    if (isPinned) {
+                        R.string.content_desc_unpin_session
+                    } else {
+                        R.string.content_desc_pin_session
+                    },
+                ),
+            modifier = Modifier.size(16.dp),
+            tint =
+                if (isPinned) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionCard(
@@ -843,11 +975,13 @@ private fun SessionCard(
     isSelecting: Boolean,
     isSelected: Boolean,
     isDeleting: Boolean,
+    isPinned: Boolean,
     highlightBackground: Color,
     highlightForeground: Color,
     onCardClick: () -> Unit,
     onCardLongClick: () -> Unit,
     onToggleSelection: () -> Unit,
+    onTogglePin: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val spacing = LocalSpacing.current
@@ -951,6 +1085,11 @@ private fun SessionCard(
             // Action buttons (not in select mode)
             if (!isSelecting) {
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                    SessionPinButton(
+                        sessionId = session.id,
+                        isPinned = isPinned,
+                        onClick = onTogglePin,
+                    )
                     // Delete
                     if (isDeleting) {
                         CircularProgressIndicator(
@@ -989,11 +1128,13 @@ private fun SearchResultCard(
     isSelecting: Boolean,
     isSelected: Boolean,
     isDeleting: Boolean,
+    isPinned: Boolean,
     highlightBackground: Color,
     highlightForeground: Color,
     onCardClick: () -> Unit,
     onCardLongClick: () -> Unit,
     onToggleSelection: () -> Unit,
+    onTogglePin: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val spacing = LocalSpacing.current
@@ -1109,6 +1250,11 @@ private fun SearchResultCard(
             // Action buttons (not in select mode)
             if (!isSelecting) {
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                    SessionPinButton(
+                        sessionId = session.id,
+                        isPinned = isPinned,
+                        onClick = onTogglePin,
+                    )
                     if (isDeleting) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),

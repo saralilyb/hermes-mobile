@@ -350,6 +350,10 @@
     <string name="sessions_action_select_all">전체 선택</string>
     <string name="sessions_action_deselect_all">선택 해제</string>
     <string name="sessions_action_delete_n">%1$d개 삭제</string>
+    <string name="sessions_section_pinned">고정됨</string>
+    <string name="sessions_section_recent">최근</string>
+    <string name="content_desc_pin_session">세션 고정</string>
+    <string name="content_desc_unpin_session">세션 고정 해제</string>
     <string name="content_desc_enter_selection">세션 선택</string>
     <string name="content_desc_exit_selection">선택 종료</string>
 

@@ -483,6 +483,10 @@
     <string name="sessions_action_select_all">Select All</string>
     <string name="sessions_action_deselect_all">Deselect</string>
     <string name="sessions_action_delete_n">Delete %1$d</string>
+    <string name="sessions_section_pinned">Pinned</string>
+    <string name="sessions_section_recent">Recent</string>
+    <string name="content_desc_pin_session">Pin session</string>
+    <string name="content_desc_unpin_session">Unpin session</string>
     <string name="content_desc_enter_selection">Select sessions</string>
     <string name="content_desc_exit_selection">Exit selection</string>
 

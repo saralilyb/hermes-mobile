@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.ui.sessions
 
+import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.HermesApiService
 import io.mockk.every
@@ -34,7 +35,10 @@ class SessionsViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
+        mockkObject(AuthManager)
         mockkObject(ApiClient)
+        every { AuthManager.getSelectedProfileId() } returns null
+        every { AuthManager.getPinnedSessionIds(AuthManager.DEFAULT_PROFILE_ID) } returns emptyList()
         every { ApiClient.hermesApi } returns mockApi
     }
 

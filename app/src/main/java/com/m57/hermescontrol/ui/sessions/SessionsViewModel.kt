@@ -29,6 +29,8 @@ data class SessionsUiState(
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
     val sessions: List<SessionInfo> = emptyList(),
+    val loadedSessionIds: Set<String> = emptySet(),
+    val pinnedSessionIds: List<String> = emptyList(),
     val total: Int = 0,
     val errorMessage: String? = null,
     val stats: SessionStats = SessionStats(),
@@ -49,16 +51,22 @@ data class SessionsUiState(
     val searchResults: List<SessionSearchResult> = emptyList(),
     val searchError: String? = null,
 ) {
-    val hasMore: Boolean get() = total > sessions.size
+    val hasMore: Boolean get() = total > loadedSessionIds.size
     val isSearchMode: Boolean get() = searchQuery.isNotBlank()
 }
 
-class SessionsViewModel : ViewModel(), ToastHost {
-    private val _uiState = MutableStateFlow(SessionsUiState())
+class SessionsViewModel(
+    private val pinStore: SessionPinStore = AuthManagerSessionPinStore(),
+) : ViewModel(), ToastHost {
+    private val _uiState =
+        MutableStateFlow(
+            SessionsUiState(pinnedSessionIds = pinStore.load()),
+        )
     val uiState: StateFlow<SessionsUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
     private var statsJob: Job? = null
+    private var hydratePinsJob: Job? = null
 
     /** Page size sent to the server — matches the default the gateway uses. */
     private companion object {
@@ -82,15 +90,23 @@ class SessionsViewModel : ViewModel(), ToastHost {
                 },
                 onStart = { _uiState.update { it.copy(isLoading = true, errorMessage = null) } },
                 onSuccess = { data ->
+                    val incoming = data.sessions.orEmpty()
                     _uiState.update {
                         it.copy(
                             isLoading = false,
                             isLoadingMore = false,
-                            sessions = data.sessions.orEmpty(),
+                            sessions =
+                                mergeSessionPage(
+                                    previous = it.sessions,
+                                    incoming = incoming,
+                                    pinnedSessionIds = it.pinnedSessionIds,
+                                ),
+                            loadedSessionIds = incoming.mapTo(mutableSetOf()) { it.id },
                             total = data.total,
                             selectedIds = emptySet(),
                         )
                     }
+                    hydrateMissingPinnedSessions()
                 },
                 onError = { errorMsg ->
                     _uiState.update {
@@ -115,7 +131,7 @@ class SessionsViewModel : ViewModel(), ToastHost {
                 safeApiCall {
                     ApiClient.hermesApi.getSessions(
                         limit = PAGE_SIZE,
-                        offset = state.sessions.size,
+                        offset = state.loadedSessionIds.size,
                         order = "recent",
                     )
                 }
@@ -125,10 +141,13 @@ class SessionsViewModel : ViewModel(), ToastHost {
                     _uiState.update {
                         it.copy(
                             isLoadingMore = false,
-                            sessions = it.sessions + data.sessions,
+                            sessions = mergeSessionRows(it.sessions, data.sessions),
+                            loadedSessionIds =
+                                it.loadedSessionIds + data.sessions.map { session -> session.id },
                             total = data.total,
                         )
                     }
+                    hydrateMissingPinnedSessions()
                 }
 
                 is NetworkResult.Failure -> {
@@ -141,6 +160,51 @@ class SessionsViewModel : ViewModel(), ToastHost {
                 }
             }
         }
+    }
+
+    // ── Pinned sessions ──────────────────────────────────────────────────
+
+    fun toggleSessionPin(session: SessionInfo) {
+        hydratePinsJob?.cancel()
+        val state = _uiState.value
+        val pinId = session.pinId()
+        val updatedPins =
+            if (state.pinnedSessionIds.contains(pinId)) {
+                state.pinnedSessionIds - pinId
+            } else {
+                state.pinnedSessionIds + pinId
+            }
+        pinStore.save(updatedPins)
+        _uiState.update {
+            it.copy(
+                sessions = mergeSessionRows(it.sessions, listOf(session)),
+                pinnedSessionIds = updatedPins,
+            )
+        }
+    }
+
+    private fun hydrateMissingPinnedSessions() {
+        hydratePinsJob?.cancel()
+        val state = _uiState.value
+        val missingPinIds =
+            state.pinnedSessionIds.filter { pinId ->
+                state.sessions.none { it.matchesPin(pinId) }
+            }
+        if (missingPinIds.isEmpty()) return
+
+        hydratePinsJob =
+            viewModelScope.launch {
+                val hydrated =
+                    hydratePinnedSessions(
+                        api = ApiClient.hermesApi,
+                        pinIds = missingPinIds,
+                    )
+                if (hydrated.isNotEmpty()) {
+                    _uiState.update {
+                        it.copy(sessions = mergeSessionRows(it.sessions, hydrated))
+                    }
+                }
+            }
     }
 
     // ── Search (server-backed FTS5) ──────────────────────────────────
@@ -321,10 +385,22 @@ class SessionsViewModel : ViewModel(), ToastHost {
                 }
             when (result) {
                 is NetworkResult.Success -> {
+                    val state = _uiState.value
+                    val updatedPins =
+                        remainingPinsAfterDeleting(
+                            pinnedSessionIds = state.pinnedSessionIds,
+                            sessions = state.sessions,
+                            deletedSessionIds = setOf(sessionId),
+                        )
+                    if (updatedPins != state.pinnedSessionIds) {
+                        pinStore.save(updatedPins)
+                    }
                     _uiState.update {
                         it.copy(
                             deletingSessionIds = it.deletingSessionIds - sessionId,
                             sessions = it.sessions.filter { s -> s.id != sessionId },
+                            loadedSessionIds = it.loadedSessionIds - sessionId,
+                            pinnedSessionIds = updatedPins,
                             searchResults = it.searchResults.filter { it.session_id != sessionId },
                             total = (it.total - 1).coerceAtLeast(0),
                             toastMessage = "Session deleted",
@@ -369,6 +445,17 @@ class SessionsViewModel : ViewModel(), ToastHost {
             when (result) {
                 is NetworkResult.Success -> {
                     val deletedCount = result.data.deleted
+                    val state = _uiState.value
+                    val deletedIds = ids.toSet()
+                    val updatedPins =
+                        remainingPinsAfterDeleting(
+                            pinnedSessionIds = state.pinnedSessionIds,
+                            sessions = state.sessions,
+                            deletedSessionIds = deletedIds,
+                        )
+                    if (updatedPins != state.pinnedSessionIds) {
+                        pinStore.save(updatedPins)
+                    }
                     val toastMsg =
                         if (deletedCount > 0) {
                             "$deletedCount session(s) deleted"
@@ -380,6 +467,13 @@ class SessionsViewModel : ViewModel(), ToastHost {
                             isDeletingBulk = false,
                             isSelecting = false,
                             selectedIds = emptySet(),
+                            sessions = it.sessions.filterNot { session -> session.id in deletedIds },
+                            loadedSessionIds = it.loadedSessionIds - deletedIds,
+                            pinnedSessionIds = updatedPins,
+                            searchResults =
+                                it.searchResults.filterNot { result ->
+                                    result.session_id in deletedIds
+                                },
                             toastMessage = toastMsg,
                         )
                     }
