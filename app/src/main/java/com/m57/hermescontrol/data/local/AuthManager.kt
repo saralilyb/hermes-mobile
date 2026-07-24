@@ -287,6 +287,36 @@ object AuthManager {
         serverStore.update { it.copy(pinnedModels = pinned) }
     }
 
+    // ── Pinned Sessions ──────────────────────────────────────────────────
+
+    fun getPinnedSessionIds(profileId: String? = getSelectedProfileId()): List<String> {
+        val resolvedProfileId = profileId ?: DEFAULT_PROFILE_ID
+        return serverStore.getLatestState().pinnedSessionIdsByProfile[resolvedProfileId].orEmpty()
+    }
+
+    fun savePinnedSessionIds(
+        pinnedSessionIds: List<String>,
+        profileId: String? = getSelectedProfileId(),
+    ) {
+        val resolvedProfileId = profileId ?: DEFAULT_PROFILE_ID
+        serverStore.update { state ->
+            state.copy(
+                pinnedSessionIdsByProfile =
+                    state.pinnedSessionIdsByProfile +
+                        (resolvedProfileId to pinnedSessionIds.distinct()),
+            )
+        }
+    }
+
+    fun clearPinnedSessionIds(profileId: String) {
+        serverStore.update { state ->
+            state.copy(
+                pinnedSessionIdsByProfile =
+                    state.pinnedSessionIdsByProfile - profileId,
+            )
+        }
+    }
+
     fun getProfileToken(profileId: String): String? = requirePrefs().getString("token_$profileId", null)
 
     fun setProfileToken(

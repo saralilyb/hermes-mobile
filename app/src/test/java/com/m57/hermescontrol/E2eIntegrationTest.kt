@@ -119,6 +119,8 @@ class E2eIntegrationTest {
         every { AuthManager.saveConnectionProfiles(any()) } returns Unit
         every { AuthManager.getPinnedModels() } returns emptyList()
         every { AuthManager.savePinnedModels(any()) } returns Unit
+        every { AuthManager.getPinnedSessionIds(AuthManager.DEFAULT_PROFILE_ID) } returns emptyList()
+        every { AuthManager.savePinnedSessionIds(any()) } returns Unit
 
         // Application stubs
         every { mockApp.getString(R.string.connect_error_401) } returns "Invalid token (401 Unauthorized)"

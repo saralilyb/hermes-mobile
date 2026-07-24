@@ -26,6 +26,26 @@ import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.ws.ConnectionStatus
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
 
+internal enum class ConnectionBannerAction {
+    NONE,
+    RECONNECT,
+    RELOGIN,
+}
+
+/** Only an authoritative authentication failure should ask for credentials. */
+internal fun connectionBannerAction(connectionStatus: ConnectionStatus): ConnectionBannerAction =
+    when (connectionStatus) {
+        ConnectionStatus.DISCONNECTED,
+        ConnectionStatus.NO_NETWORK,
+        -> ConnectionBannerAction.RECONNECT
+
+        ConnectionStatus.AUTH_EXPIRED -> ConnectionBannerAction.RELOGIN
+        ConnectionStatus.RECONNECTING,
+        ConnectionStatus.CONNECTING,
+        ConnectionStatus.CONNECTED,
+        -> ConnectionBannerAction.NONE
+    }
+
 /**
  * Top-anchored banner shown when the WebSocket connection is in a non-healthy
  * state (RECONNECTING / DISCONNECTED / NO_NETWORK / AUTH_EXPIRED).
@@ -85,31 +105,8 @@ fun ChatConnectionBanner(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                when (connectionStatus) {
-                    ConnectionStatus.DISCONNECTED -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(
-                                onClick = onReloginClick,
-                                colors =
-                                    ButtonDefaults.textButtonColors(
-                                        contentColor = LocalHermesStatusColors.current.error,
-                                    ),
-                            ) {
-                                Text(stringResource(R.string.chat_action_relogin))
-                            }
-                            TextButton(
-                                onClick = onReconnect,
-                                colors =
-                                    ButtonDefaults.textButtonColors(
-                                        contentColor = LocalHermesStatusColors.current.error,
-                                    ),
-                            ) {
-                                Text(stringResource(R.string.chat_action_reconnect))
-                            }
-                        }
-                    }
-
-                    ConnectionStatus.NO_NETWORK -> {
+                when (connectionBannerAction(connectionStatus)) {
+                    ConnectionBannerAction.RECONNECT -> {
                         TextButton(
                             onClick = onReconnect,
                             colors =
@@ -121,9 +118,7 @@ fun ChatConnectionBanner(
                         }
                     }
 
-                    ConnectionStatus.RECONNECTING,
-                    ConnectionStatus.AUTH_EXPIRED,
-                    -> {
+                    ConnectionBannerAction.RELOGIN -> {
                         TextButton(
                             onClick = onReloginClick,
                             colors =
@@ -135,7 +130,7 @@ fun ChatConnectionBanner(
                         }
                     }
 
-                    else -> {}
+                    ConnectionBannerAction.NONE -> {}
                 }
             }
         }

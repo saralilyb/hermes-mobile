@@ -64,6 +64,8 @@ import com.m57.hermescontrol.data.model.RawConfigResponse
 import com.m57.hermescontrol.data.model.RecentUnlock
 import com.m57.hermescontrol.data.model.SaveSkillContentRequest
 import com.m57.hermescontrol.data.model.ScanStatus
+import com.m57.hermescontrol.data.model.SessionInfo
+import com.m57.hermescontrol.data.model.SessionLatestDescendantResponse
 import com.m57.hermescontrol.data.model.SessionListResponse
 import com.m57.hermescontrol.data.model.SessionMessagesResponse
 import com.m57.hermescontrol.data.model.SessionPromptResponse
@@ -130,6 +132,16 @@ interface HermesApiService {
         @Query("offset") offset: Int = 0,
         @Query("order") order: String = "recent",
     ): Response<SessionListResponse>
+
+    @GET("api/sessions/{id}")
+    suspend fun getSession(
+        @Path("id", encoded = true) sessionId: String,
+    ): Response<SessionInfo>
+
+    @GET("api/sessions/{id}/latest-descendant")
+    suspend fun getSessionLatestDescendant(
+        @Path("id", encoded = true) sessionId: String,
+    ): Response<SessionLatestDescendantResponse>
 
     @GET("api/sessions/search")
     suspend fun searchSessions(

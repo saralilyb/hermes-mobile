@@ -117,6 +117,7 @@ class SettingsViewModel(
         val updatedProfiles = AuthManager.getConnectionProfiles().filter { it.id != profileId }
         AuthManager.saveConnectionProfiles(updatedProfiles)
         AuthManager.setProfileToken(profileId, null)
+        AuthManager.clearPinnedSessionIds(profileId)
         // Never leave selection null (issue #478): if the deleted profile was selected,
         // fall back to the default profile instead of clearing selection.
         if (AuthManager.getSelectedProfileId() == profileId) {

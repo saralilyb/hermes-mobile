@@ -15,4 +15,5 @@ data class SessionSearchResult(
     val source: String? = null,
     val model: String? = null,
     val session_started: Double? = null,
+    val lineage_root: String? = null,
 )

@@ -19,6 +19,7 @@ data class ServerStoreState(
     val themePreset: ThemePreset = ThemePreset.DEFAULT,
     val connectionProfiles: List<ConnectionProfile> = emptyList(),
     val selectedProfileId: String? = null,
+    val pinnedSessionIdsByProfile: Map<String, List<String>> = emptyMap(),
     val pinnedModels: List<PinnedModel> = emptyList(),
     val wsAuthParam: String = "token",
     val typingEffectEnabled: Boolean = true,
