@@ -213,6 +213,10 @@ repository reference document.
 
 - `ChatScrollController` owns bottom-follow, unread counts, and history prepend
   position. Do not recreate independent bottom-state heuristics in composables.
+- Session pins are ordered, profile-scoped local state keyed by durable lineage
+  root IDs. Hydrate missing pins through `latest-descendant` before fetching the
+  session detail, partition them out of Recents, and keep persistence writes
+  outside retryable state-transform lambdas.
 - `MessageCards` renders structured tool, approval, and status messages; plain
   text continues through `MarkdownText`.
 - `ComposerToolbar` and `ChatComposer` form the two-row input surface. Keep the

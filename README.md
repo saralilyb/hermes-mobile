@@ -35,8 +35,9 @@ only to distinguish a side-by-side personal installation.
 
 ## Features
 
-- **Real-Time Chat:** Room-backed history, rich tool and approval cards,
-  bottom-follow with unread counts, reasoning controls, and a two-row composer.
+- **Real-Time Chat:** Room-backed history, profile-scoped pinned sessions, rich
+  tool and approval cards, bottom-follow with unread counts, reasoning
+  controls, and a two-row composer.
 - **System Config:** Manage active profiles, installed skills, plugins, and LLM model selections.
 - **Operations:** Stream and filter live logs, manage cron jobs, edit environment keys, and test webhooks.
 - **Gateway Status:** Monitor WebSocket connection, MCP servers, and messaging channel status.
