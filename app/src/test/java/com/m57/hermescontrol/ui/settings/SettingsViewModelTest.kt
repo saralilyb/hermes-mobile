@@ -113,7 +113,8 @@ class SettingsViewModelTest {
     fun testLoadSettings_loadsAllProperties() =
         runTest {
             every { AuthManager.getSelectedProfileId() } answers { "prof-2" }
-            every { AuthManager.getBaseUrl() } returns "https://192.168.1.10:9119/"
+            every { AuthManager.endpoint() } returns
+                ServerEndpoint.parse("https://192.168.1.10:9119/")
             every { AuthManager.getToken() } returns "dummy_token"
             every { AuthManager.isAutoReconnect() } returns false
             every { AuthManager.getThemePreference() } returns ThemePreference.DARK
