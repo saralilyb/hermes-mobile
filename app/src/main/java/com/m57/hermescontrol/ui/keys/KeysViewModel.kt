@@ -32,6 +32,8 @@ data class KeysUiState(
     val newKeyName: String = "",
     val newKeyValue: String = "",
     val isAddingKey: Boolean = false,
+    val showAddDialog: Boolean = false,
+    val deleteTargetKey: String? = null,
     val deletingKeys: Set<String> = emptySet(),
     val keysChanged: Boolean = false,
     val isRestartingGateway: Boolean = false,
@@ -99,6 +101,10 @@ class KeysViewModel :
                     it.copy(
                         isLoading = false,
                         categories = buildCategoryList(envVars, expandedCategories.keys),
+                        revealedValues =
+                            it.revealedValues.filterKeys { key ->
+                                key in envVars
+                            },
                     )
                 }
             },
@@ -124,6 +130,20 @@ class KeysViewModel :
                             section
                         }
                     },
+            )
+        }
+    }
+
+    fun openAddDialog() {
+        _uiState.update { it.copy(showAddDialog = true) }
+    }
+
+    fun dismissAddDialog() {
+        _uiState.update {
+            it.copy(
+                showAddDialog = false,
+                newKeyName = "",
+                newKeyValue = "",
             )
         }
     }
@@ -155,6 +175,7 @@ class KeysViewModel :
                     _uiState.update {
                         it.copy(
                             isAddingKey = false,
+                            showAddDialog = false,
                             newKeyName = "",
                             newKeyValue = "",
                             keysChanged = true,
@@ -176,7 +197,21 @@ class KeysViewModel :
         }
     }
 
-    fun deleteKey(key: String) {
+    fun requestDeleteKey(key: String) {
+        _uiState.update { it.copy(deleteTargetKey = key) }
+    }
+
+    fun dismissDeleteDialog() {
+        _uiState.update { it.copy(deleteTargetKey = null) }
+    }
+
+    fun confirmDeleteKey() {
+        val key = _uiState.value.deleteTargetKey ?: return
+        _uiState.update { it.copy(deleteTargetKey = null) }
+        deleteKey(key)
+    }
+
+    private fun deleteKey(key: String) {
         _uiState.update { it.copy(deletingKeys = it.deletingKeys + key) }
         viewModelScope.launch {
             val result =
@@ -188,6 +223,7 @@ class KeysViewModel :
                     _uiState.update {
                         it.copy(
                             deletingKeys = it.deletingKeys - key,
+                            revealedValues = it.revealedValues - key,
                             keysChanged = true,
                             toastMessage = "Key deleted successfully",
                         )
@@ -249,7 +285,13 @@ class KeysViewModel :
                 }
             when (result) {
                 is NetworkResult.Success -> {
-                    _uiState.update { it.copy(keysChanged = true, toastMessage = "Key updated successfully") }
+                    _uiState.update {
+                        it.copy(
+                            revealedValues = it.revealedValues - key,
+                            keysChanged = true,
+                            toastMessage = "Key updated successfully",
+                        )
+                    }
                     loadKeys()
                 }
 
@@ -258,6 +300,10 @@ class KeysViewModel :
                 }
             }
         }
+    }
+
+    fun showToast(message: String) {
+        _uiState.update { it.copy(toastMessage = message) }
     }
 
     fun restartGateway() {

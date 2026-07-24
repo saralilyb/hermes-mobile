@@ -152,6 +152,13 @@ call unconditionally.
 - **`StateViews`** — `LoadingState`, `ErrorState`, `EmptyState`. Every data screen
   must implement all three branches in its `when { }` block.
 
+### Sensitive Clipboard Data
+
+Environment-key values may be copied only after an explicit global-clipboard
+warning. Use `copySensitiveText()` so every copied secret carries Android's
+sensitive-clipboard metadata, including the compatibility key on API 26–32.
+Do not route secret values through Compose's generic clipboard manager.
+
 ### ⚠ HermesScaffold Padding Foot-Gun
 
 **This is the #1 recurring bug in this codebase.** It has been re-introduced on 4+ screens

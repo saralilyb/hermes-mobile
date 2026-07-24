@@ -39,7 +39,8 @@ only to distinguish a side-by-side personal installation.
   tool and approval cards, bottom-follow with unread counts, persisted reasoning
   cards and controls, and a two-row composer.
 - **System Config:** Manage active profiles, installed skills, plugins, and LLM model selections.
-- **Operations:** Stream and filter live logs, manage cron jobs, edit environment keys, and test webhooks.
+- **Operations:** Stream and filter live logs, manage cron jobs, manage categorized
+  environment keys with warned sensitive copying, and test webhooks.
 - **Gateway Status:** Monitor WebSocket connection, MCP servers, and messaging channel status.
 - **Productivity:** View and manage tasks via integrated Kanban boards and track agent milestones.
 - **Modern UX:** Drawer-first Navigation3, dynamic Material You colors, theme
