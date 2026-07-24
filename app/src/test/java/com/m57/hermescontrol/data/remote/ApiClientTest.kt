@@ -58,6 +58,7 @@ class ApiClientTest {
         // which calls getSelectedProfileId(). Stub it to null so the interceptor
         // short-circuits (no profile scope) and these auth tests stay focused.
         every { AuthManager.getSelectedProfileId() } returns null
+        every { AuthManager.isGatedMode() } returns false
     }
 
     @AfterEach
@@ -148,6 +149,41 @@ class ApiClientTest {
 
             val request = mockWebServer.takeRequest()
             assertEquals("Bearer $rawToken", request.getHeader("Authorization"))
+        }
+
+    @Test
+    fun testAuthInterceptor_omitsBearerInGatedModeEvenWithStaleToken() =
+        runTest {
+            every { AuthManager.getToken() } returns "stale-loopback-token"
+            every { AuthManager.isGatedMode() } returns true
+
+            ApiClient.rebuild()
+
+            mockWebServer.enqueue(
+                MockResponse().setResponseCode(200).setBody("""{"gateway_running":true}"""),
+            )
+
+            val response = ApiClient.hermesApi.getStatus()
+
+            assertTrue(response.isSuccessful)
+            assertNull(mockWebServer.takeRequest().getHeader("Authorization"))
+        }
+
+    @Test
+    fun testGated401_doesNotRetryBearerAndRequiresSignIn() =
+        runTest {
+            every { AuthManager.getToken() } returns "stale-loopback-token"
+            every { AuthManager.isGatedMode() } returns true
+
+            ApiClient.rebuild()
+            mockWebServer.enqueue(MockResponse().setResponseCode(401))
+
+            val result = safeApiCall { ApiClient.hermesApi.getSessions() }
+
+            assertTrue(result is NetworkResult.Failure)
+            assertTrue(AuthSessionState.signInRequired.value)
+            assertEquals(1, mockWebServer.requestCount)
+            assertNull(mockWebServer.takeRequest().getHeader("Authorization"))
         }
 
     @Test

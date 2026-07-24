@@ -132,6 +132,60 @@ class AuthManagerTest {
     }
 
     @Test
+    fun testGatedMode_isScopedToSelectedProfile() {
+        val direct =
+            ConnectionProfile(
+                id = "direct",
+                name = "Direct",
+                host = "direct.example.com",
+                wsAuthParam = "token",
+            )
+        val gated =
+            ConnectionProfile(
+                id = "gated",
+                name = "Gated",
+                host = "gated.example.com",
+                wsAuthParam = "ticket",
+            )
+        AuthManager.saveConnectionProfiles(listOf(direct, gated))
+
+        AuthManager.setSelectedProfileId("direct")
+        assertEquals(false, AuthManager.isGatedMode())
+
+        AuthManager.setSelectedProfileId("gated")
+        assertEquals(true, AuthManager.isGatedMode())
+    }
+
+    @Test
+    fun testSetWsAuthParam_updatesOnlySelectedProfile() {
+        val selected = ConnectionProfile("selected", "Selected", "selected.example.com")
+        val other = ConnectionProfile("other", "Other", "other.example.com")
+        AuthManager.saveConnectionProfiles(listOf(selected, other))
+        AuthManager.setSelectedProfileId("selected")
+
+        AuthManager.setWsAuthParam("ticket")
+
+        val profiles = AuthManager.getConnectionProfiles()
+        assertEquals("ticket", profiles.first { it.id == "selected" }.wsAuthParam)
+        assertNull(profiles.first { it.id == "other" }.wsAuthParam)
+    }
+
+    @Test
+    fun testLegacyProfile_fallsBackToPersistedGlobalMode() {
+        val legacy = ConnectionProfile("legacy", "Legacy", "legacy.example.com")
+        AuthManager.saveConnectionProfiles(listOf(legacy))
+        AuthManager.setSelectedProfileId("legacy")
+        AuthManager.serverStore.update { state ->
+            state.copy(
+                wsAuthParam = "ticket",
+                connectionProfiles = listOf(legacy),
+            )
+        }
+
+        assertEquals(true, AuthManager.isGatedMode())
+    }
+
+    @Test
     fun testGetAndSetHost() {
         AuthManager.setHost("10.0.0.1")
         assertEquals("10.0.0.1", AuthManager.getHost())

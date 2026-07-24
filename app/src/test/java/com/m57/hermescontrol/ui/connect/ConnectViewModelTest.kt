@@ -362,7 +362,11 @@ class ConnectViewModelTest {
             viewModel.connect()
             advanceUntilIdle()
 
-            verify { AuthManager.saveConnectionProfiles(any()) }
+            verify {
+                AuthManager.saveConnectionProfiles(
+                    match { profiles -> profiles.single().wsAuthParam == "token" },
+                )
+            }
             verify { AuthManager.setSelectedProfileId(any()) }
             verify { AuthManager.setProfileToken(any(), "valid-token") }
             verify { ApiClient.rebuild() }

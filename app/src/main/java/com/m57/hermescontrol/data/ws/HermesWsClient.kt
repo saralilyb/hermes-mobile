@@ -248,7 +248,7 @@ object HermesWsClient {
     private fun refreshWsTicketIfNeeded(): TicketRefreshResult {
         val isGated =
             try {
-                AuthManager.serverStore.getLatestState().wsAuthParam == "ticket"
+                AuthManager.isGatedMode()
             } catch (_: IllegalStateException) {
                 // serverStore not initialized yet (transient early call); treat
                 // as loopback so a stale-token refresh still runs. Log so a real
@@ -542,7 +542,7 @@ object HermesWsClient {
     private fun handleAuthenticationRejected() {
         val isGated =
             runCatching {
-                AuthManager.serverStore.getLatestState().wsAuthParam == "ticket"
+                AuthManager.isGatedMode()
             }.getOrDefault(false)
         if (isGated && !intentionalClose.get() &&
             ticketAuthRetryUsed.compareAndSet(false, true)

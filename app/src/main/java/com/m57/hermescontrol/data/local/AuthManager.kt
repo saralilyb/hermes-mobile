@@ -159,8 +159,42 @@ object AuthManager {
         }
 
     fun setWsAuthParam(param: String) {
-        serverStore.update { it.copy(wsAuthParam = param) }
+        val selectedId = getSelectedProfileId()
+        serverStore.update { state ->
+            state.copy(
+                wsAuthParam = param,
+                connectionProfiles =
+                    state.connectionProfiles.map { profile ->
+                        if (profile.id == selectedId) {
+                            profile.copy(wsAuthParam = param)
+                        } else {
+                            profile
+                        }
+                    },
+            )
+        }
     }
+
+    /**
+     * WebSocket query parameter for the selected profile.
+     *
+     * New profiles persist this mode directly. Legacy profiles fall back to
+     * the former global mode until they authenticate again.
+     */
+    fun getWsAuthParam(): String {
+        val state = serverStore.getLatestState()
+        val selectedId = state.selectedProfileId?.takeIf { it.isNotBlank() }
+        val profileMode =
+            state.connectionProfiles
+                .firstOrNull { it.id == selectedId }
+                ?.wsAuthParam
+        return profileMode?.takeIf { it.isNotBlank() }
+            ?: state.wsAuthParam.takeIf { it.isNotBlank() }
+            ?: "token"
+    }
+
+    /** True when the selected profile uses dashboard cookie authentication. */
+    fun isGatedMode(): Boolean = getWsAuthParam() == "ticket"
 
     // ── Session Cookie (for gated/dashboard REST API) ────────────────────
 
@@ -523,9 +557,7 @@ object AuthManager {
 
     /** Canonical WebSocket URL with an encoded token or short-lived ticket. */
     fun wsUrl(): String {
-        val raw = serverStore.getLatestState().wsAuthParam
-        val authParam = if (raw.isBlank()) "token" else raw
-        return wsUrlWithCredential(getToken().orEmpty(), authParam)
+        return wsUrlWithCredential(getToken().orEmpty(), getWsAuthParam())
     }
 
     /** Build a WebSocket URL with a handshake-local credential. */

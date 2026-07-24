@@ -92,12 +92,16 @@ object ApiClient {
                     }
             }
 
-        // Loopback mode: authenticate via Bearer token (the session cookie used
-        // in gated mode is now handled automatically by the shared CookieJar —
-        // see issue #470).
+        // Loopback mode uses Bearer auth. Gated profiles rely exclusively on
+        // the session cookie attached by the shared CookieJar; adding a stale
+        // token alongside it causes the dashboard to reject otherwise valid
+        // REST requests.
         val authInterceptor =
             Interceptor { chain ->
                 val request = chain.request()
+                if (AuthManager.isGatedMode()) {
+                    return@Interceptor chain.proceed(request)
+                }
                 val token = AuthManager.getToken()
                 if (!token.isNullOrBlank()) {
                     chain.proceed(

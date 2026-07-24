@@ -157,11 +157,15 @@ class ConnectViewModel(
                             }
                         val targetProfile =
                             if (existingIndex >= 0) {
-                                currentProfiles[existingIndex].copy(baseUrl = state.baseUrl)
+                                currentProfiles[existingIndex].copy(
+                                    baseUrl = state.baseUrl,
+                                    wsAuthParam = "token",
+                                )
                             } else {
                                 ConnectionProfile(
                                     name = state.profileName,
                                     baseUrl = state.baseUrl,
+                                    wsAuthParam = "token",
                                 )
                             }
                         val updatedProfiles =

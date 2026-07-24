@@ -276,10 +276,13 @@ gh pr create --title "fix(#N): description" --body "Closes #N"
 - **`HttpLoggingInterceptor.Level.BODY`** must stay gated on `BuildConfig.DEBUG` —
   it can expose authorization headers and message bodies.
 - **Direct mode:** REST uses a bearer token and WebSocket uses `?token=`. A token
-  can become invalid when the Hermes dashboard restarts.
+  can become invalid when the Hermes dashboard restarts. Persist the mode on the
+  connection profile; switching profiles must not reuse another profile's mode.
 - **Gated mode:** REST authentication uses endpoint-scoped cookies from the shared
-  `PersistentCookieJar`; WebSocket connections mint a fresh short-lived ticket and
-  use `?ticket=`. Do not infer WebSocket authentication from a successful REST call.
+  `PersistentCookieJar`; it must not add a bearer header or invoke the loopback
+  dashboard-token refresher. WebSocket connections mint a fresh short-lived
+  ticket and use `?ticket=`. Do not infer WebSocket authentication from a
+  successful REST call.
 - **One endpoint authority:** parse a complete base URL with `ServerEndpoint`, then
   derive REST and WebSocket URLs from it so reverse-proxy prefixes survive.
 - **Release signing** uses a keystore with env-var credentials (`KEYSTORE_PATH`,
