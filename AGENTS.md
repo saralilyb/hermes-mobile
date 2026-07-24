@@ -219,6 +219,9 @@ repository reference document.
   outside retryable state-transform lambdas.
 - `MessageCards` renders structured tool, approval, and status messages; plain
   text continues through `MarkdownText`.
+- Assistant reasoning belongs inside its message bubble and must survive Room,
+  REST history (`reasoning` and legacy `reasoning_text`), resume payloads,
+  streaming resets, and paginated history replacement.
 - `ComposerToolbar` and `ChatComposer` form the two-row input surface. Keep the
   text field independent of the model, reasoning, attachment, and send actions.
 - The downstream server contract uses `pagination.offset` and

@@ -361,6 +361,16 @@ class ChatViewModel(
     }
 
     private fun handleWsEvent(event: WsEvent) {
+        when (event) {
+            is WsEvent.MessageStart,
+            is WsEvent.MessageComplete,
+            is WsEvent.MessageDone,
+            is WsEvent.ToolStart,
+            -> streamingController.flushPendingReasoning()
+
+            else -> Unit
+        }
+
         // First, let the reducer compute the new state and any effects
         val result =
             ChatWsEventReducer.reduce(
@@ -1700,7 +1710,8 @@ class ChatViewModel(
                                         duplicate < 0
                                     }
                                 }
-                            val merged = (retained + incoming).distinctBy { it.id }
+                            val incomingIds = incoming.mapTo(mutableSetOf()) { it.id }
+                            val merged = retained.filterNot { it.id in incomingIds } + incoming
                             if (sameMessages(current.messages, merged)) current else current.copy(messages = merged)
                         }
                     }
@@ -1768,8 +1779,31 @@ class ChatViewModel(
         sessionId: String,
         messages: List<SessionMessage>,
         offset: Int,
-    ): List<ChatMessage> =
-        messages.mapIndexed { index, msg ->
+    ): List<ChatMessage> {
+        val existingWithReasoning =
+            _uiState.value.messages.filter { it.reasoningText.isNotBlank() }
+        val existingReasoningById = existingWithReasoning.associateBy { it.id }
+        val uniqueReasoningByContent =
+            existingWithReasoning
+                .groupBy { it.role to it.content }
+                .mapNotNull { (key, matches) ->
+                    matches.singleOrNull()?.let { key to it }
+                }.toMap()
+        val incomingRoleAndContentCounts =
+            messages
+                .map { msg ->
+                    val role =
+                        when (msg.role?.lowercase()) {
+                            "user" -> MessageRole.USER
+                            "system" -> MessageRole.SYSTEM
+                            "tool" -> MessageRole.TOOL
+                            else -> MessageRole.ASSISTANT
+                        }
+                    role to msg.contentText
+                }.groupingBy { it }
+                .eachCount()
+
+        return messages.mapIndexed { index, msg ->
             val role =
                 when (msg.role?.lowercase()) {
                     "user" -> MessageRole.USER
@@ -1778,6 +1812,20 @@ class ChatViewModel(
                     else -> MessageRole.ASSISTANT
                 }
             val globalIndex = offset + index
+            val id = "rest-$sessionId-$globalIndex"
+            val content = msg.contentText
+            val roleAndContent = role to content
+            val preservedReasoning =
+                existingReasoningById[id]
+                    ?.takeIf { existing ->
+                        existing.role == role && existing.content == content
+                    }
+                    ?: uniqueReasoningByContent[roleAndContent]
+                        ?.takeIf { incomingRoleAndContentCounts[roleAndContent] == 1 }
+            val reasoning =
+                msg.reasoningText.ifBlank {
+                    preservedReasoning?.reasoningText.orEmpty()
+                }
             val timestamp =
                 msg.timestampText
                     ?.toDoubleOrNull()
@@ -1785,13 +1833,15 @@ class ChatViewModel(
                     ?.toLong()
                     ?: System.currentTimeMillis()
             ChatMessage(
-                id = "rest-$sessionId-$globalIndex",
+                id = id,
                 role = role,
-                content = msg.contentText,
+                content = content,
+                reasoningText = reasoning,
                 timestamp = timestamp,
                 isStreaming = false,
             )
         }
+    }
 
     private fun hydrateResumeMessages(
         sessionId: String,
@@ -1823,6 +1873,9 @@ class ChatViewModel(
                             ""
                         }
                 if (content.isBlank()) return@mapIndexedNotNull null
+                val reasoning =
+                    (message["reasoning"] as? String)
+                        ?: (message["reasoning_text"] as? String).orEmpty()
                 val timestampSeconds =
                     when (val timestamp = message["timestamp"]) {
                         is Number -> timestamp.toDouble()
@@ -1833,6 +1886,7 @@ class ChatViewModel(
                     id = "resume-$sessionId-$index",
                     role = role,
                     content = content,
+                    reasoningText = reasoning,
                     timestamp =
                         timestampSeconds
                             ?.times(1000)
@@ -1876,13 +1930,16 @@ class ChatViewModel(
         sessionId: String,
     ): Int? = id.removePrefix("rest-$sessionId-").takeIf { it != id }?.toIntOrNull()
 
-    private fun sameMessages(
+    internal fun sameMessages(
         left: List<ChatMessage>,
         right: List<ChatMessage>,
     ): Boolean =
         left.size == right.size &&
             left.zip(right).all { (a, b) ->
-                a.id == b.id && a.role == b.role && a.content == b.content
+                a.id == b.id &&
+                    a.role == b.role &&
+                    a.content == b.content &&
+                    a.reasoningText == b.reasoningText
             }
 
     // ── UI actions ───────────────────────────────────────────────────────

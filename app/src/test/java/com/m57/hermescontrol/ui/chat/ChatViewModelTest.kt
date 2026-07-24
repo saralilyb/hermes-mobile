@@ -1280,6 +1280,7 @@ class ChatViewModelTest {
                                 mapOf(
                                     "role" to "assistant",
                                     "text" to "Earlier answer",
+                                    "reasoning" to "Earlier reasoning",
                                 ),
                             ),
                     ),
@@ -1297,6 +1298,7 @@ class ChatViewModelTest {
             assertEquals(MessageRole.USER, messages[0].role)
             assertEquals("Earlier answer", messages[1].content)
             assertEquals(MessageRole.ASSISTANT, messages[1].role)
+            assertEquals("Earlier reasoning", messages[1].reasoningText)
             assertEquals("Session resumed", messages[2].content)
 
             viewModel.refreshCurrentSession()
@@ -1382,6 +1384,7 @@ class ChatViewModelTest {
                                 com.m57.hermescontrol.data.model.SessionMessage(
                                     role = "assistant",
                                     content = "REST answer",
+                                    reasoning = "REST reasoning",
                                 ),
                             ),
                     ),
@@ -1432,6 +1435,12 @@ class ChatViewModelTest {
             advanceUntilIdle()
 
             assertTrue(olderPageRequested)
+            assertEquals(
+                "REST reasoning",
+                viewModel.uiState.value.messages
+                    .first { it.content == "REST answer" }
+                    .reasoningText,
+            )
         }
 
     @Test
@@ -2129,4 +2138,19 @@ class ChatViewModelTest {
             assertNull(viewModel.uiState.value.errorMessage)
             verify { HermesWsClient.disconnect() }
         }
+
+    @Test
+    fun sameMessages_detectsReasoningChanges() {
+        val viewModel = createViewModel()
+        val before =
+            ChatMessage(
+                id = "rest-session-0",
+                role = MessageRole.ASSISTANT,
+                content = "Answer",
+                reasoningText = "",
+            )
+        val after = before.copy(reasoningText = "Restored reasoning")
+
+        assertFalse(viewModel.sameMessages(listOf(before), listOf(after)))
+    }
 }
