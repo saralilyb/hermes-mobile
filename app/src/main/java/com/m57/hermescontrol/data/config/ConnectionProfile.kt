@@ -15,6 +15,8 @@ data class ConnectionProfile(
     val host: String = "127.0.0.1",
     val port: Int = 9119,
     val baseUrl: String? = null,
+    /** WebSocket query parameter used by the profile's authentication mode. */
+    val wsAuthParam: String? = null,
 ) {
     /**
      * Resolve this profile without store context. Store and UI callers should

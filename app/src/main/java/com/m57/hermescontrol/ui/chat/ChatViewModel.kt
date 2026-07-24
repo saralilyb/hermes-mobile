@@ -291,7 +291,7 @@ class ChatViewModel(
         // and must NOT block the connect (issue #640: chat showed "reconnect"
         // immediately after basic-auth login because this guard returned early).
         val isGated =
-            runCatching { AuthManager.serverStore.getLatestState().wsAuthParam == "ticket" }
+            runCatching { AuthManager.isGatedMode() }
                 .getOrNull() ?: false
         if (!isGated) {
             val token = AuthManager.getToken() ?: return

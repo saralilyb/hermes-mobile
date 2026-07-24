@@ -144,7 +144,13 @@ fun MainNavigation(sessionId: String? = null) {
 
     val token by AuthManager.tokenFlow.collectAsState()
     val serverState by AuthManager.serverStore.stateFlow.collectAsState()
-    val startScreen = authenticatedStartScreen(token, serverState.wsAuthParam)
+    val selectedAuthParam =
+        serverState.connectionProfiles
+            .firstOrNull { it.id == serverState.selectedProfileId }
+            ?.wsAuthParam
+            ?.takeIf { it.isNotBlank() }
+            ?: serverState.wsAuthParam
+    val startScreen = authenticatedStartScreen(token, selectedAuthParam)
 
     val backStack = remember(startScreen) { NavBackStack(startScreen) }
     NavigationController.backStack = backStack
