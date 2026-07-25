@@ -25,9 +25,10 @@
 
 **Hermes Mobile** is an unofficial native Android client for
 [Hermes Agent](https://hermes-agent.nousresearch.com). This security-focused
-fork is based on [Hy4ri/hermes-mobile](https://github.com/Hy4ri/hermes-mobile)
-and currently incorporates upstream through `v1.18.0`. It retains downstream
-security, complete-history pagination, signing, and distribution changes. The
+fork is based on
+[Hy4ri/hermes-mobile](https://github.com/Hy4ri/hermes-mobile) and selectively
+incorporates upstream changes through `v1.18.4`. It retains downstream security,
+complete-history pagination, signing, and distribution changes. The
 public release uses generic Hermes branding; the optional `iris` flavor exists
 only to distinguish a side-by-side personal installation.
 
@@ -109,7 +110,8 @@ show a cleartext warning.
 ### Connection profiles
 
 Use **Settings → Connection profiles** to switch among complete server URLs.
-Credentials and session state remain scoped to their profile.
+The active profile uses a high-contrast container and border. Credentials and
+session state remain scoped to their profile.
 
 ### Pairing (admin)
 

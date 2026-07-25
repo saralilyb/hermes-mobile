@@ -20,9 +20,10 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
   kotlinx-serialization
 - **Auth:** encrypted bearer tokens for direct mode; endpoint-scoped encrypted
   cookies plus short-lived WebSocket tickets for gated mode
-- **Upstream base:** reconciled through `Hy4ri/hermes-mobile` `v1.18.0`; retain
-  downstream HTTPS enforcement, profile-scoped credentials, single-use ticket
-  handling, complete-history pagination, signing, and release automation
+- **Upstream base:** selectively reconciled through `Hy4ri/hermes-mobile`
+  `v1.18.4`; retain downstream HTTPS enforcement, profile-scoped credentials,
+  single-use ticket handling, complete-history pagination, signing, and release
+  automation
 
 ## Build & Test Commands
 
