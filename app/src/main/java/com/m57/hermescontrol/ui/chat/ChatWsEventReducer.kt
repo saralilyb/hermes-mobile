@@ -250,6 +250,13 @@ object ChatWsEventReducer {
             effects.add(ReducerEffect.PersistMessage(msg, sid))
         }
         effects.add(ReducerEffect.RefreshSessions)
+        // Mobile-only media fix (issue #724): the WS stream delivers the raw
+        // `MEDIA:<host-path>` directive. Turn it into real attachments (images
+        // inline, every other file tappable) via the gateway /api/files/download
+        // endpoint — works on a remote phone too.
+        if (msg.role == MessageRole.ASSISTANT && sid != null) {
+            effects.add(ReducerEffect.AttachHostMedia(sid, msg.id))
+        }
         return ReducerResult(
             state =
                 state.copy(
@@ -278,6 +285,12 @@ object ChatWsEventReducer {
         val sid = state.currentSessionId
         if (sid != null) {
             effects.add(ReducerEffect.PersistMessage(msg, sid))
+        }
+        // Mobile-only media fix (issue #724): attach any `MEDIA:<path>` file
+        // carried in the finalized assistant message as a real attachment. See
+        // the ReducerEffect.AttachHostMedia KDoc for the rationale.
+        if (msg.role == MessageRole.ASSISTANT && sid != null) {
+            effects.add(ReducerEffect.AttachHostMedia(sid, msg.id))
         }
         return ReducerResult(
             state =
@@ -656,4 +669,22 @@ sealed class ReducerEffect {
     data object LoadSessions : ReducerEffect()
 
     data object RefreshSessions : ReducerEffect()
+
+    /**
+     * Ask the ViewModel to turn any `MEDIA:<host-path>` directives in the
+     * just-finalized assistant message into real [Attachment]s (images inline,
+     * every other file type tappable) and strip the directives from the text.
+     *
+     * Why: the gateway's WebSocket stream delivers the raw `MEDIA:<path>`
+     * directive (the same one the desktop app resolves via `mediaExternalUrl`
+     * to the authenticated `/api/files/download` endpoint, which streams the
+     * host file over HTTP). Attaching them lets the renderer show images inline
+     * and offer every other file as a fetchable attachment — even on a remote
+     * phone (real HTTP, unlike a host-local file read). Mirrors desktop's
+     * `mediaExternalUrl`; mobile-only, backend untouched. See issue #724.
+     */
+    data class AttachHostMedia(
+        val sessionId: String,
+        val messageId: String,
+    ) : ReducerEffect()
 }

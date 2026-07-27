@@ -1,11 +1,16 @@
 package com.m57.hermescontrol
 
 import android.app.Application
+import coil.ImageLoader
+import coil.ImageLoaderFactory
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.remote.NetworkMonitor
+import com.m57.hermescontrol.data.remote.OkHttpProvider
 import com.m57.hermescontrol.ui.analytics.AnalyticsPreloader
 
-class HermesControlApp : Application() {
+class HermesControlApp :
+    Application(),
+    ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         AuthManager.init(this)
@@ -18,4 +23,11 @@ class HermesControlApp : Application() {
         // cold backend). Fire-and-forget; never blocks UI startup.
         AnalyticsPreloader.preload(this)
     }
+
+    override fun newImageLoader(): ImageLoader =
+        ImageLoader
+            .Builder(this)
+            .okHttpClient(OkHttpProvider.base)
+            .crossfade(true)
+            .build()
 }
