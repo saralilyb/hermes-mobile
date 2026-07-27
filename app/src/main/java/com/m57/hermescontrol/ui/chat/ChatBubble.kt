@@ -110,6 +110,7 @@ fun ChatBubble(
     isCurrentMatch: Boolean = false,
     onRespondApproval: (String) -> Unit = {},
     onOpenAttachment: (Attachment) -> Unit = {},
+    onImageClick: (ImageViewerModel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val screenWidth = LocalConfiguration.current.screenWidthDp.dp
@@ -131,6 +132,7 @@ fun ChatBubble(
                     searchQuery = searchQuery,
                     isCurrentMatch = isCurrentMatch,
                     onOpenAttachment = onOpenAttachment,
+                    onImageClick = onImageClick,
                     modifier = modifier,
                 )
             }
@@ -143,6 +145,7 @@ fun ChatBubble(
                     searchQuery = searchQuery,
                     isCurrentMatch = isCurrentMatch,
                     onOpenAttachment = onOpenAttachment,
+                    onImageClick = onImageClick,
                     modifier = modifier,
                 )
             }
@@ -169,6 +172,7 @@ private fun UserBubble(
     searchQuery: String = "",
     isCurrentMatch: Boolean = false,
     onOpenAttachment: (Attachment) -> Unit = {},
+    onImageClick: (ImageViewerModel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val clipboard = LocalClipboard.current
@@ -269,6 +273,7 @@ private fun UserBubble(
                                 attachment = attachment,
                                 textColor = userBubbleTextColor,
                                 onOpen = { onOpenAttachment(it) },
+                                onImageClick = onImageClick,
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                         }
@@ -332,6 +337,7 @@ private fun AssistantBubble(
     searchQuery: String = "",
     isCurrentMatch: Boolean = false,
     onOpenAttachment: (Attachment) -> Unit = {},
+    onImageClick: (ImageViewerModel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val bubbleColor = MaterialTheme.colorScheme.surfaceVariant
@@ -398,6 +404,7 @@ private fun AssistantBubble(
                             isStreaming = message.isStreaming,
                             searchQuery = searchQuery,
                             isCurrentMatch = isCurrentMatch,
+                            onImageClick = onImageClick,
                         )
                     }
                     // Render inline attachments (mirrors UserBubble so agent-delivered
@@ -409,6 +416,7 @@ private fun AssistantBubble(
                                 attachment = attachment,
                                 textColor = textColor,
                                 onOpen = { onOpenAttachment(it) },
+                                onImageClick = onImageClick,
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                         }
@@ -2289,11 +2297,11 @@ private fun InlineAttachment(
     attachment: Attachment,
     textColor: Color,
     onOpen: (Attachment) -> Unit = {},
+    onImageClick: (ImageViewerModel) -> Unit = {},
 ) {
     val clickable = Modifier.clickable { onOpen(attachment) }
     if (attachment.isImage) {
-        // Image attachment — show as a rounded thumbnail (Coil loads the
-        // gateway download URL directly when gateway-sourced).
+        // Image attachment — show as a rounded thumbnail; tap opens the viewer.
         AsyncImage(
             model = attachment.uri,
             contentDescription = attachment.name,
@@ -2301,7 +2309,15 @@ private fun InlineAttachment(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .then(clickable),
+                    .clickable {
+                        onImageClick(
+                            ImageViewerModel(
+                                model = attachment.uri,
+                                name = attachment.name,
+                                mimeType = attachment.mimeType,
+                            ),
+                        )
+                    },
             contentScale = ContentScale.FillWidth,
         )
     } else {
