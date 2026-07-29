@@ -326,11 +326,28 @@ class EventParserTest {
                 result = null,
                 error = null,
                 method = "event",
-                params = mapOf("type" to "message.complete", "payload" to mapOf("text" to "full text")),
+                params =
+                    mapOf(
+                        "type" to "message.complete",
+                        "payload" to
+                            mapOf(
+                                "text" to "full text",
+                                "usage" to
+                                    mapOf(
+                                        "context_used" to 42_000,
+                                        "context_max" to 272_000,
+                                        "input" to 900_000,
+                                    ),
+                            ),
+                    ),
             )
         val event = EventParser.parse(response)
         assertTrue(event is WsEvent.MessageComplete)
-        assertEquals("full text", (event as WsEvent.MessageComplete).text)
+        val complete = event as WsEvent.MessageComplete
+        assertEquals("full text", complete.text)
+        assertEquals(42_000.0, complete.usage?.get("context_used"))
+        assertEquals(272_000.0, complete.usage?.get("context_max"))
+        assertEquals(900_000.0, complete.usage?.get("input"))
     }
 
     @Test

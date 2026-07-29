@@ -445,6 +445,73 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun testContextUsage_tracksLiveWindowForCurrentSessionOnly() =
+        runTest {
+            val (viewModel, sessionId) = createViewModelWithSession()
+
+            mockEventsFlow.emit(
+                WsEvent.SessionInfo(
+                    data =
+                        mapOf(
+                            "usage" to
+                                mapOf(
+                                    "context_used" to 54_321,
+                                    "context_max" to 272_000,
+                                    "context_percent" to 19.97,
+                                    "input" to 1_900_000,
+                                    "output" to 88_000,
+                                    "total" to 1_988_000,
+                                    "calls" to 42,
+                                    "compressions" to 3,
+                                ),
+                        ),
+                    sessionId = sessionId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val initial = viewModel.uiState.value.contextUsage
+            assertNotNull(initial)
+            assertEquals(54_321L, initial?.usedTokens)
+            assertEquals(272_000L, initial?.maxTokens)
+            assertEquals(1_900_000L, initial?.inputTokens)
+            assertEquals(3L, initial?.compressions)
+
+            mockEventsFlow.emit(
+                WsEvent.MessageComplete(
+                    text = "done",
+                    sessionId = sessionId,
+                    usage =
+                        mapOf(
+                            "context_used" to 61_000,
+                            "context_max" to 272_000,
+                        ),
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(61_000L, viewModel.uiState.value.contextUsage?.usedTokens)
+            assertEquals(
+                "missing cumulative fields retain the previous totals",
+                1_900_000L,
+                viewModel.uiState.value.contextUsage?.inputTokens,
+            )
+
+            mockEventsFlow.emit(
+                WsEvent.MessageComplete(
+                    text = "other",
+                    sessionId = "another-session",
+                    usage =
+                        mapOf(
+                            "context_used" to 99_000,
+                            "context_max" to 272_000,
+                        ),
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(61_000L, viewModel.uiState.value.contextUsage?.usedTokens)
+        }
+
+    @Test
     fun testTypedModelCommandWithArg_dispatchesDirectly() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()

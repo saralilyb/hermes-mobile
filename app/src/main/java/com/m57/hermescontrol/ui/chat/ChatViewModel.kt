@@ -122,6 +122,18 @@ data class ChatUiState(
     val reactionTriggerId: Long = 0L,
     /** Subagent delegation indicators (issue #538) — transient UI state. */
     val subagentIndicators: List<SubagentIndicator> = emptyList(),
+    /**
+     * Context-window meter state. Fed by the gateway `usage` block on
+     * `session.info` / `message.complete`; null until the session reports one.
+     */
+    val contextUsage: ContextUsage? = null,
+    /**
+     * Denominator fallback from `GET /api/model/info`, used only while the
+     * session has not yet reported a live `context_max` over the WebSocket.
+     */
+    val modelContextLength: Long? = null,
+    /** Whether the tappable context breakdown sheet is open. */
+    val showContextDetail: Boolean = false,
 ) {
     /** Convenience — derived from [connectionStatus]. */
     val isConnected: Boolean get() = connectionStatus == ConnectionStatus.CONNECTED
@@ -348,6 +360,7 @@ class ChatViewModel(
         addSystemMessage("Connected to Hermes")
         loadSessions()
         fetchCommandCatalog()
+        fetchModelContextLength()
         preloadModelOptions()
         val currentId = _uiState.value.currentSessionId
         if (currentId != null) {
@@ -426,6 +439,9 @@ class ChatViewModel(
             is WsEvent.SessionInfo -> {
                 if (isCurrentSession(event.sessionId)) {
                     val info = event.data
+
+                    @Suppress("UNCHECKED_CAST")
+                    val usage = info?.get("usage") as? Map<String, Any?>
                     val model = (info?.get("model") as? String)?.trim().orEmpty()
                     val provider = (info?.get("provider") as? String)?.trim().orEmpty()
                     val reasoningEffort = (info?.get("reasoning_effort") as? String)?.trim()
@@ -442,6 +458,7 @@ class ChatViewModel(
                                     state.currentSessionModel
                                 },
                             reasoningLevel = reasoningEffort?.takeIf { it.isNotEmpty() },
+                            contextUsage = parseContextUsage(usage, state.contextUsage),
                         )
                     }
                 }
@@ -466,6 +483,14 @@ class ChatViewModel(
             is WsEvent.MessageComplete -> {
                 // Buffers cleared before reduce; ViewModel resets them after
                 streamingController.resetStreaming()
+                if (isCurrentSession(event.sessionId)) {
+                    // End of turn is when the gateway recomputes window
+                    // occupancy, so this frame carries the freshest gauge the
+                    // client will see before the next `session.info`.
+                    _uiState.update { state ->
+                        state.copy(contextUsage = parseContextUsage(event.usage, state.contextUsage))
+                    }
+                }
             }
 
             is WsEvent.MessageDone -> {
@@ -1231,6 +1256,8 @@ class ChatViewModel(
                 isLoading = setLoading,
                 messages = emptyList(),
                 chatTitle = "Hermes",
+                contextUsage = null,
+                showContextDetail = false,
             )
         }
         _streamingState.update { StreamingState() }
@@ -1272,6 +1299,40 @@ class ChatViewModel(
                 onSent = { id -> trackRequest(id, WsMethods.COMMANDS_CATALOG) },
             )
         }
+    }
+
+    /**
+     * Top up the context meter's denominator from `GET /api/model/info`.
+     *
+     * Only a fallback: it covers the window between opening a session and its
+     * first turn, before the gateway has pushed a live `context_max`. The
+     * numerator is never sourced from REST — see [ContextUsage].
+     */
+    private fun fetchModelContextLength() {
+        viewModelScope.launch(Dispatchers.IO) {
+            when (val result = safeApiCall { ApiClient.hermesApi.getModelInfo() }) {
+                is NetworkResult.Success -> {
+                    val length =
+                        result.data.effectiveContextLength
+                            ?: result.data.autoContextLength
+                    if (length != null && length > 0L) {
+                        _uiState.update { it.copy(modelContextLength = length) }
+                    }
+                }
+
+                is NetworkResult.Failure -> Unit
+            }
+        }
+    }
+
+    /** Open the tappable context breakdown sheet. */
+    fun openContextDetail() {
+        _uiState.update { it.copy(showContextDetail = true) }
+    }
+
+    /** Dismiss the context breakdown sheet. */
+    fun closeContextDetail() {
+        _uiState.update { it.copy(showContextDetail = false) }
     }
 
     fun refreshCurrentSession() {
@@ -1591,6 +1652,11 @@ class ChatViewModel(
                 isAgentTyping = false,
                 currentSessionModel = null,
                 modelSwitchConfirmation = null,
+                // The gauge is per-session occupancy; carrying the previous
+                // session's fill into a new one would misreport it until the
+                // first turn lands.
+                contextUsage = null,
+                showContextDetail = false,
             )
         }
         // Mirror the active session id app-wide (issue #532).

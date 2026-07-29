@@ -46,6 +46,7 @@ import com.m57.hermescontrol.data.model.MessagingPlatformUpdate
 import com.m57.hermescontrol.data.model.MoaConfigResponse
 import com.m57.hermescontrol.data.model.ModelAssignmentRequest
 import com.m57.hermescontrol.data.model.ModelAssignmentResponse
+import com.m57.hermescontrol.data.model.ModelInfoResponse
 import com.m57.hermescontrol.data.model.ModelOptionsResponse
 import com.m57.hermescontrol.data.model.ModelsAnalyticsResponse
 import com.m57.hermescontrol.data.model.OAuthCancelResponse
@@ -453,6 +454,14 @@ interface HermesApiService {
         @Path("name") name: String,
         @Body body: WebhookToggleSubscriptionRequest,
     ): Response<Unit>
+
+    /**
+     * Active model plus its context window. Supplies only the context meter's
+     * denominator *fallback*, for the window between opening a session and its
+     * first turn reporting a live `context_max` over the WebSocket.
+     */
+    @GET("api/model/info")
+    suspend fun getModelInfo(): Response<ModelInfoResponse>
 
     @GET("api/model/options")
     suspend fun getModelOptions(

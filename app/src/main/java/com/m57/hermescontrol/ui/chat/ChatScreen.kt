@@ -83,6 +83,8 @@ import com.m57.hermescontrol.ui.chat.components.ChatLifecycleEffects
 import com.m57.hermescontrol.ui.chat.components.ChatLoadingOverlay
 import com.m57.hermescontrol.ui.chat.components.ChatMessageList
 import com.m57.hermescontrol.ui.chat.components.ChatScrollToBottomFab
+import com.m57.hermescontrol.ui.chat.components.ContextUsageChip
+import com.m57.hermescontrol.ui.chat.components.ContextUsageDialog
 import com.m57.hermescontrol.ui.chat.components.ReactionHeartsOverlay
 import com.m57.hermescontrol.ui.chat.components.ReloginDialog
 import com.m57.hermescontrol.ui.chat.components.SearchBarRow
@@ -527,6 +529,18 @@ fun ChatScreen(
                 }
             }
 
+            val contextWindow = state.contextUsage?.maxTokens ?: state.modelContextLength
+            ContextUsageChip(
+                usedTokens = state.contextUsage?.usedTokens,
+                fullTokens = contextWindow,
+                onClick =
+                    if (state.contextUsage != null) {
+                        viewModel::openContextDetail
+                    } else {
+                        null
+                    },
+            )
+
             ChatInputBar(
                 inputFieldValue = inputFieldValue,
                 onInputChange = { inputFieldValue = it },
@@ -629,6 +643,16 @@ fun ChatScreen(
                     viewModel.sendSlashModel(provider, model)
                 },
                 onDismiss = { viewModel.closeModelPicker() },
+            )
+        }
+
+        val contextWindow = state.contextUsage?.maxTokens ?: state.modelContextLength
+        if (state.showContextDetail && contextWindow != null && contextWindow > 0L) {
+            ContextUsageDialog(
+                usage = state.contextUsage,
+                fullTokens = contextWindow,
+                model = state.currentSessionModel,
+                onDismiss = viewModel::closeContextDetail,
             )
         }
 

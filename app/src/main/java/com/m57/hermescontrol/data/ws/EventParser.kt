@@ -75,7 +75,10 @@ object EventParser {
 
             "message.complete" -> {
                 val text = payload?.get("text") as? String ?: ""
-                WsEvent.MessageComplete(text, sessionId)
+
+                @Suppress("UNCHECKED_CAST")
+                val usage = payload?.get("usage") as? Map<String, Any?>
+                WsEvent.MessageComplete(text, sessionId, usage)
             }
 
             "message.done" -> {

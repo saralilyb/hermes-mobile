@@ -132,6 +132,25 @@
     <string name="chat_tool_fallback">도구</string>
     <string name="chat_tool_show_raw">Raw JSON 보기</string>
     <string name="chat_tool_show_parsed">파싱된 결과 보기</string>
+
+    <!-- Context window meter -->
+    <string name="chat_context_meter_label">컨텍스트 %1$s / %2$s</string>
+    <string name="chat_context_meter_percent">%1$d%%</string>
+    <string name="chat_context_meter_unknown">\u2014</string>
+    <string name="chat_context_detail_title">컨텍스트 창</string>
+
+    <string name="chat_context_detail_used">컨텍스트 창의 %1$d%% 사용 중</string>
+    <string name="chat_context_detail_unknown_title">사용량 미보고</string>
+    <string name="chat_context_detail_unknown_body">이 세션의 컨텍스트 엔진은 턴별 창 사용량을 보고하지 않습니다. 임의의 수치를 표시하지 않도록 미터를 비워 둡니다. 아래 세션 합계는 정확합니다.</string>
+    <string name="chat_context_detail_totals">세션 합계</string>
+    <string name="chat_context_detail_input">프롬프트 (입력)</string>
+    <string name="chat_context_detail_output">응답 (출력)</string>
+    <string name="chat_context_detail_reasoning">추론</string>
+    <string name="chat_context_detail_total">합계</string>
+    <string name="chat_context_detail_calls">API 호출</string>
+    <string name="chat_context_detail_compressions">압축 횟수</string>
+    <string name="chat_context_detail_model">모델</string>
+    <string name="chat_context_detail_footnote">세션 합계는 이미 압축되어 창에서 빠진 턴을 포함한 전체 대화의 누적값입니다. 현재 컨텍스트에 남아 있는 양은 위 막대만 반영합니다.</string>
     <string name="content_desc_new_chat">새 채팅</string>
     <string name="content_desc_scroll_to_bottom">맨 아래로</string>
     <string name="content_desc_copy">복사</string>
