@@ -91,6 +91,15 @@ class HermesWsClientTest {
         return queueField.get(HermesWsClient) as java.util.Queue<*>
     }
 
+    private fun awaitOutboundQueueEmpty(timeoutMs: Long = 1_000): Boolean {
+        val queue = outboundQueue()
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        while (queue.isNotEmpty() && System.nanoTime() < deadline) {
+            Thread.sleep(10)
+        }
+        return queue.isEmpty()
+    }
+
     @After
     fun tearDown() {
         HermesWsClient.disconnect()
@@ -900,7 +909,7 @@ class HermesWsClientTest {
         assertTrue("Server failed to accept connection", serverLatch.await(5, TimeUnit.SECONDS))
         assertTrue("Queued message was not flushed on reconnect", messageLatch.await(5, TimeUnit.SECONDS))
         assertTrue((receivedMessage ?: "").contains("queued_method"))
-        assertTrue("A flushed frame must leave the queue", outboundQueue().isEmpty())
+        assertTrue("A flushed frame must leave the queue", awaitOutboundQueueEmpty())
     }
 
     @Test
