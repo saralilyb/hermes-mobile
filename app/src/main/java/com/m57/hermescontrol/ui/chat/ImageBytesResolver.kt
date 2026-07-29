@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.m57.hermescontrol.data.remote.GatewayFileClient
 import com.m57.hermescontrol.data.remote.GatewayFileResult
+import com.m57.hermescontrol.data.remote.MAX_IN_MEMORY_MEDIA_BYTES
 import com.m57.hermescontrol.data.remote.OkHttpProvider
 import com.m57.hermescontrol.data.remote.readBytesLimited
 import kotlinx.coroutines.CancellationException
@@ -11,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import java.util.Base64
+
+private const val MAX_DATA_URL_METADATA_CHARS = 1024
 
 /**
  * Resolve a chat image [ImageViewerModel.model] into raw bytes so the viewer can
@@ -82,12 +85,19 @@ object ImageBytesResolver {
                 Result.Error(result.throwable.message ?: "Could not load gateway image")
         }
 
-    private fun decodeDataUrl(
+    internal fun decodeDataUrl(
         model: String,
         fallbackMime: String,
+        maxBytes: Long = MAX_IN_MEMORY_MEDIA_BYTES,
     ): Result {
         val comma = model.indexOf(',')
         if (comma < 0) return Result.Error("Malformed data URL")
+        if (comma > MAX_DATA_URL_METADATA_CHARS) return Result.Error("Malformed data URL")
+        val maxEncodedLength = ((maxBytes + 2L) / 3L) * 4L
+        val encodedLength = model.length - comma - 1
+        if (encodedLength.toLong() > maxEncodedLength) {
+            return Result.Error("Image is too large")
+        }
         val meta = model.substring(0, comma)
         val data = model.substring(comma + 1).replace(Regex("\\s+"), "")
         val mime =
@@ -101,6 +111,9 @@ object ImageBytesResolver {
         val bytes =
             runCatching { Base64.getDecoder().decode(data) }
                 .getOrElse { return Result.Error("Could not decode image data") }
+        if (bytes.size.toLong() > maxBytes) {
+            return Result.Error("Image is too large")
+        }
         return Result.Bytes(bytes, mime, extensionForMime(mime))
     }
 

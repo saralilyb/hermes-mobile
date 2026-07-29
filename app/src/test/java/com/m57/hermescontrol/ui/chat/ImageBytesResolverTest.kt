@@ -73,6 +73,67 @@ class ImageBytesResolverTest {
         }
 
     @Test
+    fun `data URL rejects decoded bytes over media limit`() {
+        val raw = byteArrayOf(1, 2, 3, 4)
+        val b64 = Base64.getEncoder().encodeToString(raw)
+        val model = "data:image/png;base64,$b64"
+
+        val result =
+            ImageBytesResolver.decodeDataUrl(
+                model = model,
+                fallbackMime = "image/*",
+                maxBytes = 3,
+            )
+
+        assertEquals(ImageBytesResolver.Result.Error("Image is too large"), result)
+    }
+
+    @Test
+    fun `data URL counts whitespace toward encoded limit`() {
+        val model = "data:image/png;base64,YQ== "
+
+        val result =
+            ImageBytesResolver.decodeDataUrl(
+                model = model,
+                fallbackMime = "image/*",
+                maxBytes = 1,
+            )
+
+        assertEquals(ImageBytesResolver.Result.Error("Image is too large"), result)
+    }
+
+    @Test
+    fun `data URL rejects oversized metadata before copying payload`() {
+        val model = "data:${"x".repeat(1024)},YQ=="
+
+        val result =
+            ImageBytesResolver.decodeDataUrl(
+                model = model,
+                fallbackMime = "image/*",
+                maxBytes = 1,
+            )
+
+        assertEquals(ImageBytesResolver.Result.Error("Malformed data URL"), result)
+    }
+
+    @Test
+    fun `data URL accepts decoded bytes at media limit`() {
+        val raw = byteArrayOf(1, 2, 3)
+        val b64 = Base64.getEncoder().encodeToString(raw)
+        val model = "data:image/png;base64,$b64"
+
+        val result =
+            ImageBytesResolver.decodeDataUrl(
+                model = model,
+                fallbackMime = "image/*",
+                maxBytes = 3,
+            )
+
+        assertTrue(result is ImageBytesResolver.Result.Bytes)
+        assertArrayEquals(raw, (result as ImageBytesResolver.Result.Bytes).bytes)
+    }
+
+    @Test
     fun `malformed data URL (no comma) returns Error`() =
         runTest {
             val result = ImageBytesResolver.resolve(context, "data:image/png;base64XXXX", "image/*")
