@@ -3,6 +3,8 @@
 package com.m57.hermescontrol.ui.files
 
 import android.content.Intent
+import android.text.format.DateFormat
+import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -72,9 +74,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 private val filesContentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
 private val filesItemSpacing = Arrangement.spacedBy(8.dp)
@@ -357,11 +357,12 @@ private fun FileRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector =
         entry?.let { fileIcon(it) } ?: Icons.Filled.Folder,
     name: String = entry?.name ?: "",
-    subtitle: String? = entry?.let { fileSubtitle(it) },
+    subtitle: String? = null,
     isBusy: Boolean,
     onClick: () -> Unit,
     onDelete: (() -> Unit)? = null,
 ) {
+    val resolvedSubtitle = subtitle ?: entry?.let { fileSubtitle(it) }
     Card(
         modifier =
             Modifier
@@ -394,9 +395,9 @@ private fun FileRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (subtitle != null) {
+                if (resolvedSubtitle != null) {
                     Text(
-                        text = subtitle,
+                        text = resolvedSubtitle,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -413,7 +414,7 @@ private fun FileRow(
                 IconButton(onClick = onDelete) {
                     Icon(
                         imageVector = Icons.Filled.Delete,
-                        contentDescription = stringResource(R.string.files_action_delete),
+                        contentDescription = stringResource(R.string.files_action_delete_named, entry.name),
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(20.dp),
                     )
@@ -471,26 +472,29 @@ private fun fileIcon(entry: ManagedFileEntry): androidx.compose.ui.graphics.vect
         else -> Icons.Outlined.AttachFile
     }
 
+@Composable
 private fun fileSubtitle(entry: ManagedFileEntry): String {
+    val context = LocalContext.current
     val size =
-        entry.size?.let { bytes ->
-            when {
-                bytes >= 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
-                bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
-                else -> "$bytes B"
-            }
-        } ?: "—"
+        entry.size?.let { bytes -> Formatter.formatShortFileSize(context, bytes) } ?: "—"
     val mtime =
-        entry.mtime?.let {
-            try {
-                val sdf =
-                    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                sdf.format(Date(it.toLong() * 1000))
-            } catch (_: Exception) {
-                null
+        entry.mtime
+            ?.takeIf { it.isFinite() && it >= 0.0 }
+            ?.let { seconds -> Date((seconds * 1000.0).toLong()) }
+            ?.let { date ->
+                val formattedDate = DateFormat.getMediumDateFormat(context).format(date)
+                val formattedTime = DateFormat.getTimeFormat(context).format(date)
+                context.getString(
+                    R.string.files_metadata_date_time,
+                    formattedDate,
+                    formattedTime,
+                )
             }
-        } ?: ""
-    return if (mtime.isBlank()) size else "$size · $mtime"
+    return if (mtime == null) {
+        size
+    } else {
+        context.getString(R.string.files_metadata_size_and_time, size, mtime)
+    }
 }
 
 /**
