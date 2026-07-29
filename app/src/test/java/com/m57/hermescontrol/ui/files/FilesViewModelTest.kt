@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.ui.files
 
+import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.ManagedFileEntry
 import com.m57.hermescontrol.data.remote.GatewayFile
 import com.m57.hermescontrol.data.remote.GatewayFileClient
@@ -37,6 +38,19 @@ class FilesViewModelTest {
     fun tearDown() {
         unmockkObject(GatewayFileClient)
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `createDir validation emits localized message resource`() {
+        val viewModel = FilesViewModel()
+
+        viewModel.openCreateDir()
+        viewModel.createDir()
+
+        assertEquals(
+            R.string.files_error_folder_name_required,
+            viewModel.uiState.value.toastMessage?.resourceId,
+        )
     }
 
     @Test
