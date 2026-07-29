@@ -484,7 +484,7 @@ private fun fileSubtitle(entry: ManagedFileEntry): String {
             ?.let { date ->
                 val formattedDate = DateFormat.getMediumDateFormat(context).format(date)
                 val formattedTime = DateFormat.getTimeFormat(context).format(date)
-                context.getString(
+                stringResource(
                     R.string.files_metadata_date_time,
                     formattedDate,
                     formattedTime,
@@ -493,7 +493,7 @@ private fun fileSubtitle(entry: ManagedFileEntry): String {
     return if (mtime == null) {
         size
     } else {
-        context.getString(R.string.files_metadata_size_and_time, size, mtime)
+        stringResource(R.string.files_metadata_size_and_time, size, mtime)
     }
 }
 
