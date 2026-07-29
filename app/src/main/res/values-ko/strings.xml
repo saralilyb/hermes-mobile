@@ -751,6 +751,13 @@
     <string name="image_viewer_share_failed">이미지를 공유할 수 없음</string>
     <string name="gif_action_play">GIF 재생</string>
     <string name="gif_action_pause">GIF 일시정지</string>
+    <string name="attachment_chooser_open">파일 열기</string>
+    <string name="attachment_error_open">%1$s을(를) 열 수 없음</string>
+    <string name="attachment_error_missing_gateway_path">%1$s의 게이트웨이 경로가 없음</string>
+    <string name="attachment_error_not_found">게이트웨이에서 파일을 찾을 수 없음: %1$s</string>
+    <string name="attachment_error_access_denied">접근 거부됨: %1$s</string>
+    <string name="attachment_error_too_large">열기에 파일이 너무 큼: %1$s</string>
+    <string name="attachment_error_session_expired">세션이 만료됨 — 다시 연결하여 열기: %1$s</string>
 
     <!-- Files Screen -->
     <string name="files_root_label">관리 파일 루트</string>

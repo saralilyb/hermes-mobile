@@ -2613,6 +2613,9 @@ class ChatViewModelTest {
             coEvery {
                 GatewayFileClient.fetch(any())
             } returns GatewayFileResult.NotFound
+            every {
+                app.getString(R.string.attachment_error_not_found, "missing.pdf")
+            } returns "File not found on gateway: missing.pdf"
 
             val viewModel = createViewModel()
             val attachment =

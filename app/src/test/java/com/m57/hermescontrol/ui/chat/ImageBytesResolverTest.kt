@@ -4,14 +4,30 @@ import android.content.Context
 import com.m57.hermescontrol.data.remote.GatewayFile
 import com.m57.hermescontrol.data.remote.GatewayFileClient
 import com.m57.hermescontrol.data.remote.GatewayFileResult
+import io.mockk.Runs
 import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.mockkObject
+import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -70,6 +86,70 @@ class ImageBytesResolverTest {
             result as ImageBytesResolver.Result.Bytes
             assertEquals("image/webp", result.mimeType)
             assertEquals("webp", result.extension)
+        }
+
+    @Test
+    fun `HTTP cancellation cancels the OkHttp call`() =
+        runTest {
+            val call = mockk<Call>()
+            val callFactory = mockk<Call.Factory>()
+            val callback = slot<Callback>()
+            every { callFactory.newCall(any()) } returns call
+            every { call.enqueue(capture(callback)) } just Runs
+            every { call.cancel() } just Runs
+
+            val job =
+                launch {
+                    ImageBytesResolver.fetchHttp(
+                        model = "https://example.com/image.png",
+                        fallbackMime = "image/png",
+                        callFactory = callFactory,
+                    )
+                }
+            runCurrent()
+
+            job.cancelAndJoin()
+
+            verify(exactly = 1) { call.cancel() }
+        }
+
+    @Test
+    fun `HTTP response resolves bytes and content type asynchronously`() =
+        runTest {
+            val call = mockk<Call>()
+            val callFactory = mockk<Call.Factory>()
+            val callback = slot<Callback>()
+            every { callFactory.newCall(any()) } returns call
+            every { call.enqueue(capture(callback)) } just Runs
+            every { call.cancel() } just Runs
+            val request = Request.Builder().url("https://example.com/image.png").build()
+
+            val result =
+                async {
+                    ImageBytesResolver.fetchHttp(
+                        model = request.url.toString(),
+                        fallbackMime = "image/*",
+                        callFactory = callFactory,
+                    )
+                }
+            runCurrent()
+            callback.captured.onResponse(
+                call,
+                Response
+                    .Builder()
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .header("Content-Type", "image/png")
+                    .body(byteArrayOf(1, 2, 3).toResponseBody("image/png".toMediaType()))
+                    .build(),
+            )
+
+            val resolved = result.await() as ImageBytesResolver.Result.Bytes
+            assertArrayEquals(byteArrayOf(1, 2, 3), resolved.bytes)
+            assertEquals("image/png", resolved.mimeType)
+            assertEquals("png", resolved.extension)
         }
 
     @Test
