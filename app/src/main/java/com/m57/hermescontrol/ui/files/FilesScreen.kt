@@ -91,7 +91,7 @@ fun FilesScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(viewModel) {
-        viewModel.load()
+        viewModel.refresh()
     }
 
     val uploadLauncher =
