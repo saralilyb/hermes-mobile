@@ -110,6 +110,12 @@ class ChatViewModelTest {
             arg<((String) -> Unit)?>(2)?.invoke(id)
             id
         }
+        every { HermesWsClient.sendRedirect(any(), any(), any()) } answers {
+            reqCount++
+            val id = "req-redirect-$reqCount"
+            arg<((String) -> Unit)?>(2)?.invoke(id)
+            id
+        }
         every { HermesWsClient.request(WsMethods.CONFIG_SET, any(), any()) } returns
             CompletableDeferred<Any?>(mapOf("ok" to true))
 
@@ -1211,6 +1217,115 @@ class ChatViewModelTest {
             assertTrue(viewModel.uiState.value.isAgentTyping)
 
             verify { HermesWsClient.sendMessage(sessionId, "Hello Hermes", any()) }
+        }
+
+    @Test
+    fun testSendMessageRedirectsWhileStreaming() =
+        runTest {
+            val (viewModel, sessionId) = createViewModelWithSession()
+
+            // First send starts the turn — normal prompt.submit.
+            viewModel.sendMessage("Hello Hermes")
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.isAgentTyping)
+            verify { HermesWsClient.sendMessage(sessionId, "Hello Hermes", any()) }
+
+            // Second send lands mid-turn — steer the live turn instead.
+            viewModel.sendMessage("Wait, correction")
+            advanceUntilIdle()
+
+            verify { HermesWsClient.sendRedirect(sessionId, "Wait, correction", any()) }
+        }
+
+    @Test
+    fun testSendMessageWithAttachmentDoesNotRedirect() =
+        runTest {
+            val (viewModel, sessionId) = createViewModelWithSession()
+
+            viewModel.sendMessage("Hello Hermes")
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.isAgentTyping)
+
+            // session.redirect is text-only, so an attachment send must stay on
+            // prompt.submit even while a turn is streaming.
+            viewModel.addAttachment(
+                uri = "content://fake/1",
+                name = "note.txt",
+                mimeType = "text/plain",
+                size = 12L,
+            )
+            advanceUntilIdle()
+
+            viewModel.sendMessage("with a file")
+            advanceUntilIdle()
+
+            verify(exactly = 0) { HermesWsClient.sendRedirect(any(), any(), any()) }
+            verify { HermesWsClient.sendMessage(sessionId, any(), any()) }
+        }
+
+    @Test
+    fun testRedirectRejectionResendsAsPrompt() =
+        runTest {
+            val (viewModel, sessionId) = createViewModelWithSession()
+
+            viewModel.sendMessage("Hello Hermes")
+            advanceUntilIdle()
+
+            every { HermesWsClient.sendRedirect(any(), any(), any()) } answers {
+                val id = "req-redirect-capture"
+                arg<((String) -> Unit)?>(2)?.invoke(id)
+                id
+            }
+
+            viewModel.sendMessage("Wait, correction")
+            advanceUntilIdle()
+            verify { HermesWsClient.sendRedirect(sessionId, "Wait, correction", any()) }
+
+            // A gateway whose agent cannot steer answers 4010. The text must be
+            // resent as a normal prompt, not surfaced as an error.
+            mockEventsFlow.emit(
+                WsEvent.RpcError(
+                    "req-redirect-capture",
+                    JsonRpcError(4010, "agent does not support active-turn redirect"),
+                ),
+            )
+            advanceUntilIdle()
+
+            verify { HermesWsClient.sendMessage(sessionId, "Wait, correction", any()) }
+            assertNull(viewModel.uiState.value.errorMessage)
+        }
+
+    @Test
+    fun testRedirectOtherErrorSurfacesToUser() =
+        runTest {
+            val (viewModel, sessionId) = createViewModelWithSession()
+
+            viewModel.sendMessage("Hello Hermes")
+            advanceUntilIdle()
+
+            every { HermesWsClient.sendRedirect(any(), any(), any()) } answers {
+                val id = "req-redirect-other"
+                arg<((String) -> Unit)?>(2)?.invoke(id)
+                id
+            }
+
+            viewModel.sendMessage("Wait, correction")
+            advanceUntilIdle()
+
+            // Any non-4010 rejection is a real error and must not silently
+            // re-send the prompt.
+            mockEventsFlow.emit(
+                WsEvent.RpcError(
+                    "req-redirect-other",
+                    JsonRpcError(5000, "redirect failed: boom"),
+                ),
+            )
+            advanceUntilIdle()
+
+            verify(exactly = 0) {
+                HermesWsClient.sendMessage(sessionId, "Wait, correction", any())
+            }
+            assertNotNull(viewModel.uiState.value.errorMessage)
         }
 
     // ── Session switch ───────────────────────────────────────────────────────

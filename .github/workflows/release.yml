@@ -20,65 +20,105 @@ permissions:
   contents: read
 
 jobs:
-  ci:
+  # ─────────────────────────────────────────────────────────────────────
+  # Gate: require a green Android CI/CD run on the exact tagged commit.
+  #
+  # This job used to re-run the whole validation matrix (ktlint, lint,
+  # tests, both debug assemblies) that `android.yml` had already run on
+  # the same commit minutes earlier. That cost ~7 minutes per release and
+  # gave every release a second, independent chance to fail on runner
+  # flake — which is exactly what happened on v0.4.4, where the duplicate
+  # run failed in `packageHermesDebug` on a commit whose push workflow had
+  # already produced both debug APKs.
+  #
+  # Verifying the recorded conclusion of the real CI run keeps the actual
+  # guarantee (a tag may only be released from a commit that passed the
+  # complete matrix, instrumented tests included) without paying for it or
+  # re-rolling the dice. Only `push` and `workflow_dispatch` runs count: a
+  # `pull_request` run validates a merge ref, not the commit itself.
+  # ─────────────────────────────────────────────────────────────────────
+  verify-ci:
     name: CI Checks
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
-        with:
-          validate-wrappers: true
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTED_KEY }}
-
-      - name: Grant execute permission for Gradle wrapper
-        run: chmod 0755 gradlew
-
-      - name: Cache ktlint
-        id: cache-ktlint
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/.local/bin/ktlint
-          key: ktlint-1.2.1
-
-      - name: Install ktlint
-        if: steps.cache-ktlint.outputs.cache-hit != 'true'
+      - name: Resolve tagged commit
+        id: commit
         run: |
-          mkdir -p ~/.local/bin
-          curl -fsSL \
-            https://github.com/pinterest/ktlint/releases/download/1.2.1/ktlint \
-            -o ~/.local/bin/ktlint
-          chmod 0755 ~/.local/bin/ktlint
+          set -eu
+          COMMIT=$(git rev-parse HEAD)
+          echo "sha=$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "Releasing commit $COMMIT"
 
-      - name: Verify ktlint checksum
+      - name: Require a successful Android CI run for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ steps.commit.outputs.sha }}
+          REPO: ${{ github.repository }}
         run: |
-          echo "2e28cf46c27d38076bf63beeba0bdef6a845688d6c5dccd26505ce876094eb92  $HOME/.local/bin/ktlint" |
-            sha256sum -c -
+          set -eu
+          # Android CI's slowest job (instrumented tests) has a 20-minute
+          # timeout of its own, so allow a full matrix to finish before
+          # declaring the tag unverifiable. The enclosing job timeout is
+          # deliberately larger than this deadline so the explicit error
+          # message below is what surfaces, not an opaque job cancellation.
+          WORKFLOW=android.yml
+          DEADLINE=$(( $(date +%s) + 1200 ))
 
-      - name: Add local bin to PATH
-        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          while :; do
+            RUNS=$(
+              gh api \
+                "repos/$REPO/actions/workflows/$WORKFLOW/runs?head_sha=$COMMIT&per_page=100" \
+                --jq '[.workflow_runs[]
+                       | select(.event == "push" or .event == "workflow_dispatch")
+                       | {status, conclusion, url: .html_url}]'
+            )
 
-      - name: Run validation
-        run: |
-          ./gradlew ktlintCheck
-          ./gradlew checkColorLiterals
-          ./gradlew lintHermesDebug lintIrisDebug
-          ./gradlew test
-          ./gradlew assembleHermesDebug assembleIrisDebug
+            SUCCEEDED=$(
+              printf '%s' "$RUNS" |
+                jq -r '[.[]
+                        | select(.status == "completed" and .conclusion == "success")]
+                       | .[0].url // ""'
+            )
+            if [ -n "$SUCCEEDED" ]; then
+              echo "Verified Android CI for $COMMIT: $SUCCEEDED"
+              exit 0
+            fi
+
+            TOTAL=$(printf '%s' "$RUNS" | jq 'length')
+            PENDING=$(
+              printf '%s' "$RUNS" |
+                jq '[.[] | select(.status != "completed")] | length'
+            )
+
+            if [ "$TOTAL" -gt 0 ] && [ "$PENDING" -eq 0 ]; then
+              echo "Android CI did not succeed for $COMMIT:" >&2
+              printf '%s' "$RUNS" |
+                jq -r '.[] | "  \(.conclusion // "unknown")  \(.url)"' >&2
+              exit 1
+            fi
+
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              echo "Timed out waiting for an Android CI run on $COMMIT" >&2
+              echo "Runs found: $TOTAL (still running: $PENDING)" >&2
+              echo "A release tag must point at a commit that ran Android CI" >&2
+              exit 1
+            fi
+
+            echo "Waiting for Android CI on $COMMIT (runs=$TOTAL running=$PENDING) …"
+            sleep 20
+          done
 
   build-release:
     name: Build signed Hermes Mobile APK
-    needs: ci
+    needs: verify-ci
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

@@ -21,9 +21,13 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
 - **Auth:** encrypted bearer tokens for direct mode; endpoint-scoped encrypted
   cookies plus short-lived WebSocket tickets for gated mode
 - **Upstream base:** selectively reconciled through `Hy4ri/hermes-mobile`
-  `v1.18.4`; retain downstream HTTPS enforcement, profile-scoped credentials,
+  `v1.19.0`; retain downstream HTTPS enforcement, profile-scoped credentials,
   single-use ticket handling, complete-history pagination, signing, and release
-  automation
+  automation. Deliberately deferred from that range: the gateway-file/media
+  stack (Files tab, `MEDIA:` attachments, image viewer, GIF rendering), the
+  Keys screen redesign, the upstream revert of auth-expiry sign-in routing, and
+  the reasoning-across-streaming rework — each collides with downstream auth,
+  clipboard, or reasoning-persistence behavior and needs manual review
 
 ## Build & Test Commands
 
@@ -72,6 +76,19 @@ Triggers on `git push tag v*` or manual dispatch for an existing tag. The releas
 APK uses R8 minification and resource shrinking. The build job has read-only
 repository access; a separate publish job receives `contents: write` and creates
 a draft release from the verified artifacts.
+
+**The `CI Checks` job does NOT re-run the validation matrix.** It queries the
+Actions API for an `android.yml` run on the exact tagged commit and requires a
+recorded `success` conclusion from a `push` or `workflow_dispatch` event
+(`pull_request` runs validate a merge ref, not the commit itself). It waits up
+to 20 minutes for an in-flight run.
+
+This means **a tag can only be released from a commit that already ran Android
+CI on `main`.** Tagging a commit that never landed on the default branch fails
+the gate by design. Do not "fix" that by re-adding Gradle steps here — the
+duplicate matrix cost ~7 minutes per release and gave every release a second,
+independent chance to fail on runner flake (it did, on v0.4.4). If a release
+must proceed without a CI run, dispatch `android.yml` on the tag first.
 
 ## Code Style
 

@@ -82,15 +82,10 @@ import coil.compose.AsyncImage
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.Attachment
 import com.m57.hermescontrol.data.remote.OkHttpProvider
-import com.m57.hermescontrol.theme.AssistantBubble
-import com.m57.hermescontrol.theme.AssistantBubbleLight
 import com.m57.hermescontrol.theme.DarkOnSurface
 import com.m57.hermescontrol.theme.HermesStatusColors
 import com.m57.hermescontrol.theme.LightOnSurface
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
-import com.m57.hermescontrol.theme.SystemMessageColor
-import com.m57.hermescontrol.theme.ToolChipColor
-import com.m57.hermescontrol.theme.ToolChipColorLight
 import com.m57.hermescontrol.theme.onColorFor
 import com.m57.hermescontrol.ui.chat.components.ReasoningCard
 import kotlinx.coroutines.delay
@@ -327,21 +322,8 @@ private fun AssistantBubble(
     isCurrentMatch: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val bubbleColor = if (isDarkTheme) AssistantBubble else AssistantBubbleLight
-    val textColor =
-        if (bubbleColor.luminance() > 0.5f) {
-            if (MaterialTheme.colorScheme.onSurface.luminance() < 0.5f) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                LightOnSurface
-            }
-        } else {
-            if (MaterialTheme.colorScheme.onSurface.luminance() > 0.5f) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                DarkOnSurface
-            }
-        }
+    val bubbleColor = MaterialTheme.colorScheme.surfaceVariant
+    val textColor = MaterialTheme.colorScheme.onSurfaceVariant
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     var showCopyButton by remember { mutableStateOf(false) }
@@ -475,7 +457,7 @@ private fun SystemBubble(
             style =
                 MaterialTheme.typography.bodySmall.copy(
                     fontStyle = FontStyle.Italic,
-                    color = SystemMessageColor,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
         )
 
@@ -1892,7 +1874,7 @@ private fun ToolBubble(
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showRawJson by remember { mutableStateOf(false) }
-    val chipColor = if (isDarkTheme) ToolChipColor else ToolChipColorLight
+    val chipColor = MaterialTheme.colorScheme.surfaceContainerHigh
     val contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     val statusColors = LocalHermesStatusColors.current
 
