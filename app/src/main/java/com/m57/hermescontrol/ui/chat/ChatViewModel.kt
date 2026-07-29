@@ -141,6 +141,8 @@ data class ChatUiState(
      * session has not yet reported a live `context_max` over the WebSocket.
      */
     val modelContextLength: Long? = null,
+    /** Provider-qualified model identity associated with [modelContextLength]. */
+    val modelContextLengthModel: String? = null,
     /** Whether the tappable context breakdown sheet is open. */
     val showContextDetail: Boolean = false,
 ) {
@@ -406,6 +408,18 @@ class ChatViewModel(
             pending.branchSessionId != runtimeSessionId
         ) {
             pendingRequests.remove(rpcId)
+            return
+        }
+
+        val transitionSessionId =
+            when (event) {
+                is WsEvent.MessageStart -> event.sessionId
+                is WsEvent.MessageComplete -> event.sessionId
+                is WsEvent.MessageDone -> event.sessionId
+                is WsEvent.ToolStart -> event.sessionId
+                else -> null
+            }
+        if (transitionSessionId != null && !isCurrentSession(transitionSessionId)) {
             return
         }
 
@@ -1309,11 +1323,15 @@ class ChatViewModel(
     private var sessionCreateCounter = 0L
 
     fun createNewSession(setLoading: Boolean = true) {
+        runtimeSessionId = null
+        ActiveSessionHolder.set(null)
         _uiState.update {
             it.copy(
                 isLoading = setLoading,
+                currentSessionId = null,
                 messages = emptyList(),
                 chatTitle = "Hermes",
+                currentSessionModel = null,
                 contextUsage = null,
                 showContextDetail = false,
             )
@@ -1374,7 +1392,12 @@ class ChatViewModel(
                         result.data.effectiveContextLength
                             ?: result.data.autoContextLength
                     if (length != null && length > 0L) {
-                        _uiState.update { it.copy(modelContextLength = length) }
+                        _uiState.update {
+                            it.copy(
+                                modelContextLength = length,
+                                modelContextLengthModel = result.data.qualifiedModel,
+                            )
+                        }
                     }
                 }
 

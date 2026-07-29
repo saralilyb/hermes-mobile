@@ -2,6 +2,8 @@
 
 package com.m57.hermescontrol.ui.chat
 
+import java.util.Locale
+
 /**
  * Live context-window occupancy plus the session's cumulative token totals.
  *
@@ -92,4 +94,24 @@ internal fun parseContextUsage(
         compressions = usage["compressions"].asUsageLong() ?: previous?.compressions ?: 0L,
         model = (usage["model"] as? String)?.trim()?.takeIf { it.isNotEmpty() } ?: previous?.model.orEmpty(),
     )
+}
+
+/**
+ * Return a REST context-window fallback only when it belongs to the active
+ * session model. Exact qualified identifiers are preferred; a bare identifier
+ * may match the suffix of a provider-qualified identifier.
+ */
+internal fun matchingModelContextLength(
+    activeModel: String?,
+    fallbackModel: String?,
+    fallbackLength: Long?,
+): Long? {
+    val length = fallbackLength?.takeIf { it > 0L } ?: return null
+    val active = activeModel?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() } ?: return null
+    val fallback = fallbackModel?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() } ?: return null
+    val matches =
+        active == fallback ||
+            ('/' !in active && fallback.endsWith("/$active")) ||
+            ('/' !in fallback && active.endsWith("/$fallback"))
+    return length.takeIf { matches }
 }

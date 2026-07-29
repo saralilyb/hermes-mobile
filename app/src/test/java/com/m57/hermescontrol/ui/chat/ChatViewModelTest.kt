@@ -17,6 +17,7 @@ import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.GatewayFile
 import com.m57.hermescontrol.data.remote.GatewayFileClient
 import com.m57.hermescontrol.data.remote.GatewayFileResult
+import com.m57.hermescontrol.data.session.ActiveSessionHolder
 import com.m57.hermescontrol.data.ws.ConnectionStatus
 import com.m57.hermescontrol.data.ws.HermesWsClient
 import com.m57.hermescontrol.data.ws.JsonRpcError
@@ -60,6 +61,7 @@ class ChatViewModelTest {
     private val mockConnectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     private lateinit var app: Application
     private lateinit var fakeRepo: FakeChatPersistenceRepository
+    private lateinit var mockApi: com.m57.hermescontrol.data.remote.HermesApiService
 
     /** Counter used to generate unique WS request IDs. */
     private var reqCount = 0
@@ -129,8 +131,16 @@ class ChatViewModelTest {
             CompletableDeferred<Any?>(mapOf("ok" to true))
 
         // Stub model-options so preloadModelOptions() (fired at GatewayReady) is safe.
-        val mockApi = mockk<com.m57.hermescontrol.data.remote.HermesApiService>(relaxed = true)
+        mockApi = mockk(relaxed = true)
         every { ApiClient.hermesApi } returns mockApi
+        coEvery { mockApi.getModelInfo() } returns
+            retrofit2.Response.success(
+                com.m57.hermescontrol.data.model.ModelInfoResponse(
+                    model = "gpt-5.6-sol",
+                    provider = "openai-codex",
+                    effectiveContextLength = 272_000L,
+                ),
+            )
         coEvery {
             mockApi.getModelOptions(any(), any())
         } returns
@@ -451,6 +461,59 @@ class ChatViewModelTest {
                 "openai-codex/gpt-5.6-sol",
                 viewModel.uiState.value.currentSessionModel,
             )
+        }
+
+    @Test
+    fun testModelContextLength_tracksQualifiedResponseModel() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+
+            assertEquals(272_000L, viewModel.uiState.value.modelContextLength)
+            assertEquals(
+                "openai-codex/gpt-5.6-sol",
+                viewModel.uiState.value.modelContextLengthModel,
+            )
+        }
+
+    @Test
+    fun testCreateNewSession_clearsPreviousSessionModelImmediately() =
+        runTest {
+            val (viewModel, sessionId) = createViewModelWithSession()
+            mockEventsFlow.emit(
+                WsEvent.SessionInfo(
+                    data = mapOf("provider" to "fireworks", "model" to "glm-5p2"),
+                    sessionId = sessionId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals("fireworks/glm-5p2", viewModel.uiState.value.currentSessionModel)
+
+            viewModel.createNewSession()
+            advanceUntilIdle()
+
+            assertNull(viewModel.uiState.value.currentSessionId)
+            assertNull(viewModel.uiState.value.currentSessionModel)
+            assertNull(ActiveSessionHolder.activeSessionId.value)
+
+            mockEventsFlow.emit(
+                WsEvent.SessionInfo(
+                    data =
+                        mapOf(
+                            "provider" to "fireworks",
+                            "model" to "stale-model",
+                            "usage" to
+                                mapOf(
+                                    "context_used" to 99_000,
+                                    "context_max" to 272_000,
+                                ),
+                        ),
+                    sessionId = sessionId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertNull(viewModel.uiState.value.currentSessionModel)
+            assertNull(viewModel.uiState.value.contextUsage)
         }
 
     @Test
@@ -942,6 +1005,35 @@ class ChatViewModelTest {
                 viewModel.uiState.value.messages[1]
                     .isStreaming,
             )
+        }
+
+    @Test
+    fun testStaleMessageComplete_doesNotResetSelectedSessionStream() =
+        runTest {
+            val (viewModel, previousSessionId) = createViewModelWithSession()
+            val selectedSessionId = "selected-session"
+            viewModel.switchSession(selectedSessionId)
+            advanceUntilIdle()
+
+            mockEventsFlow.emit(WsEvent.MessageStart(selectedSessionId))
+            mockEventsFlow.emit(WsEvent.MessageToken("Hello", selectedSessionId))
+            advanceUntilIdle()
+            assertEquals("Hello", viewModel.streamingState.value.streamingMessage?.content)
+
+            mockEventsFlow.emit(
+                WsEvent.MessageComplete(
+                    text = "stale",
+                    sessionId = previousSessionId,
+                ),
+            )
+            mockEventsFlow.emit(WsEvent.MessageToken(" world", selectedSessionId))
+            advanceUntilIdle()
+
+            assertEquals(
+                "Hello world",
+                viewModel.streamingState.value.streamingMessage?.content,
+            )
+            assertFalse(viewModel.uiState.value.messages.any { it.content == "stale" })
         }
 
     @Test
