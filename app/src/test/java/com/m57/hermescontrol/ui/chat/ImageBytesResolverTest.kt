@@ -1,7 +1,12 @@
 package com.m57.hermescontrol.ui.chat
 
 import android.content.Context
+import com.m57.hermescontrol.data.remote.GatewayFile
+import com.m57.hermescontrol.data.remote.GatewayFileClient
+import com.m57.hermescontrol.data.remote.GatewayFileResult
+import io.mockk.coEvery
 import io.mockk.mockk
+import io.mockk.mockkObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -86,5 +91,32 @@ class ImageBytesResolverTest {
         runTest {
             val result = ImageBytesResolver.resolve(context, "file:///sdcard/x.png", "image/*")
             assertTrue(result is ImageBytesResolver.Result.Error)
+        }
+
+    @Test
+    fun `gateway path resolves through authenticated client`() =
+        runTest {
+            mockkObject(GatewayFileClient)
+            val bytes = "gateway-image".toByteArray()
+            coEvery {
+                GatewayFileClient.fetch("/tmp/image.png")
+            } returns
+                GatewayFileResult.Success(
+                    GatewayFile("image.png", "image/png", bytes),
+                )
+
+            val result =
+                ImageBytesResolver.resolve(
+                    context = context,
+                    model = "/tmp/image.png",
+                    fallbackMime = "image/*",
+                    gatewayPath = "/tmp/image.png",
+                )
+
+            assertTrue(result is ImageBytesResolver.Result.Bytes)
+            result as ImageBytesResolver.Result.Bytes
+            assertArrayEquals(bytes, result.bytes)
+            assertEquals("image/png", result.mimeType)
+            assertEquals("png", result.extension)
         }
 }

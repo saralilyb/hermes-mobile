@@ -53,4 +53,12 @@ class HostMediaExtractorTest {
         assertEquals(1, items.size)
         assertEquals("/tmp/a b.png", items[0].path)
     }
+
+    @Test
+    fun `preserves tilde path for gateway resolution`() {
+        val items = HostMediaExtractor.extract("MEDIA:~/images/a.png")
+
+        assertEquals(1, items.size)
+        assertEquals("~/images/a.png", items.single().path)
+    }
 }

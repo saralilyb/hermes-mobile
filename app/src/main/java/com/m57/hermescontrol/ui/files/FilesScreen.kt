@@ -46,6 +46,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,12 +59,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.ManagedFileEntry
+import com.m57.hermescontrol.data.remote.readBytesLimited
 import com.m57.hermescontrol.ui.common.EmptyState
 import com.m57.hermescontrol.ui.common.ErrorState
 import com.m57.hermescontrol.ui.common.HermesScaffold
 import com.m57.hermescontrol.ui.common.NavIcon
 import com.m57.hermescontrol.ui.common.SkeletonListState
 import com.m57.hermescontrol.ui.common.ToastEffect
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -80,6 +87,7 @@ fun FilesScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val uploadLauncher =
         rememberLauncherForActivityResult(
@@ -90,12 +98,24 @@ fun FilesScreen(
                     uri.lastPathSegment?.substringAfterLast("/")?.takeIf { it.isNotBlank() }
                         ?: "upload.bin"
                 val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { stream ->
-                        viewModel.uploadFile(fileName, stream.readBytes(), mimeType)
+                scope.launch {
+                    val bytes =
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                context.contentResolver.openInputStream(uri)?.use { stream ->
+                                    stream.readBytesLimited()
+                                }
+                            }
+                        }.getOrElse {
+                            if (it is CancellationException) throw it
+                            viewModel.showToast("Could not read selected file: ${it.message}")
+                            return@launch
+                        }
+                    if (bytes == null) {
+                        viewModel.showToast("Selected file is unavailable or exceeds the 25 MB limit")
+                        return@launch
                     }
-                }.onFailure {
-                    viewModel.showToast("Could not read selected file: ${it.message}")
+                    viewModel.uploadFile(fileName, bytes, mimeType)
                 }
             },
         )
@@ -246,7 +266,7 @@ fun FilesScreen(
                                     if (entry.isDirectory) {
                                         viewModel.navigateTo(entry)
                                     } else {
-                                        openManagedFile(entry, viewModel, context)
+                                        openManagedFile(entry, viewModel, context, scope)
                                     }
                                 },
                                 onDelete = { viewModel.requestDelete(entry) },
@@ -469,18 +489,15 @@ private fun fileSubtitle(entry: ManagedFileEntry): String {
  * Download a managed file **in-app** through the authenticated client and open
  * it on the device via a `FileProvider`-shared URI + `ACTION_VIEW`.
  *
- * This replaces the earlier approach of handing a `?token=`-authenticated URL
- * to the system browser: `/api/files/download` only accepts the *ephemeral
- * in-process* session token as `?token=`, not the mobile's Bearer token, so a
- * browser-opened link returned a JSON error body instead of the file. Fetching
- * the bytes through [FilesViewModel.downloadFile] reuses the normal
- * Bearer/session-cookie auth (same path as the rest of the app) and works on a
- * remote phone because the file is materialized locally before viewing.
+ * Fetching through [FilesViewModel.downloadFile] reuses the normal
+ * Bearer/session-cookie client. The file is materialized locally before
+ * viewing, so credentials never leave the app in a browser URL.
  */
 private fun openManagedFile(
     entry: ManagedFileEntry,
     viewModel: FilesViewModel,
     context: android.content.Context,
+    scope: CoroutineScope,
 ) {
     viewModel.downloadFile(entry) { result ->
         when (result) {
@@ -491,27 +508,35 @@ private fun openManagedFile(
                     viewModel.showToast("Could not decode file")
                     return@downloadFile
                 }
-                runCatching {
-                    val safeName =
-                        entry.name
-                            .replace(Regex("[^A-Za-z0-9._-]"), "_")
-                            .takeIf { it.isNotBlank() } ?: "file"
-                    val file = File(context.cacheDir, "hermes_files_$safeName")
-                    file.writeBytes(bytes)
-                    val uri =
-                        FileProvider.getUriForFile(
-                            context,
-                            "${context.packageName}.fileprovider",
-                            file,
-                        )
+                scope.launch {
                     val intent =
-                        Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, data.mimeType)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                val safeName =
+                                    entry.name
+                                        .replace(Regex("[^A-Za-z0-9._-]"), "_")
+                                        .takeIf { it.isNotBlank() } ?: "file"
+                                val file = File(context.cacheDir, "hermes_files_$safeName")
+                                file.writeBytes(bytes)
+                                val uri =
+                                    FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        file,
+                                    )
+                                Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, data.mimeType)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                            }
+                        }.getOrElse {
+                            if (it is CancellationException) throw it
+                            viewModel.showToast("Could not open file: ${it.message}")
+                            return@launch
                         }
-                    context.startActivity(intent)
-                }.onFailure {
-                    viewModel.showToast("Could not open file: ${it.message}")
+                    runCatching { context.startActivity(intent) }.onFailure {
+                        viewModel.showToast("Could not open file: ${it.message}")
+                    }
                 }
             }
 

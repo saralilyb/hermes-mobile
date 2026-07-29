@@ -25,6 +25,7 @@ import com.m57.hermescontrol.data.remote.GatewayFileClient
 import com.m57.hermescontrol.data.remote.GatewayFileResult
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.OkHttpProvider
+import com.m57.hermescontrol.data.remote.readBytesLimited
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.data.session.ActiveSessionHolder
 import com.m57.hermescontrol.data.ws.CommandBlocklist
@@ -2092,11 +2093,35 @@ class ChatViewModel(
                         is String -> timestamp.toDoubleOrNull()
                         else -> null
                     }
+                val mediaItems =
+                    if (role == MessageRole.ASSISTANT) {
+                        HostMediaExtractor.extract(content)
+                    } else {
+                        emptyList()
+                    }
+                val attachments =
+                    mediaItems
+                        .map { item ->
+                            Attachment(
+                                uri = item.path,
+                                name = mediaNameFromPath(item.path),
+                                mimeType = mediaMimeForPath(item.path),
+                                size = 0,
+                                gatewayPath = item.path,
+                                source = AttachmentSource.GATEWAY,
+                            )
+                        }.takeIf { it.isNotEmpty() }
                 ChatMessage(
                     id = "resume-$sessionId-$index",
                     role = role,
-                    content = content,
+                    content =
+                        if (mediaItems.isEmpty()) {
+                            content
+                        } else {
+                            HostMediaExtractor.strip(content)
+                        },
                     reasoningText = reasoning,
+                    attachments = attachments,
                     timestamp =
                         timestampSeconds
                             ?.times(1000)
@@ -2137,32 +2162,31 @@ class ChatViewModel(
 
     // ── Issue #724: attach host-path MEDIA: files as real attachments ────
     //
-    // The gateway's WebSocket stream delivers the raw `MEDIA:<path>` directive
-    // the desktop app turns into an authenticated `/api/files/download?...`
-    // URL. We parse every directive, build the download URL via
-    // [GatewayFileClient], classify it (image / audio / video / file) using
-    // [mediaKindForPath], and attach it to the message. Images render inline
-    // (Coil loads the URL); every other type becomes a tappable, fetchable
-    // attachment. The directive text is stripped from the message body. Works
-    // on a remote phone (real HTTP). Mobile-only; backend untouched. Pure
-    // parsing lives in [HostMediaExtractor].
+    // The gateway's WebSocket stream delivers the raw `MEDIA:<path>` directive.
+    // We retain the path as opaque gateway state and fetch through
+    // [GatewayFileClient], which uses the normal authenticated Retrofit client.
+    // The directive text is stripped from the message body. Pure parsing lives
+    // in [HostMediaExtractor].
 
     /**
      * ViewModel-side handler for [ReducerEffect.AttachHostMedia]: find the local
      * message by id, convert any `MEDIA:<path>` directives into [Attachment]s
-     * (via the gateway download URL) and strip them from the text. Role,
+     * (via the authenticated gateway client) and strip them from the text. Role,
      * reasoning, timestamp and existing attachments are preserved; new gateway
      * attachments are appended. Idempotent — skips if gateway attachments for
      * the same paths already exist.
      */
-    private fun attachHostMedia(
+    private suspend fun attachHostMedia(
         sessionId: String,
         messageId: String,
     ) {
         val current = _uiState.value.messages.find { it.id == messageId } ?: return
         val content = current.content
         val items = HostMediaExtractor.extract(content)
-        if (items.isEmpty()) return
+        if (items.isEmpty()) {
+            repo.persistMessage(current, sessionId)
+            return
+        }
 
         val existingPaths =
             current.attachments
@@ -2182,26 +2206,27 @@ class ChatViewModel(
                     source = AttachmentSource.GATEWAY,
                 )
             }
-        if (newAttachments.isEmpty()) return
+        if (newAttachments.isEmpty()) {
+            repo.persistMessage(current, sessionId)
+            return
+        }
 
-        val stripped = HostMediaExtractor.strip(content)
+        val updatedMessage =
+            current.copy(
+                content = HostMediaExtractor.strip(content),
+                attachments =
+                    (current.attachments.orEmpty() + newAttachments)
+                        .distinctBy { it.gatewayPath ?: it.uri },
+            )
         _uiState.update { state ->
             state.copy(
                 messages =
                     state.messages.map { msg ->
-                        if (msg.id == messageId) {
-                            msg.copy(
-                                content = stripped,
-                                attachments =
-                                    (msg.attachments.orEmpty() + newAttachments)
-                                        .distinctBy { it.gatewayPath ?: it.uri },
-                            )
-                        } else {
-                            msg
-                        }
+                        if (msg.id == messageId) updatedMessage else msg
                     },
             )
         }
+        repo.persistMessage(updatedMessage, sessionId)
     }
 
     /**
@@ -2226,10 +2251,32 @@ class ChatViewModel(
             // Best-effort direct open of the picked content URI.
             runCatching { openWithView(ctx, android.net.Uri.parse(attachment.uri), attachment.mimeType) }
                 .onSuccess { return }
-                .onFailure { /* fall through to cache-copy below */ }
+                .onFailure { /* fall through to local cache-copy below */ }
+            viewModelScope.launch(Dispatchers.IO) {
+                val localFile =
+                    runCatching {
+                        val uri = android.net.Uri.parse(attachment.uri)
+                        val bytes =
+                            ctx.contentResolver.openInputStream(uri)?.use { it.readBytesLimited() }
+                                ?: error("Could not read local attachment")
+                        GatewayFile(
+                            name = attachment.name,
+                            mimeType = attachment.mimeType,
+                            bytes = bytes,
+                        )
+                    }.getOrElse {
+                        showOpenError("Could not open ${attachment.name}: ${it.message}")
+                        return@launch
+                    }
+                openBytes(ctx, localFile)
+            }
+            return
         }
-        // GATEWAY, or LOCAL direct-open failed → fetch/copy then open.
-        val path = attachment.gatewayPath ?: attachment.name
+        val path =
+            attachment.gatewayPath ?: run {
+                showOpenError("Missing gateway path for ${attachment.name}")
+                return
+            }
         viewModelScope.launch(Dispatchers.IO) {
             when (val result = GatewayFileClient.fetch(path)) {
                 is GatewayFileResult.Success -> {

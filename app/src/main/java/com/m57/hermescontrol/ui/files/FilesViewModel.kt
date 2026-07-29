@@ -1,6 +1,5 @@
 package com.m57.hermescontrol.ui.files
 
-import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.ManagedDirectoryCreate
@@ -8,6 +7,9 @@ import com.m57.hermescontrol.data.model.ManagedFileActionResponse
 import com.m57.hermescontrol.data.model.ManagedFileDelete
 import com.m57.hermescontrol.data.model.ManagedFileEntry
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.GatewayFileClient
+import com.m57.hermescontrol.data.remote.GatewayFileResult
+import com.m57.hermescontrol.data.remote.NetworkError
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
@@ -233,11 +235,7 @@ class FilesViewModel :
         }
     }
 
-    // ── Read / open (in-app download + base64 decode) ───────────────────────
-    // The backend returns file bytes as a base64 `data_url` (GET /api/files/read).
-    // We decode in-app and hand the raw bytes to the Screen, which writes them
-    // to cacheDir and opens via FileProvider — reusing the normal Bearer/session
-    // auth instead of the browser-only `?token=` escape hatch.
+    // ── Read / open (authenticated bounded stream) ──────────────────────────
     fun downloadFile(
         entry: ManagedFileEntry,
         onResult: (NetworkResult<DownloadedFile>) -> Unit,
@@ -245,27 +243,34 @@ class FilesViewModel :
         _uiState.update { it.copy(openingPath = entry.path) }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
-                    safeApiCall { ApiClient.hermesApi.readManagedFile(entry.path) }
-                        .map { read ->
-                            val bytes = decodeDataUrl(read.dataUrl)
+                when (val download = GatewayFileClient.fetch(entry.path)) {
+                    is GatewayFileResult.Success ->
+                        NetworkResult.Success(
                             DownloadedFile(
                                 name = entry.name,
-                                mimeType = read.mimeType.ifBlank { "application/octet-stream" },
-                                bytes = bytes,
-                            )
-                        }
+                                mimeType = download.file.mimeType,
+                                bytes = download.file.bytes,
+                            ),
+                        )
+
+                    GatewayFileResult.Unauthorized -> NetworkResult.Failure(NetworkError.AuthExpired())
+                    GatewayFileResult.Forbidden ->
+                        NetworkResult.Failure(NetworkError.Http(403, "File access is forbidden"))
+                    GatewayFileResult.NotFound ->
+                        NetworkResult.Failure(NetworkError.Http(404, "File was not found"))
+                    GatewayFileResult.TooLarge ->
+                        NetworkResult.Failure(NetworkError.Http(413, "File is too large to open on this device"))
+                    is GatewayFileResult.Failure ->
+                        NetworkResult.Failure(
+                            NetworkError.Unknown(
+                                download.throwable.message ?: "File download failed",
+                                download.throwable,
+                            ),
+                        )
                 }
             _uiState.update { it.copy(openingPath = null) }
             onResult(result)
         }
-    }
-
-    private fun decodeDataUrl(dataUrl: String): ByteArray? {
-        val comma = dataUrl.indexOf(',')
-        if (comma < 0) return null
-        val payload = dataUrl.substring(comma + 1)
-        return runCatching { Base64.decode(payload, Base64.DEFAULT) }.getOrNull()
     }
 
     private fun handleActionResult(

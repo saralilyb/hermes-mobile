@@ -1,8 +1,11 @@
 package com.m57.hermescontrol.data.local
 
+import com.m57.hermescontrol.data.model.Attachment
+import com.m57.hermescontrol.data.remote.OkHttpProvider
 import com.m57.hermescontrol.ui.chat.ChatMessage
 import com.m57.hermescontrol.ui.chat.MessageRole
 import com.m57.hermescontrol.ui.chat.ToolStatus
+import kotlinx.serialization.encodeToString
 
 /**
  * Converts between the Room [ChatMessageEntity] and the UI [ChatMessage].
@@ -25,6 +28,7 @@ fun ChatMessageEntity.toUiModel(): ChatMessage =
         reasoningText = reasoningText,
         timestamp = timestamp,
         isStreaming = isStreaming,
+        attachments = decodeAttachments(attachmentsJson),
         toolName = toolName,
         toolStatus =
             when (toolStatus) {
@@ -46,4 +50,10 @@ fun ChatMessage.toEntity(sessionId: String): ChatMessageEntity =
         toolName = toolName,
         toolStatus = toolStatus?.name,
         isStreaming = isStreaming,
+        attachmentsJson = OkHttpProvider.json.encodeToString(attachments.orEmpty()),
     )
+
+private fun decodeAttachments(value: String): List<Attachment> =
+    runCatching {
+        OkHttpProvider.json.decodeFromString<List<Attachment>>(value)
+    }.getOrDefault(emptyList())

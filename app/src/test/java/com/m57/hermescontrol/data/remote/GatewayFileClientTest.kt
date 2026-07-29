@@ -1,58 +1,100 @@
 package com.m57.hermescontrol.data.remote
 
+import com.m57.hermescontrol.data.local.AuthSessionState
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import kotlinx.coroutines.test.runTest
+import okhttp3.Headers
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import retrofit2.Response
+import retrofit2.http.GET
+import retrofit2.http.Query
+import java.io.ByteArrayInputStream
 
 class GatewayFileClientTest {
-    private val base = "https://gw.example.com:9119"
-    private val tok = "s e/cret"
-
     @Test
-    fun `buildDownloadUrl encodes path and token`() {
-        val url = GatewayFileClient.buildDownloadUrl(base, tok, "/tmp/foo.png")!!
-        assertEquals(
-            "$base/api/files/download?path=%2Ftmp%2Ffoo.png&token=${java.net.URLEncoder.encode(
-                tok,
-                "UTF-8",
-            ).replace("+", "%20")}",
-            url,
-        )
-        assertTrue(url.contains("path=%2Ftmp%2Ffoo.png"))
-        assertTrue(url.contains("token="))
+    fun `download endpoint exposes only the path query parameter`() {
+        val method =
+            HermesApiService::class.java.declaredMethods.single {
+                it.name == "downloadManagedFile"
+            }
+        val get = checkNotNull(method.getAnnotation(GET::class.java))
+        val queries =
+            method.parameterAnnotations
+                .flatMap { it.asIterable() }
+                .filterIsInstance<Query>()
+
+        assertEquals("api/files/download", get.value)
+        assertEquals(listOf("path"), queries.map { it.value })
     }
 
     @Test
-    fun `buildDownloadUrl rejects blank base`() {
-        assertNull(GatewayFileClient.buildDownloadUrl("", tok, "/tmp/x.png"))
-    }
+    fun `fetch streams through authenticated service without URL credentials`() =
+        runTest {
+            val service = mockk<HermesApiService>()
+            val bytes = "image bytes".toByteArray()
+            val headers =
+                Headers.headersOf(
+                    "Content-Disposition",
+                    "attachment; filename=\"photo.png\"",
+                    "Content-Type",
+                    "image/png; charset=binary",
+                )
+            coEvery {
+                service.downloadManagedFile("/tmp/a b.png")
+            } returns Response.success(bytes.toResponseBody("image/png".toMediaType()), headers)
+
+            val result = GatewayFileClient.fetch("\"/tmp/a b.png\"", service)
+
+            assertTrue(result is GatewayFileResult.Success)
+            result as GatewayFileResult.Success
+            assertEquals("photo.png", result.file.name)
+            assertEquals("image/png", result.file.mimeType)
+            assertArrayEquals(bytes, result.file.bytes)
+            coVerify(exactly = 1) { service.downloadManagedFile("/tmp/a b.png") }
+        }
 
     @Test
-    fun `buildDownloadUrl permits blank token for cookie auth`() {
-        val url = GatewayFileClient.buildDownloadUrl(base, "", "/tmp/x.png")!!
-        assertEquals("$base/api/files/download?path=%2Ftmp%2Fx.png", url)
-        assertFalse(url.contains("token="))
-    }
+    fun `fetch maps unauthorized response`() =
+        runTest {
+            AuthSessionState.resetForTest()
+            try {
+                val service = mockk<HermesApiService>()
+                coEvery {
+                    service.downloadManagedFile("/tmp/x.png")
+                } returns Response.error(401, ByteArray(0).toResponseBody())
+
+                assertEquals(
+                    GatewayFileResult.Unauthorized,
+                    GatewayFileClient.fetch("/tmp/x.png", service),
+                )
+                assertTrue(AuthSessionState.signInRequired.value)
+            } finally {
+                AuthSessionState.resetForTest()
+            }
+        }
 
     @Test
-    fun `buildDownloadUrl rejects relative paths`() {
-        assertNull(GatewayFileClient.buildDownloadUrl(base, tok, "relative/path.png"))
-        assertNull(GatewayFileClient.buildDownloadUrl(base, tok, "MEDIA:relative.png"))
-    }
+    fun `fetch rejects relative paths without making a request`() =
+        runTest {
+            val service = mockk<HermesApiService>(relaxed = true)
+
+            val result = GatewayFileClient.fetch("relative/path.png", service)
+
+            assertTrue(result is GatewayFileResult.Failure)
+            coVerify(exactly = 0) { service.downloadManagedFile(any()) }
+        }
 
     @Test
-    fun `buildDownloadUrl handles quoted and spaced paths`() {
-        val url = GatewayFileClient.buildDownloadUrl(base, tok, "\"/tmp/a b.png\"")!!
-        assertTrue(url.contains("path=%2Ftmp%2Fa%20b.png"))
-        assertFalse(url.contains("MEDIA:"))
-    }
-
-    @Test
-    fun `normalizePath expands tilde`() {
-        val home = System.getenv("HOME") ?: "/home/test"
-        assertEquals("$home/foo.png", GatewayFileClient.normalizePath("~/foo.png"))
+    fun `normalizePath preserves gateway tilde path`() {
+        assertEquals("~/foo.png", GatewayFileClient.normalizePath("~/foo.png"))
     }
 
     @Test
@@ -62,8 +104,9 @@ class GatewayFileClientTest {
     }
 
     @Test
-    fun `normalizePath requires absolute path`() {
+    fun `normalizePath requires absolute or tilde path`() {
         assertNull(GatewayFileClient.normalizePath("relative.png"))
+        assertNull(GatewayFileClient.normalizePath("MEDIA:relative.png"))
     }
 
     @Test
@@ -74,6 +117,24 @@ class GatewayFileClientTest {
         assertEquals(GatewayFileResult.Unauthorized, GatewayFileClient.classifyStatus(401))
         assertNull(GatewayFileClient.classifyStatus(200))
         assertNull(GatewayFileClient.classifyStatus(500))
+    }
+
+    @Test
+    fun `bounded response read rejects oversized body`() {
+        assertNull("abcd".toResponseBody().readBytesLimited(maxBytes = 3))
+        assertArrayEquals(
+            "abc".toByteArray(),
+            "abc".toResponseBody().readBytesLimited(maxBytes = 3),
+        )
+    }
+
+    @Test
+    fun `bounded input stream read rejects oversized data`() {
+        assertNull(ByteArrayInputStream(byteArrayOf(1, 2, 3, 4)).readBytesLimited(maxBytes = 3))
+        assertArrayEquals(
+            byteArrayOf(1, 2, 3),
+            ByteArrayInputStream(byteArrayOf(1, 2, 3)).readBytesLimited(maxBytes = 3),
+        )
     }
 
     @Test

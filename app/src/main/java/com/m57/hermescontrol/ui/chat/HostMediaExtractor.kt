@@ -1,13 +1,15 @@
 package com.m57.hermescontrol.ui.chat
 
+import com.m57.hermescontrol.data.remote.GatewayFileClient
+
 /**
  * Issue #724: parse agent-delivered `MEDIA:<path>` directives out of message
  * text so they can be attached (and rendered) as real files.
  *
  * The gateway's WebSocket stream delivers the raw `MEDIA:<path>` directive the
- * desktop app resolves via `mediaExternalUrl` — an authenticated
- * `/api/files/download?path=<enc>&token=<enc>` URL that streams the host file's
- * bytes over HTTP. Mobile turns each directive into an [Attachment] (see
+ * desktop app resolves via `mediaExternalUrl`. Mobile keeps the gateway path
+ * opaque and fetches it through the normal authenticated client, then turns
+ * each directive into an [Attachment] (see
  * [com.m57.hermescontrol.ui.chat.ChatViewModel.attachHostMedia]) so the
  * renderer can show images inline and offer every other file type as a
  * tappable, fetchable attachment — including on a *remote* phone.
@@ -52,26 +54,6 @@ internal object HostMediaExtractor {
             .trim()
     }
 
-    /** Expand ~/ and verify the path is absolute. Null if not an absolute path. */
-    internal fun normalizePath(raw: String): String? {
-        val trimmed =
-            raw
-                .trim()
-                .removeSurrounding("`")
-                .removeSurrounding("\"")
-                .removeSurrounding("'")
-        val expanded =
-            if (trimmed.startsWith("~")) {
-                val home = System.getenv("HOME") ?: return null
-                home + trimmed.removePrefix("~")
-            } else {
-                trimmed
-            }
-        if (!expanded.startsWith("/") &&
-            !Regex("^[A-Za-z]:[/\\\\]").containsMatchIn(expanded)
-        ) {
-            return null
-        }
-        return expanded
-    }
+    /** Validate in the gateway namespace; preserve `~` for server resolution. */
+    internal fun normalizePath(raw: String): String? = GatewayFileClient.normalizePath(raw)
 }

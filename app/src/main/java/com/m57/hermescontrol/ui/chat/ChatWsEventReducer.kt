@@ -246,15 +246,17 @@ object ChatWsEventReducer {
             )
         val effects = mutableListOf<ReducerEffect>()
         val sid = state.currentSessionId
-        if (sid != null) {
+        val hasHostMedia =
+            msg.role == MessageRole.ASSISTANT &&
+                msg.content.contains("MEDIA:")
+        if (sid != null && !hasHostMedia) {
             effects.add(ReducerEffect.PersistMessage(msg, sid))
         }
         effects.add(ReducerEffect.RefreshSessions)
         // Mobile-only media fix (issue #724): the WS stream delivers the raw
-        // `MEDIA:<host-path>` directive. Turn it into real attachments (images
-        // inline, every other file tappable) via the gateway /api/files/download
-        // endpoint — works on a remote phone too.
-        if (msg.role == MessageRole.ASSISTANT && sid != null) {
+        // `MEDIA:<host-path>` directive. Turn it into real attachments through
+        // the authenticated gateway file client.
+        if (hasHostMedia && sid != null) {
             effects.add(ReducerEffect.AttachHostMedia(sid, msg.id))
         }
         return ReducerResult(
@@ -283,13 +285,16 @@ object ChatWsEventReducer {
         val msg = streaming.copy(isStreaming = false, reasoningText = reasoning)
         val effects = mutableListOf<ReducerEffect>()
         val sid = state.currentSessionId
-        if (sid != null) {
+        val hasHostMedia =
+            msg.role == MessageRole.ASSISTANT &&
+                msg.content.lineSequence().any { it.trimStart().startsWith("MEDIA:") }
+        if (sid != null && !hasHostMedia) {
             effects.add(ReducerEffect.PersistMessage(msg, sid))
         }
         // Mobile-only media fix (issue #724): attach any `MEDIA:<path>` file
         // carried in the finalized assistant message as a real attachment. See
         // the ReducerEffect.AttachHostMedia KDoc for the rationale.
-        if (msg.role == MessageRole.ASSISTANT && sid != null) {
+        if (hasHostMedia && sid != null) {
             effects.add(ReducerEffect.AttachHostMedia(sid, msg.id))
         }
         return ReducerResult(

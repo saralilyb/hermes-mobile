@@ -910,4 +910,6 @@
     <string name="image_viewer_save_failed">Could not save image</string>
     <string name="image_viewer_load_failed">Could not load image: %1$s</string>
     <string name="image_viewer_share_failed">Could not share image</string>
+    <string name="gif_action_play">Play GIF</string>
+    <string name="gif_action_pause">Pause GIF</string>
 </resources>

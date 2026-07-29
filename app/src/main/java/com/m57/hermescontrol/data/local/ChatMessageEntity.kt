@@ -28,7 +28,7 @@ data class ChatMessageEntity(
     val role: String,
     @ColumnInfo(name = "content")
     val content: String,
-    @ColumnInfo(name = "reasoning_text")
+    @ColumnInfo(name = "reasoning_text", defaultValue = "")
     val reasoningText: String = "",
     @ColumnInfo(name = "timestamp")
     val timestamp: Long,
@@ -38,4 +38,6 @@ data class ChatMessageEntity(
     val toolStatus: String? = null,
     @ColumnInfo(name = "is_streaming")
     val isStreaming: Boolean = false,
+    @ColumnInfo(name = "attachments_json", defaultValue = "[]")
+    val attachmentsJson: String = "[]",
 )

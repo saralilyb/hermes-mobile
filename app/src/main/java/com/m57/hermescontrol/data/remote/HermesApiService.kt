@@ -120,6 +120,7 @@ import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 interface HermesApiService {
     @GET("api/skills/content")
@@ -783,7 +784,7 @@ interface HermesApiService {
     // ── Managed Files ──────────────────────────────────────────────────
     // Backed by hermes_cli/web_server.py /api/files* endpoints. The mobile app
     // talks to the dashboard (9119) and authenticates with the standard
-    // Bearer/session-cookie middleware, so no ?token= query param is needed.
+    // Bearer/session-cookie middleware; credentials remain out of request URLs.
     @GET("api/files")
     suspend fun listManagedFiles(
         @Query("path") path: String? = null,
@@ -793,6 +794,13 @@ interface HermesApiService {
     suspend fun readManagedFile(
         @Query("path") path: String,
     ): Response<ManagedFileRead>
+
+    /** Stream through the normal Bearer-or-cookie authenticated client. */
+    @Streaming
+    @GET("api/files/download")
+    suspend fun downloadManagedFile(
+        @Query("path") path: String,
+    ): Response<ResponseBody>
 
     @POST("api/files/upload")
     suspend fun uploadManagedFile(

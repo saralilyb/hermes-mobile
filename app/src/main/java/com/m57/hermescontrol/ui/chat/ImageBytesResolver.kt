@@ -2,7 +2,11 @@ package com.m57.hermescontrol.ui.chat
 
 import android.content.Context
 import android.net.Uri
+import com.m57.hermescontrol.data.remote.GatewayFileClient
+import com.m57.hermescontrol.data.remote.GatewayFileResult
 import com.m57.hermescontrol.data.remote.OkHttpProvider
+import com.m57.hermescontrol.data.remote.readBytesLimited
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -17,8 +21,9 @@ import java.util.Base64
  * bubble, so a model that displays is also resolvable here:
  * - `data:image/...;base64,...` — agent-delivered inline media,
  * - `content://...` — a locally-picked user image,
- * - `http(s)://...` — gateway-served URL (carries the `?token=` auth param the
- *   same way the app fetches it; no backend change needed).
+ * - an explicit gateway path — fetched through the authenticated gateway
+ *   client without URL credentials,
+ * - `http(s)://...` — an ordinary remote image URL.
  *
  * All I/O runs on [Dispatchers.IO].
  */
@@ -33,23 +38,48 @@ object ImageBytesResolver {
         ) : Result
 
         /** Could not load the image; [message] is safe to surface to the user. */
-        data class Error(val message: String) : Result
+        data class Error(
+            val message: String,
+        ) : Result
     }
 
     suspend fun resolve(
         context: Context,
         model: String,
         fallbackMime: String,
+        gatewayPath: String? = null,
     ): Result =
         withContext(Dispatchers.IO) {
             runCatching {
                 when {
+                    gatewayPath != null -> fetchGatewayPath(gatewayPath, fallbackMime)
                     model.startsWith("data:") -> decodeDataUrl(model, fallbackMime)
                     model.startsWith("content://") -> readContentUri(context, model, fallbackMime)
                     model.startsWith("https://") || model.startsWith("http://") -> fetchHttp(model, fallbackMime)
                     else -> Result.Error("Unsupported image source")
                 }
-            }.getOrElse { e -> Result.Error(e.message ?: "Failed to load image") }
+            }.getOrElse { e ->
+                if (e is CancellationException) throw e
+                Result.Error(e.message ?: "Failed to load image")
+            }
+        }
+
+    private suspend fun fetchGatewayPath(
+        path: String,
+        fallbackMime: String,
+    ): Result =
+        when (val result = GatewayFileClient.fetch(path)) {
+            is GatewayFileResult.Success -> {
+                val mime = result.file.mimeType.ifBlank { fallbackMime }
+                Result.Bytes(result.file.bytes, mime, extensionForMime(mime))
+            }
+
+            GatewayFileResult.NotFound -> Result.Error("Image not found on gateway")
+            GatewayFileResult.Forbidden -> Result.Error("Access to gateway image denied")
+            GatewayFileResult.TooLarge -> Result.Error("Gateway image is too large")
+            GatewayFileResult.Unauthorized -> Result.Error("Gateway session expired")
+            is GatewayFileResult.Failure ->
+                Result.Error(result.throwable.message ?: "Could not load gateway image")
         }
 
     private fun decodeDataUrl(
@@ -81,7 +111,7 @@ object ImageBytesResolver {
     ): Result {
         val uri = Uri.parse(model)
         val bytes =
-            runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }
+            runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytesLimited() } }
                 .getOrNull()
                 ?: return Result.Error("Could not open local image")
         val mime = context.contentResolver.getType(uri) ?: fallbackMime
@@ -98,11 +128,12 @@ object ImageBytesResolver {
                 .url(model)
                 .build()
         return runCatching {
-            OkHttpProvider.base.newCall(request).execute().use { resp ->
+            OkHttpProvider.publicMedia.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return Result.Error("Download failed (HTTP ${resp.code})")
-                val bytes = resp.body.bytes()
+                val bytes = resp.body.readBytesLimited() ?: return Result.Error("Image is too large")
                 val mime =
-                    resp.header("Content-Type")
+                    resp
+                        .header("Content-Type")
                         ?.substringBefore(";")
                         ?.ifBlank { fallbackMime }
                         ?: fallbackMime

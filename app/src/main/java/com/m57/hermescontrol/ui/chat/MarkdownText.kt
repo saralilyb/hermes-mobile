@@ -1,7 +1,6 @@
 package com.m57.hermescontrol.ui.chat
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,7 +43,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.remote.GatewayFileClient
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
 import com.m57.hermescontrol.theme.SearchHighlightColors
@@ -269,35 +267,33 @@ fun MarkdownText(
                 }
 
                 is MdBlock.Image -> {
-                    // AsyncImage is a Compose runtime composable — load it lazily
-                    // behind remember so the parser stays pure and testable (the
-                    // parseBlocks/parseInline unit tests never touch Compose).
-                    val model: Any = remember(block.uri) { resolveImageUrl(block.uri) }
-                    androidx.compose.foundation.layout.Box(
+                    val source = remember(block.uri) { resolveImageSource(block.uri) }
+                    val isGif =
+                        remember(block.uri) {
+                            block.uri.contains(".gif", ignoreCase = true) ||
+                                block.uri.startsWith("data:image/gif", ignoreCase = true)
+                        }
+                    Box(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable(
-                                    onClick = {
-                                        onImageClick(
-                                            ImageViewerModel(
-                                                model = block.uri,
-                                                name = block.alt,
-                                                mimeType = "image/*",
-                                            ),
-                                        )
-                                    },
-                                ).padding(vertical = 4.dp),
+                                .padding(vertical = 4.dp),
                     ) {
-                        coil.compose.AsyncImage(
-                            model = model,
+                        com.m57.hermescontrol.ui.chat.components.GifImageThumbnail(
+                            model = source.model,
+                            gatewayPath = source.gatewayPath,
                             contentDescription = block.alt.ifBlank { null },
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp)),
-                            contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+                            isGif = isGif,
+                            onClick = {
+                                onImageClick(
+                                    ImageViewerModel(
+                                        model = source.model,
+                                        gatewayPath = source.gatewayPath,
+                                        name = block.alt,
+                                        mimeType = if (isGif) "image/gif" else "image/*",
+                                    ),
+                                )
+                            },
                         )
                     }
                 }
@@ -1015,25 +1011,42 @@ internal enum class TableAlign {
     RIGHT,
 }
 
-private fun resolveImageUrl(uri: String): String {
-    val trimmed = uri.trim()
-    if (trimmed.isBlank()) return uri
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("data:image/")) {
-        return trimmed
-    }
-    val baseUrl = runCatching { AuthManager.getBaseUrl() }.getOrDefault("")
-    val token = runCatching { AuthManager.getToken() }.getOrNull().orEmpty()
-    val downloadUrl = GatewayFileClient.buildDownloadUrl(baseUrl, token, trimmed)
-    if (downloadUrl != null) return downloadUrl
+internal data class ResolvedImageSource(
+    val model: String,
+    val gatewayPath: String? = null,
+)
 
-    if (baseUrl.isNotBlank() && (trimmed.startsWith("/api/") || trimmed.startsWith("api/"))) {
-        val cleanPath = if (trimmed.startsWith("/")) trimmed else "/$trimmed"
-        val sep = if (cleanPath.contains("?")) "&" else "?"
-        return if (token.isNotBlank() && !cleanPath.contains("token=")) {
-            "${baseUrl.trimEnd('/')}$cleanPath${sep}token=$token"
-        } else {
-            "${baseUrl.trimEnd('/')}$cleanPath"
+internal fun resolveImageSource(uri: String): ResolvedImageSource {
+    val trimmed = uri.trim()
+    if (trimmed.isBlank()) return ResolvedImageSource(uri)
+
+    downloadPathFromUri(trimmed)?.let { path ->
+        return ResolvedImageSource(model = path, gatewayPath = path)
+    }
+
+    if (!trimmed.startsWith("/api/")) {
+        GatewayFileClient.normalizePath(trimmed)?.let { path ->
+            return ResolvedImageSource(model = path, gatewayPath = path)
         }
     }
-    return uri
+
+    return ResolvedImageSource(trimmed)
+}
+
+private fun downloadPathFromUri(uri: String): String? {
+    val parsed = runCatching { java.net.URI(uri) }.getOrNull() ?: return null
+    val path = parsed.path ?: return null
+    if (path != "/api/files/download" && path != "api/files/download") return null
+    val encodedPath =
+        parsed.rawQuery
+            ?.split('&')
+            ?.firstOrNull { it.substringBefore('=') == "path" }
+            ?.substringAfter('=', "")
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+    val decoded =
+        runCatching {
+            java.net.URLDecoder.decode(encodedPath, java.nio.charset.StandardCharsets.UTF_8.name())
+        }.getOrNull() ?: return null
+    return GatewayFileClient.normalizePath(decoded)
 }
