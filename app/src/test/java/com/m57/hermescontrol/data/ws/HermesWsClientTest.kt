@@ -77,7 +77,18 @@ class HermesWsClientTest {
         @Suppress("UNCHECKED_CAST")
         (statusField.get(HermesWsClient) as MutableStateFlow<ConnectionStatus>).value = ConnectionStatus.DISCONNECTED
 
+        // The singleton's outbound queue survives a plain disconnect by design,
+        // so clear it explicitly or a frame queued by one test leaks into the
+        // next one's connection.
+        outboundQueue().clear()
+
         HermesWsClient.disconnect() // Ensure it starts clean
+    }
+
+    private fun outboundQueue(): java.util.Queue<*> {
+        val queueField = HermesWsClient::class.java.getDeclaredField("messageQueue")
+        queueField.isAccessible = true
+        return queueField.get(HermesWsClient) as java.util.Queue<*>
     }
 
     @After
@@ -811,5 +822,130 @@ class HermesWsClientTest {
         } finally {
             ticketServer.shutdown()
         }
+    }
+
+    // ── Outbound queue is credential-scoped ─────────────────────────────
+    // A queued frame was composed under whatever credentials were live when
+    // the user typed it. Flushing it after a logout or a fresh login would
+    // deliver it into whichever profile's session opens next.
+
+    @Test
+    fun testPlainDisconnect_retainsQueuedFrames() {
+        HermesWsClient.send("queued_method", mapOf("param" to "value"))
+        assertEquals(1, outboundQueue().size)
+
+        HermesWsClient.disconnect()
+
+        assertEquals(
+            "A plain disconnect must keep the queue — offline sends are the reason it exists",
+            1,
+            outboundQueue().size,
+        )
+    }
+
+    @Test
+    fun testClearingDisconnect_dropsQueuedFrames() {
+        HermesWsClient.send("queued_method", mapOf("param" to "value"))
+        assertEquals(1, outboundQueue().size)
+
+        HermesWsClient.disconnect(clearPendingMessages = true)
+
+        assertTrue("Credential-clearing disconnect must empty the queue", outboundQueue().isEmpty())
+    }
+
+    @Test
+    fun testSendRacingClearingDisconnect_isNotQueued() {
+        HermesWsClient.disconnect(clearPendingMessages = true)
+
+        HermesWsClient.send("late_method", mapOf("param" to "value"))
+
+        assertTrue(
+            "A send racing a credential-clearing disconnect must not repopulate the queue",
+            outboundQueue().isEmpty(),
+        )
+    }
+
+    @Test
+    fun testQueuedFrameFlushesOnNextConnect() {
+        val serverLatch = CountDownLatch(1)
+        val messageLatch = CountDownLatch(1)
+        var receivedMessage: String? = null
+
+        mockWebServer.enqueue(
+            MockResponse().withWebSocketUpgrade(
+                object : WebSocketListener() {
+                    override fun onOpen(
+                        webSocket: WebSocket,
+                        response: okhttp3.Response,
+                    ) {
+                        serverLatch.countDown()
+                    }
+
+                    override fun onMessage(
+                        webSocket: WebSocket,
+                        text: String,
+                    ) {
+                        receivedMessage = text
+                        messageLatch.countDown()
+                    }
+                },
+            ),
+        )
+
+        HermesWsClient.send("queued_method", mapOf("param" to "value"))
+        assertEquals(1, outboundQueue().size)
+
+        HermesWsClient.connect()
+
+        assertTrue("Server failed to accept connection", serverLatch.await(5, TimeUnit.SECONDS))
+        assertTrue("Queued message was not flushed on reconnect", messageLatch.await(5, TimeUnit.SECONDS))
+        assertTrue((receivedMessage ?: "").contains("queued_method"))
+        assertTrue("A flushed frame must leave the queue", outboundQueue().isEmpty())
+    }
+
+    @Test
+    fun testFrameQueuedUnderPreviousCredentialsNeverReachesNextSession() {
+        val serverLatch = CountDownLatch(1)
+        val freshFrameLatch = CountDownLatch(1)
+        val received = mutableListOf<String>()
+
+        mockWebServer.enqueue(
+            MockResponse().withWebSocketUpgrade(
+                object : WebSocketListener() {
+                    override fun onOpen(
+                        webSocket: WebSocket,
+                        response: okhttp3.Response,
+                    ) {
+                        serverLatch.countDown()
+                    }
+
+                    override fun onMessage(
+                        webSocket: WebSocket,
+                        text: String,
+                    ) {
+                        synchronized(received) { received.add(text) }
+                        if (text.contains("new_profile_prompt")) freshFrameLatch.countDown()
+                    }
+                },
+            ),
+        )
+
+        // Compose a frame while offline under the first identity, then log out.
+        HermesWsClient.send("previous_profile_prompt", mapOf("text" to "value"))
+        HermesWsClient.disconnect(clearPendingMessages = true)
+
+        // Sign in again — possibly against a different profile.
+        HermesWsClient.connect()
+        assertTrue("Server failed to accept connection", serverLatch.await(5, TimeUnit.SECONDS))
+        HermesWsClient.send("new_profile_prompt", mapOf("text" to "value"))
+        assertTrue("New-session frame was not delivered", freshFrameLatch.await(5, TimeUnit.SECONDS))
+        // Give a leaked flush time to land before asserting its absence.
+        Thread.sleep(300)
+
+        val frames = synchronized(received) { received.toList() }
+        assertFalse(
+            "Frame queued under the previous credentials must never reach the new session",
+            frames.any { it.contains("previous_profile_prompt") },
+        )
     }
 }
