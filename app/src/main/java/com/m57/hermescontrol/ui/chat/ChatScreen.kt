@@ -536,12 +536,7 @@ fun ChatScreen(
             ContextUsageChip(
                 usedTokens = state.contextUsage?.usedTokens,
                 fullTokens = contextWindow,
-                onClick =
-                    if (state.contextUsage != null) {
-                        viewModel::openContextDetail
-                    } else {
-                        null
-                    },
+                onClick = viewModel::openContextDetail,
             )
 
             ChatInputBar(

@@ -1,9 +1,12 @@
 package com.m57.hermescontrol.ui.chat
 
 import android.content.pm.PackageManager
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.core.content.ContextCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -12,6 +15,7 @@ import com.m57.hermescontrol.data.ws.ConnectionStatus
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
+import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.junit.Before
@@ -73,5 +77,33 @@ class ChatScreenTest {
         composeTestRule.onNodeWithTag("chat_input").performTextInput("Hello Hermes")
         composeTestRule.onNodeWithTag("send_button").assertIsDisplayed()
         composeTestRule.onNodeWithTag("mic_button").assertIsDisplayed()
+    }
+
+    @Test
+    fun fallbackOnlyContextMeter_opensOccupancyExplanation() {
+        val uiState =
+            ChatUiState(
+                connectionStatus = ConnectionStatus.CONNECTED,
+                currentSessionModel = "openai-codex/gpt-5.6-sol",
+                modelContextLength = 272_000L,
+                modelContextLengthModel = "openai-codex/gpt-5.6-sol",
+            )
+        val mockViewModel = mockk<ChatViewModel>(relaxed = true)
+        every { mockViewModel.uiState } returns MutableStateFlow(uiState).asStateFlow()
+        every { mockViewModel.streamingState } returns MutableStateFlow(StreamingState()).asStateFlow()
+
+        composeTestRule.setContent {
+            ChatScreen(
+                onOpenDrawer = {},
+                sessionId = null,
+                viewModel = mockViewModel,
+            )
+        }
+
+        composeTestRule
+            .onNodeWithText("— / 272k context")
+            .assertHasClickAction()
+            .performClick()
+        verify { mockViewModel.openContextDetail() }
     }
 }
