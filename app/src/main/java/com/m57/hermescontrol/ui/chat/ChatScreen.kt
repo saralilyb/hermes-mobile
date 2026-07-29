@@ -220,6 +220,7 @@ fun ChatScreen(
     var isListening by rememberSaveable { mutableStateOf(false) }
     var lastAnimatedMessageId by rememberSaveable { mutableStateOf<String?>(null) }
     var showReloginDialog by rememberSaveable { mutableStateOf(false) }
+    var viewingImage by rememberSaveable { mutableStateOf<ImageViewerModel?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val isDark = isSystemInDarkTheme()
     val context = LocalContext.current
@@ -346,6 +347,7 @@ fun ChatScreen(
         messages = state.messages,
         errorMessage = state.errorMessage,
         backgroundCompleteMessage = state.backgroundCompleteMessage,
+        openError = state.openError,
         isSearchActive = state.isSearchActive,
         currentSearchMatchIndex = state.currentSearchMatchIndex,
         searchMatchIndices = state.searchMatchIndices,
@@ -507,6 +509,7 @@ fun ChatScreen(
                     clarifyRequest = state.clarifyRequest,
                     onRespondClarify = viewModel::respondToClarify,
                     onDismissClarify = viewModel::dismissClarify,
+                    onImageClick = { viewingImage = it },
                 )
 
                 // Loading overlay
@@ -671,6 +674,13 @@ fun ChatScreen(
                         Text(stringResource(R.string.common_cancel))
                     }
                 },
+            )
+        }
+
+        viewingImage?.let { image ->
+            ImageViewerDialog(
+                image = image,
+                onDismiss = { viewingImage = null },
             )
         }
     }

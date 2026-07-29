@@ -13,6 +13,7 @@ import com.m57.hermescontrol.theme.StatusYellowContainer
 import com.m57.hermescontrol.theme.searchHighlightColors
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -193,5 +194,75 @@ class MarkdownTextFeatureTest {
         val an = parseInline("use `val x = 1` here", Color.Black, "", false, Color.Blue, DEFAULT_HIGHLIGHTS)
         assertEquals("use val x = 1 here", an.toString())
         assertTrue(an.spanStyles.any { it.item.fontFamily != null })
+    }
+
+    // 12. STANDALONE MARKDOWN IMAGE -> MdBlock.Image (agent-media rendering)
+    @Test
+    fun testStandaloneImage_parsesToImageBlock() {
+        val md = "![cute cat](https://example.com/cat.jpg)"
+        val block = parseBlocks(md).singleOrNull() as? MdBlock.Image
+        assertTrue("expected a single Image block", block != null)
+        assertEquals("https://example.com/cat.jpg", block!!.uri)
+        assertEquals("cute cat", block.alt)
+    }
+
+    // 12b. data: URL (base64 inline media) also accepted as an image uri
+    @Test
+    fun testImage_dataUrl_accepted() {
+        val uri = "data:image/jpeg;base64,/9j/abc"
+        val md = "![pic]($uri)"
+        val block = parseBlocks(md).singleOrNull() as? MdBlock.Image
+        assertTrue("data: URL should parse to Image block", block != null)
+        assertEquals(uri, block!!.uri)
+    }
+
+    // 12c. inline image inside a paragraph is left as text (scope guard)
+    @Test
+    fun testInlineImage_inParagraph_staysText() {
+        val md = "see this ![cat](https://x/cat.png) for reference"
+        val blocks = parseBlocks(md)
+        assertTrue("should remain a paragraph", blocks.single() is MdBlock.Paragraph)
+    }
+
+    // 13. Attachment isGif check (issue #721)
+    @Test
+    fun testAttachment_isGif() {
+        val gifAttachment =
+            com.m57.hermescontrol.data.model.Attachment(
+                uri = "content://media/1.gif",
+                name = "test.gif",
+                mimeType = "image/gif",
+            )
+        assertTrue(gifAttachment.isImage)
+        assertTrue(gifAttachment.isGif)
+
+        val nonGifAttachment =
+            com.m57.hermescontrol.data.model.Attachment(
+                uri = "content://media/1.jpg",
+                name = "test.jpg",
+                mimeType = "image/jpeg",
+            )
+        assertTrue(nonGifAttachment.isImage)
+        assertFalse(nonGifAttachment.isGif)
+    }
+
+    @Test
+    fun testResolveImageSource_gatewayDownloadDropsQueryCredentials() {
+        val source =
+            resolveImageSource(
+                "https://gateway.example.com/api/files/download?" +
+                    "path=%2Ftmp%2Fimage.png&token=must-not-survive",
+            )
+
+        assertEquals("/tmp/image.png", source.model)
+        assertEquals("/tmp/image.png", source.gatewayPath)
+    }
+
+    @Test
+    fun testResolveImageSource_externalUrlRemainsExternal() {
+        val source = resolveImageSource("https://images.example.com/cat.gif")
+
+        assertEquals("https://images.example.com/cat.gif", source.model)
+        assertNull(source.gatewayPath)
     }
 }

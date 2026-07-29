@@ -4,6 +4,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNamingStrategy
 import okhttp3.ConnectionPool
+import okhttp3.CookieJar
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -38,6 +39,18 @@ object OkHttpProvider {
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
+            .build()
+    }
+
+    /**
+     * Client for public image URLs rendered by Coil. Authenticated gateway
+     * media is fetched through [GatewayFileClient] before it reaches Coil, so
+     * this client deliberately carries no dashboard cookies.
+     */
+    val publicMedia: OkHttpClient by lazy {
+        base
+            .newBuilder()
+            .cookieJar(CookieJar.NO_COOKIES)
             .build()
     }
 

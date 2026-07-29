@@ -1,5 +1,7 @@
 package com.m57.hermescontrol.data.local
 
+import com.m57.hermescontrol.data.model.Attachment
+import com.m57.hermescontrol.data.model.AttachmentSource
 import com.m57.hermescontrol.ui.chat.ChatMessage
 import com.m57.hermescontrol.ui.chat.MessageRole
 import com.m57.hermescontrol.ui.chat.ToolStatus
@@ -162,5 +164,44 @@ class ChatMessageMapperTest {
         val roundTripped = ui.toEntity("s").toUiModel()
 
         assertEquals("r", roundTripped.reasoningText)
+    }
+
+    @Test
+    fun roundTripPreservesGatewayAttachments() {
+        val attachment =
+            Attachment(
+                uri = "~/chart.gif",
+                name = "chart.gif",
+                mimeType = "image/gif",
+                gatewayPath = "~/chart.gif",
+                source = AttachmentSource.GATEWAY,
+            )
+        val message =
+            ChatMessage(
+                id = "msg-media",
+                role = MessageRole.ASSISTANT,
+                content = "Rendered chart",
+                timestamp = 4000L,
+                attachments = listOf(attachment),
+            )
+
+        val roundTripped = message.toEntity("session-media").toUiModel()
+
+        assertEquals(listOf(attachment), roundTripped.attachments)
+    }
+
+    @Test
+    fun malformedAttachmentJsonFallsBackToEmptyList() {
+        val entity =
+            ChatMessageEntity(
+                id = "msg-invalid",
+                sessionId = "session-media",
+                role = "ASSISTANT",
+                content = "Answer",
+                timestamp = 5000L,
+                attachmentsJson = "not-json",
+            )
+
+        assertTrue(entity.toUiModel().attachments.orEmpty().isEmpty())
     }
 }

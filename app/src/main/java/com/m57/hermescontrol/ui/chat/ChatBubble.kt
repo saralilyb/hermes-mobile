@@ -59,7 +59,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalConfiguration
@@ -78,7 +77,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.Attachment
 import com.m57.hermescontrol.data.remote.OkHttpProvider
@@ -109,6 +107,8 @@ fun ChatBubble(
     searchQuery: String = "",
     isCurrentMatch: Boolean = false,
     onRespondApproval: (String) -> Unit = {},
+    onOpenAttachment: (Attachment) -> Unit = {},
+    onImageClick: (ImageViewerModel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val screenWidth = LocalConfiguration.current.screenWidthDp.dp
@@ -124,17 +124,27 @@ fun ChatBubble(
     ) {
         when (message.role) {
             MessageRole.USER -> {
-                UserBubble(message, maxBubbleWidth, searchQuery, isCurrentMatch, modifier)
+                UserBubble(
+                    message = message,
+                    maxWidth = maxBubbleWidth,
+                    searchQuery = searchQuery,
+                    isCurrentMatch = isCurrentMatch,
+                    onOpenAttachment = onOpenAttachment,
+                    onImageClick = onImageClick,
+                    modifier = modifier,
+                )
             }
 
             MessageRole.ASSISTANT -> {
                 AssistantBubble(
-                    message,
-                    maxBubbleWidth,
-                    isDarkTheme,
-                    searchQuery,
-                    isCurrentMatch,
-                    modifier,
+                    message = message,
+                    maxWidth = maxBubbleWidth,
+                    isDarkTheme = isDarkTheme,
+                    searchQuery = searchQuery,
+                    isCurrentMatch = isCurrentMatch,
+                    onOpenAttachment = onOpenAttachment,
+                    onImageClick = onImageClick,
+                    modifier = modifier,
                 )
             }
 
@@ -159,6 +169,8 @@ private fun UserBubble(
     maxWidth: androidx.compose.ui.unit.Dp,
     searchQuery: String = "",
     isCurrentMatch: Boolean = false,
+    onOpenAttachment: (Attachment) -> Unit = {},
+    onImageClick: (ImageViewerModel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val clipboard = LocalClipboard.current
@@ -258,6 +270,8 @@ private fun UserBubble(
                             InlineAttachment(
                                 attachment = attachment,
                                 textColor = userBubbleTextColor,
+                                onOpen = { onOpenAttachment(it) },
+                                onImageClick = onImageClick,
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                         }
@@ -320,6 +334,8 @@ private fun AssistantBubble(
     isDarkTheme: Boolean,
     searchQuery: String = "",
     isCurrentMatch: Boolean = false,
+    onOpenAttachment: (Attachment) -> Unit = {},
+    onImageClick: (ImageViewerModel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val bubbleColor = MaterialTheme.colorScheme.surfaceVariant
@@ -386,7 +402,22 @@ private fun AssistantBubble(
                             isStreaming = message.isStreaming,
                             searchQuery = searchQuery,
                             isCurrentMatch = isCurrentMatch,
+                            onImageClick = onImageClick,
                         )
+                    }
+                    // Render inline attachments (mirrors UserBubble so agent-delivered
+                    // media — images, files — shows in assistant bubbles too).
+                    if (!message.attachments.isNullOrEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        message.attachments.forEach { attachment ->
+                            InlineAttachment(
+                                attachment = attachment,
+                                textColor = textColor,
+                                onOpen = { onOpenAttachment(it) },
+                                onImageClick = onImageClick,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
                     }
                     if (!message.isStreaming) {
                         Text(
@@ -2263,24 +2294,36 @@ private fun buildHighlightedString(
 private fun InlineAttachment(
     attachment: Attachment,
     textColor: Color,
+    onOpen: (Attachment) -> Unit = {},
+    onImageClick: (ImageViewerModel) -> Unit = {},
 ) {
+    val clickable = Modifier.clickable { onOpen(attachment) }
     if (attachment.isImage) {
-        // Image attachment — show as a rounded thumbnail
-        AsyncImage(
+        // Image / GIF attachment — show thumbnail with GIF badge & tap-to-play animation.
+        com.m57.hermescontrol.ui.chat.components.GifImageThumbnail(
             model = attachment.uri,
+            gatewayPath = attachment.gatewayPath,
             contentDescription = attachment.name,
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp)),
-            contentScale = ContentScale.FillWidth,
+            isGif = attachment.isGif,
+            onClick = {
+                onImageClick(
+                    ImageViewerModel(
+                        model = attachment.uri,
+                        gatewayPath = attachment.gatewayPath,
+                        name = attachment.name,
+                        mimeType = if (attachment.isGif) "image/gif" else attachment.mimeType,
+                    ),
+                )
+            },
         )
     } else {
-        // Non-image file — show a card with file icon and name
+        // Non-image file — show a card with file icon and name. Tapping fetches
+        // the bytes (gateway-sourced) or opens the local URI.
         Surface(
             shape = RoundedCornerShape(8.dp),
             color = textColor.copy(alpha = 0.1f),
             border = BorderStroke(1.dp, textColor.copy(alpha = 0.2f)),
+            modifier = clickable,
         ) {
             Row(
                 modifier = Modifier.padding(8.dp),

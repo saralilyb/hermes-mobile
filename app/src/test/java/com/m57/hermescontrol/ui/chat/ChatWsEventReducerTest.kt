@@ -2,6 +2,8 @@ package com.m57.hermescontrol.ui.chat
 
 import com.m57.hermescontrol.data.ws.WsEvent
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatWsEventReducerTest {
@@ -240,6 +242,42 @@ class ChatWsEventReducerTest {
             )
 
         assertEquals("Preserved reasoning", result.state.messages.single().reasoningText)
+    }
+
+    @Test
+    fun testMessageComplete_withMediaDefersPersistenceUntilAttachmentExtraction() {
+        val result =
+            ChatWsEventReducer.reduce(
+                state = ChatUiState(currentSessionId = "session-1"),
+                streamingState = StreamingState(),
+                event = WsEvent.MessageComplete("Image\nMEDIA:/tmp/image.png", "session-1"),
+                currentSessionId = "session-1",
+            )
+
+        assertTrue(result.effects.any { it is ReducerEffect.AttachHostMedia })
+        assertFalse(result.effects.any { it is ReducerEffect.PersistMessage })
+    }
+
+    @Test
+    fun testMessageDoneWithMedia_defersPersistenceUntilAttachmentsAreMapped() {
+        val streamingMessage =
+            ChatMessage(
+                id = "media-done",
+                role = MessageRole.ASSISTANT,
+                content = "Image\nMEDIA:/tmp/image.png",
+                isStreaming = true,
+            )
+
+        val result =
+            ChatWsEventReducer.reduce(
+                state = ChatUiState(currentSessionId = "session-1"),
+                streamingState = StreamingState(streamingMessage = streamingMessage),
+                event = WsEvent.MessageDone("session-1"),
+                currentSessionId = "session-1",
+            )
+
+        assertTrue(result.effects.any { it is ReducerEffect.AttachHostMedia })
+        assertFalse(result.effects.any { it is ReducerEffect.PersistMessage })
     }
 
     @Test

@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.m57.hermescontrol.data.remote.GatewayFileClient
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
 import com.m57.hermescontrol.theme.SearchHighlightColors
 import com.m57.hermescontrol.theme.searchHighlightColors
@@ -72,6 +73,7 @@ fun MarkdownText(
     searchQuery: String = "",
     isCurrentMatch: Boolean = false,
     modifier: Modifier = Modifier,
+    onImageClick: (ImageViewerModel) -> Unit = {},
 ) {
     val statusColors = LocalHermesStatusColors.current
     val highlights = searchHighlightColors(statusColors)
@@ -264,6 +266,38 @@ fun MarkdownText(
                     }
                 }
 
+                is MdBlock.Image -> {
+                    val source = remember(block.uri) { resolveImageSource(block.uri) }
+                    val isGif =
+                        remember(block.uri) {
+                            block.uri.contains(".gif", ignoreCase = true) ||
+                                block.uri.startsWith("data:image/gif", ignoreCase = true)
+                        }
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                    ) {
+                        com.m57.hermescontrol.ui.chat.components.GifImageThumbnail(
+                            model = source.model,
+                            gatewayPath = source.gatewayPath,
+                            contentDescription = block.alt.ifBlank { null },
+                            isGif = isGif,
+                            onClick = {
+                                onImageClick(
+                                    ImageViewerModel(
+                                        model = source.model,
+                                        gatewayPath = source.gatewayPath,
+                                        name = block.alt,
+                                        mimeType = if (isGif) "image/gif" else "image/*",
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                }
+
                 is MdBlock.DefList -> {
                     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                         block.items.forEach { item ->
@@ -343,6 +377,21 @@ fun MarkdownText(
             }
         }
     }
+}
+
+/**
+ * Matches a Markdown image: `![alt](uri)`. The `uri` may be an http(s) URL
+ * (gateway-served media the phone can reach), a `data:image/...;base64,...`
+ * data URL (e.g. agent-delivered inline media), or any other resolvable model
+ * string (Coil handles all three). Bare `![]()` with empty uri is skipped.
+ */
+private val IMAGE_RE = Regex("""^!\[([^\]]*)\]\(([^)\s]+)\s*\)""")
+
+private fun tryParseImage(line: String): MdBlock.Image? {
+    val m = IMAGE_RE.matchAt(line, 0) ?: return null
+    val uri = m.groupValues[2].trim()
+    if (uri.isEmpty()) return null
+    return MdBlock.Image(uri = uri, alt = m.groupValues[1].trim())
 }
 
 @Composable
@@ -512,6 +561,14 @@ internal fun parseBlocks(src: String): List<MdBlock> {
                     i++
                 }
                 items.forEachIndexed { idx, t -> blocks.add(MdBlock.Ordered(idx + 1, t)) }
+            }
+
+            // Standalone Markdown image: ![alt](uri) on its own line.
+            // Inline images inside a paragraph are left as-is (rendered as text)
+            // to keep scope tight; standalone is the common agent-media case.
+            line.isNotBlank() && tryParseImage(line) != null -> {
+                blocks.add(tryParseImage(line)!!)
+                i++
             }
 
             else -> {
@@ -903,6 +960,11 @@ internal sealed interface MdBlock {
         val text: String,
     ) : MdBlock
 
+    data class Image(
+        val uri: String,
+        val alt: String = "",
+    ) : MdBlock
+
     data class Quote(
         val text: String,
     ) : MdBlock
@@ -947,4 +1009,44 @@ internal enum class TableAlign {
     LEFT,
     CENTER,
     RIGHT,
+}
+
+internal data class ResolvedImageSource(
+    val model: String,
+    val gatewayPath: String? = null,
+)
+
+internal fun resolveImageSource(uri: String): ResolvedImageSource {
+    val trimmed = uri.trim()
+    if (trimmed.isBlank()) return ResolvedImageSource(uri)
+
+    downloadPathFromUri(trimmed)?.let { path ->
+        return ResolvedImageSource(model = path, gatewayPath = path)
+    }
+
+    if (!trimmed.startsWith("/api/")) {
+        GatewayFileClient.normalizePath(trimmed)?.let { path ->
+            return ResolvedImageSource(model = path, gatewayPath = path)
+        }
+    }
+
+    return ResolvedImageSource(trimmed)
+}
+
+private fun downloadPathFromUri(uri: String): String? {
+    val parsed = runCatching { java.net.URI(uri) }.getOrNull() ?: return null
+    val path = parsed.path ?: return null
+    if (path != "/api/files/download" && path != "api/files/download") return null
+    val encodedPath =
+        parsed.rawQuery
+            ?.split('&')
+            ?.firstOrNull { it.substringBefore('=') == "path" }
+            ?.substringAfter('=', "")
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+    val decoded =
+        runCatching {
+            java.net.URLDecoder.decode(encodedPath, java.nio.charset.StandardCharsets.UTF_8.name())
+        }.getOrNull() ?: return null
+    return GatewayFileClient.normalizePath(decoded)
 }
