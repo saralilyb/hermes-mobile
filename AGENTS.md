@@ -23,11 +23,18 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
 - **Upstream base:** selectively reconciled through `Hy4ri/hermes-mobile`
   `v1.19.0`; retain downstream HTTPS enforcement, profile-scoped credentials,
   single-use ticket handling, complete-history pagination, signing, and release
-  automation. Deliberately deferred from that range: the gateway-file/media
-  stack (Files tab, `MEDIA:` attachments, image viewer, GIF rendering), the
-  Keys screen redesign, the upstream revert of auth-expiry sign-in routing, and
-  the reasoning-across-streaming rework — each collides with downstream auth,
-  clipboard, or reasoning-persistence behavior and needs manual review
+  automation. The gateway-file/media stack and Keys redesign have been
+  integrated with downstream auth and sensitive-clipboard adaptations.
+  Permanently exclude these upstream commits rather than reconsidering them on
+  each reconciliation:
+  - `7927944` (#698), the auth-expiry routing revert. Downstream intentionally
+    treats REST 401 responses as an app-wide sign-in requirement, disconnects
+    the WebSocket, and prevents back navigation into authenticated screens.
+  - `4e2fb05` (#709), the reasoning-transition patch, as a wholesale
+    cherry-pick. Downstream already preserves reasoning through streaming,
+    Room, REST history, resume, and pagination, and flushes transition buffers
+    only after session fencing. The upstream pre-fence flush lets a delayed
+    event from a previous session mutate the active session's buffers.
 
 ## Build & Test Commands
 
