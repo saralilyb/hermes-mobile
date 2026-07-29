@@ -146,6 +146,25 @@
     <string name="chat_tool_fallback">Tool</string>
     <string name="chat_tool_show_raw">Show Raw JSON</string>
     <string name="chat_tool_show_parsed">Show Parsed Output</string>
+
+    <!-- Context window meter -->
+    <string name="chat_context_meter_label">%1$s / %2$s context</string>
+    <string name="chat_context_meter_percent">%1$d%%</string>
+    <string name="chat_context_meter_unknown">\u2014</string>
+    <string name="chat_context_detail_title">Context window</string>
+
+    <string name="chat_context_detail_used">%1$d%% of the context window in use</string>
+    <string name="chat_context_detail_unknown_title">Occupancy unreported</string>
+    <string name="chat_context_detail_unknown_body">This session\'s context engine does not report per-turn window occupancy, so the meter stays blank rather than showing a fabricated figure. The session totals below are still accurate.</string>
+    <string name="chat_context_detail_totals">Session totals</string>
+    <string name="chat_context_detail_input">Prompt (input)</string>
+    <string name="chat_context_detail_output">Completion (output)</string>
+    <string name="chat_context_detail_reasoning">Reasoning</string>
+    <string name="chat_context_detail_total">Total</string>
+    <string name="chat_context_detail_calls">API calls</string>
+    <string name="chat_context_detail_compressions">Compactions</string>
+    <string name="chat_context_detail_model">Model</string>
+    <string name="chat_context_detail_footnote">Session totals are cumulative across the whole conversation, including turns already compacted out of the window. Only the bar above reflects what is in context right now.</string>
     <string name="content_desc_new_chat">New Chat</string>
     <string name="content_desc_scroll_to_bottom">Scroll to bottom</string>
     <string name="content_desc_copy">Copy</string>

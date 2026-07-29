@@ -63,6 +63,8 @@ private const val REDIRECT_UNSUPPORTED_CODE = 4010
 private data class PendingRpcRequest(
     val method: String,
     val resumeSessionId: String? = null,
+    /** Runtime session that initiated a branch, used to fence late responses. */
+    val branchSessionId: String? = null,
     /** Session/text captured for a session.redirect so a 4010 rejection can resend. */
     val redirectSessionId: String? = null,
     val redirectText: String? = null,
@@ -122,6 +124,18 @@ data class ChatUiState(
     val reactionTriggerId: Long = 0L,
     /** Subagent delegation indicators (issue #538) — transient UI state. */
     val subagentIndicators: List<SubagentIndicator> = emptyList(),
+    /**
+     * Context-window meter state. Fed by the gateway `usage` block on
+     * `session.info` / `message.complete`; null until the session reports one.
+     */
+    val contextUsage: ContextUsage? = null,
+    /**
+     * Denominator fallback from `GET /api/model/info`, used only while the
+     * session has not yet reported a live `context_max` over the WebSocket.
+     */
+    val modelContextLength: Long? = null,
+    /** Whether the tappable context breakdown sheet is open. */
+    val showContextDetail: Boolean = false,
 ) {
     /** Convenience — derived from [connectionStatus]. */
     val isConnected: Boolean get() = connectionStatus == ConnectionStatus.CONNECTED
@@ -348,6 +362,7 @@ class ChatViewModel(
         addSystemMessage("Connected to Hermes")
         loadSessions()
         fetchCommandCatalog()
+        fetchModelContextLength()
         preloadModelOptions()
         val currentId = _uiState.value.currentSessionId
         if (currentId != null) {
@@ -371,6 +386,22 @@ class ChatViewModel(
     }
 
     private fun handleWsEvent(event: WsEvent) {
+        val rpcId =
+            when (event) {
+                is WsEvent.RpcResult -> event.id
+                is WsEvent.RpcError -> event.id
+                else -> null
+            }
+        val pending = rpcId?.let(pendingRequests::get)
+        if (
+            pending?.method == WsMethods.SESSION_BRANCH &&
+            pending.branchSessionId != null &&
+            pending.branchSessionId != runtimeSessionId
+        ) {
+            pendingRequests.remove(rpcId)
+            return
+        }
+
         when (event) {
             is WsEvent.MessageStart,
             is WsEvent.MessageComplete,
@@ -426,6 +457,8 @@ class ChatViewModel(
             is WsEvent.SessionInfo -> {
                 if (isCurrentSession(event.sessionId)) {
                     val info = event.data
+
+                    val usage = info?.get("usage") as? Map<*, *>
                     val model = (info?.get("model") as? String)?.trim().orEmpty()
                     val provider = (info?.get("provider") as? String)?.trim().orEmpty()
                     val reasoningEffort = (info?.get("reasoning_effort") as? String)?.trim()
@@ -442,6 +475,7 @@ class ChatViewModel(
                                     state.currentSessionModel
                                 },
                             reasoningLevel = reasoningEffort?.takeIf { it.isNotEmpty() },
+                            contextUsage = parseContextUsage(usage, state.contextUsage),
                         )
                     }
                 }
@@ -466,6 +500,14 @@ class ChatViewModel(
             is WsEvent.MessageComplete -> {
                 // Buffers cleared before reduce; ViewModel resets them after
                 streamingController.resetStreaming()
+                if (isCurrentSession(event.sessionId)) {
+                    // End of turn is when the gateway recomputes window
+                    // occupancy, so this frame carries the freshest gauge the
+                    // client will see before the next `session.info`.
+                    _uiState.update { state ->
+                        state.copy(contextUsage = parseContextUsage(event.usage, state.contextUsage))
+                    }
+                }
             }
 
             is WsEvent.MessageDone -> {
@@ -590,6 +632,13 @@ class ChatViewModel(
             WsMethods.SESSION_BRANCH -> {
                 val resultMap = result as? Map<String, Any?> ?: return
                 val newId = resultMap["session_id"] as? String ?: return
+
+                val info = resultMap["info"] as? Map<*, *>
+                val usage = info?.get("usage") as? Map<*, *>
+
+                val model = (info?.get("model") as? String)?.trim().orEmpty()
+                val provider = (info?.get("provider") as? String)?.trim().orEmpty()
+                val reasoningEffort = (info?.get("reasoning_effort") as? String)?.trim()
                 runtimeSessionId = newId
                 _uiState.update {
                     it.copy(
@@ -597,6 +646,18 @@ class ChatViewModel(
                         isLoading = false,
                         messages = emptyList(),
                         chatTitle = (resultMap["title"] as? String)?.takeIf { t -> t.isNotBlank() } ?: "Hermes",
+                        currentSessionModel =
+                            model.takeIf { it.isNotEmpty() }?.let { resolvedModel ->
+                                if (provider.isEmpty() || resolvedModel.startsWith("$provider/")) {
+                                    resolvedModel
+                                } else {
+                                    "$provider/$resolvedModel"
+                                }
+                            },
+                        reasoningLevel = reasoningEffort?.takeIf { it.isNotEmpty() },
+                        // Never use the parent snapshot as the previous value:
+                        // the branch response carries child-scoped info.
+                        contextUsage = parseContextUsage(usage, previous = null),
                     )
                 }
                 ActiveSessionHolder.set(newId)
@@ -642,11 +703,12 @@ class ChatViewModel(
                         ?: selectedSessionId
                 runtimeSessionId = resultMap?.get("session_id") as? String
 
-                // Parse session info from backend — model, provider, reasoning_effort
-                val infoMap = resultMap?.get("info") as? Map<String, Any?>
+                // Parse the session-scoped snapshot returned by the backend.
+                val infoMap = resultMap?.get("info") as? Map<*, *>
                 val model = infoMap?.get("model") as? String
                 val provider = infoMap?.get("provider") as? String
                 val reasoningEffort = infoMap?.get("reasoning_effort") as? String
+                val usage = infoMap?.get("usage") as? Map<*, *>
 
                 // B8 (Jun 20 2026, kanban t_session_resume): do NOT reload
                 // cached messages here — switchSession() already did so before
@@ -669,6 +731,9 @@ class ChatViewModel(
                             } else {
                                 reasoningEffort
                             },
+                        // `switchSession()` cleared the previous session's
+                        // reading. Hydrate only from this resume response.
+                        contextUsage = parseContextUsage(usage, previous = null),
                     )
                 }
                 if (sessionId != null) {
@@ -1086,7 +1151,7 @@ class ChatViewModel(
             wsClient.send(
                 WsMethods.SESSION_BRANCH,
                 params,
-                onSent = { id -> trackRequest(id, WsMethods.SESSION_BRANCH) },
+                onSent = { id -> trackBranchRequest(id, sessionId) },
             )
         }
     }
@@ -1231,6 +1296,8 @@ class ChatViewModel(
                 isLoading = setLoading,
                 messages = emptyList(),
                 chatTitle = "Hermes",
+                contextUsage = null,
+                showContextDetail = false,
             )
         }
         _streamingState.update { StreamingState() }
@@ -1272,6 +1339,40 @@ class ChatViewModel(
                 onSent = { id -> trackRequest(id, WsMethods.COMMANDS_CATALOG) },
             )
         }
+    }
+
+    /**
+     * Top up the context meter's denominator from `GET /api/model/info`.
+     *
+     * Only a fallback: it covers the window between opening a session and its
+     * first turn, before the gateway has pushed a live `context_max`. The
+     * numerator is never sourced from REST — see [ContextUsage].
+     */
+    private fun fetchModelContextLength() {
+        viewModelScope.launch(Dispatchers.IO) {
+            when (val result = safeApiCall { ApiClient.hermesApi.getModelInfo() }) {
+                is NetworkResult.Success -> {
+                    val length =
+                        result.data.effectiveContextLength
+                            ?: result.data.autoContextLength
+                    if (length != null && length > 0L) {
+                        _uiState.update { it.copy(modelContextLength = length) }
+                    }
+                }
+
+                is NetworkResult.Failure -> Unit
+            }
+        }
+    }
+
+    /** Open the tappable context breakdown sheet. */
+    fun openContextDetail() {
+        _uiState.update { it.copy(showContextDetail = true) }
+    }
+
+    /** Dismiss the context breakdown sheet. */
+    fun closeContextDetail() {
+        _uiState.update { it.copy(showContextDetail = false) }
     }
 
     fun refreshCurrentSession() {
@@ -1591,6 +1692,11 @@ class ChatViewModel(
                 isAgentTyping = false,
                 currentSessionModel = null,
                 modelSwitchConfirmation = null,
+                // The gauge is per-session occupancy; carrying the previous
+                // session's fill into a new one would misreport it until the
+                // first turn lands.
+                contextUsage = null,
+                showContextDetail = false,
             )
         }
         // Mirror the active session id app-wide (issue #532).
@@ -2383,6 +2489,17 @@ class ChatViewModel(
             PendingRpcRequest(
                 method = WsMethods.SESSION_RESUME,
                 resumeSessionId = sessionId,
+            )
+    }
+
+    private fun trackBranchRequest(
+        id: String,
+        sessionId: String,
+    ) {
+        pendingRequests[id] =
+            PendingRpcRequest(
+                method = WsMethods.SESSION_BRANCH,
+                branchSessionId = sessionId,
             )
     }
 

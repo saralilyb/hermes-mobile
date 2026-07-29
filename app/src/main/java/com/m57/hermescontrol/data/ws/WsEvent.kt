@@ -43,6 +43,13 @@ sealed class WsEvent {
     data class MessageComplete(
         val text: String,
         val sessionId: String?,
+        /**
+         * Gateway `usage` block for the finished turn (`tui_gateway/server.py`,
+         * `_get_usage`). Carries the live current-window occupancy the context
+         * meter reads. Also present on the terminal error frame, so a failed
+         * turn still refreshes the gauge. Null on frames from older gateways.
+         */
+        val usage: Map<String, Any?>? = null,
     ) : WsEvent()
 
     data class MessageDone(
