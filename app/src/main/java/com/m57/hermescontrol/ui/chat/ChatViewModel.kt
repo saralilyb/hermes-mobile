@@ -146,6 +146,8 @@ data class ChatUiState(
     val modelContextLengthModel: String? = null,
     /** Whether the tappable context breakdown sheet is open. */
     val showContextDetail: Boolean = false,
+    /** Agent todo / plan items (issue #736). */
+    val todos: List<TodoItem> = emptyList(),
 ) {
     /** Convenience — derived from [connectionStatus]. */
     val isConnected: Boolean get() = connectionStatus == ConnectionStatus.CONNECTED

@@ -22,7 +22,6 @@ import com.m57.hermescontrol.ui.chat.ChatViewModel
 import com.m57.hermescontrol.ui.chat.ClarifyUi
 import com.m57.hermescontrol.ui.chat.ImageViewerModel
 import com.m57.hermescontrol.ui.chat.MessageRole
-import com.m57.hermescontrol.ui.chat.SubagentIndicator
 import com.m57.hermescontrol.ui.common.EmptyState
 
 /**
@@ -47,7 +46,6 @@ fun ChatMessageList(
     lastAnimatedMessageId: String?,
     onLastAnimatedMessageIdChange: (String?) -> Unit,
     viewModel: ChatViewModel,
-    subagentIndicators: List<SubagentIndicator> = emptyList(),
     clarifyRequest: ClarifyUi? = null,
     onRespondClarify: ((String) -> Unit)? = null,
     onDismissClarify: (() -> Unit)? = null,
@@ -143,14 +141,6 @@ fun ChatMessageList(
                 item(key = "typing_indicator") {
                     TypingIndicator()
                 }
-            }
-
-            // Subagent indicators — SubagentCard replaces SubagentIndicatorRow
-            items(
-                items = subagentIndicators,
-                key = { indicator -> "subagent-${indicator.subagentId ?: indicator.goal ?: indicator.type}" },
-            ) { indicator ->
-                SubagentCard(indicator = indicator)
             }
 
             // Clarify bubble — rendered at the very bottom
