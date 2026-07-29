@@ -29,4 +29,19 @@ data class ModelInfoResponse(
     val autoContextLength: Long? = null,
     @SerialName("config_context_length")
     val configContextLength: Long? = null,
-)
+) {
+    /** Provider-qualified model identity for scoping context-window metadata. */
+    val qualifiedModel: String?
+        get() {
+            val normalizedModel = model?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            val normalizedProvider = provider?.trim().orEmpty()
+            return if (
+                normalizedProvider.isEmpty() ||
+                normalizedModel.startsWith("$normalizedProvider/")
+            ) {
+                normalizedModel
+            } else {
+                "$normalizedProvider/$normalizedModel"
+            }
+        }
+}

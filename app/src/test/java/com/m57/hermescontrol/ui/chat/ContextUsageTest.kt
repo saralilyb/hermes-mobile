@@ -66,4 +66,49 @@ class ContextUsageTest {
         assertEquals(previous, parseContextUsage(null, previous))
         assertEquals(previous, parseContextUsage(emptyMap<String, Any?>(), previous))
     }
+
+    @Test
+    fun matchingModelContextLength_acceptsExactAndBareQualifiedMatches() {
+        assertEquals(
+            272_000L,
+            matchingModelContextLength(
+                activeModel = "openai-codex/gpt-5.6-sol",
+                fallbackModel = "openai-codex/gpt-5.6-sol",
+                fallbackLength = 272_000L,
+            ),
+        )
+        assertEquals(
+            272_000L,
+            matchingModelContextLength(
+                activeModel = "gpt-5.6-sol",
+                fallbackModel = "openai-codex/gpt-5.6-sol",
+                fallbackLength = 272_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun matchingModelContextLength_rejectsDifferentOrUnknownModels() {
+        assertNull(
+            matchingModelContextLength(
+                activeModel = "anthropic/claude-opus-5",
+                fallbackModel = "openai-codex/gpt-5.6-sol",
+                fallbackLength = 272_000L,
+            ),
+        )
+        assertNull(
+            matchingModelContextLength(
+                activeModel = "fireworks/gpt-5.6-sol",
+                fallbackModel = "openai-codex/gpt-5.6-sol",
+                fallbackLength = 272_000L,
+            ),
+        )
+        assertNull(
+            matchingModelContextLength(
+                activeModel = null,
+                fallbackModel = "openai-codex/gpt-5.6-sol",
+                fallbackLength = 272_000L,
+            ),
+        )
+    }
 }

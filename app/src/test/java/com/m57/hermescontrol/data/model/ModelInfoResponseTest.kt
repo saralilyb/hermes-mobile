@@ -28,5 +28,17 @@ class ModelInfoResponseTest {
         assertEquals(272_000L, response.autoContextLength)
         assertEquals(0L, response.configContextLength)
         assertEquals(272_000L, response.effectiveContextLength)
+        assertEquals("openai-codex/gpt-5.6-sol", response.qualifiedModel)
+    }
+
+    @Test
+    fun qualifiedModel_doesNotDuplicateExistingProviderPrefix() {
+        val response =
+            ModelInfoResponse(
+                model = "openai-codex/gpt-5.6-sol",
+                provider = "openai-codex",
+            )
+
+        assertEquals("openai-codex/gpt-5.6-sol", response.qualifiedModel)
     }
 }

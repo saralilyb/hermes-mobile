@@ -532,7 +532,7 @@ fun ChatScreen(
                 }
             }
 
-            val contextWindow = state.contextUsage?.maxTokens ?: state.modelContextLength
+            val contextWindow = state.contextWindowTokens()
             ContextUsageChip(
                 usedTokens = state.contextUsage?.usedTokens,
                 fullTokens = contextWindow,
@@ -649,7 +649,7 @@ fun ChatScreen(
             )
         }
 
-        val contextWindow = state.contextUsage?.maxTokens ?: state.modelContextLength
+        val contextWindow = state.contextWindowTokens()
         if (state.showContextDetail && contextWindow != null && contextWindow > 0L) {
             ContextUsageDialog(
                 usage = state.contextUsage,
@@ -685,3 +685,11 @@ fun ChatScreen(
         }
     }
 }
+
+private fun ChatUiState.contextWindowTokens(): Long? =
+    contextUsage?.maxTokens
+        ?: matchingModelContextLength(
+            activeModel = currentSessionModel ?: contextUsage?.model,
+            fallbackModel = modelContextLengthModel,
+            fallbackLength = modelContextLength,
+        )
