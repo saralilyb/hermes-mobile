@@ -154,6 +154,11 @@ object EventParser {
                 WsEvent.BackgroundComplete(payload)
             }
 
+            "review.summary" -> {
+                val text = (payload?.get("text") as? String)?.trim() ?: ""
+                WsEvent.ReviewSummary(text, sessionId)
+            }
+
             "session.updated" -> {
                 WsEvent.SessionUpdated(payload)
             }
