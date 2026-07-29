@@ -512,6 +512,106 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun testBranchResult_replacesParentUsageWithChildSnapshot() =
+        runTest {
+            val (viewModel, sessionId) = createViewModelWithSession()
+            mockEventsFlow.emit(
+                WsEvent.SessionInfo(
+                    data =
+                        mapOf(
+                            "usage" to
+                                mapOf(
+                                    "context_used" to 80_000,
+                                    "context_max" to 272_000,
+                                    "input" to 900_000,
+                                ),
+                        ),
+                    sessionId = sessionId,
+                ),
+            )
+            advanceUntilIdle()
+
+            every {
+                HermesWsClient.send(WsMethods.SESSION_BRANCH, any(), any())
+            } answers {
+                arg<((String) -> Unit)?>(2)?.invoke("branch-request")
+                "branch-request"
+            }
+            viewModel.sendMessage("/fork child")
+            advanceUntilIdle()
+            mockEventsFlow.emit(
+                WsEvent.RpcResult(
+                    id = "branch-request",
+                    result =
+                        mapOf(
+                            "session_id" to "child-runtime",
+                            "title" to "child",
+                            "info" to
+                                mapOf(
+                                    "model" to "gpt-5.6-sol",
+                                    "provider" to "openai-codex",
+                                    "reasoning_effort" to "high",
+                                    "usage" to
+                                        mapOf(
+                                            "context_used" to 31_000,
+                                            "context_max" to 272_000,
+                                            "input" to 120_000,
+                                        ),
+                                ),
+                        ),
+                ),
+            )
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertEquals("child-runtime", state.currentSessionId)
+            assertEquals("openai-codex/gpt-5.6-sol", state.currentSessionModel)
+            assertEquals("high", state.reasoningLevel)
+            assertEquals(31_000L, state.contextUsage?.usedTokens)
+            assertEquals(120_000L, state.contextUsage?.inputTokens)
+        }
+
+    @Test
+    fun testStaleBranchResult_doesNotReplaceSelectedSession() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            every {
+                HermesWsClient.send(WsMethods.SESSION_BRANCH, any(), any())
+            } answers {
+                arg<((String) -> Unit)?>(2)?.invoke("stale-branch")
+                "stale-branch"
+            }
+
+            viewModel.sendMessage("/fork child")
+            advanceUntilIdle()
+            viewModel.switchSession("other-session")
+            advanceUntilIdle()
+            mockEventsFlow.emit(
+                WsEvent.RpcResult(
+                    id = "stale-branch",
+                    result =
+                        mapOf(
+                            "session_id" to "stale-child",
+                            "title" to "stale child",
+                            "info" to
+                                mapOf(
+                                    "usage" to
+                                        mapOf(
+                                            "context_used" to 99_000,
+                                            "context_max" to 272_000,
+                                        ),
+                                ),
+                        ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("other-session", viewModel.uiState.value.currentSessionId)
+            assertNull(viewModel.uiState.value.contextUsage)
+            assertFalse(viewModel.uiState.value.messages.any { it.content == "Session branched" })
+        }
+
+    @Test
     fun testTypedModelCommandWithArg_dispatchesDirectly() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
@@ -1453,6 +1553,18 @@ class ChatViewModelTest {
                         "session_id" to "runtime-456",
                         "resumed" to "session-tip",
                         "message_count" to 2.0,
+                        "info" to
+                            mapOf(
+                                "model" to "gpt-5.6-sol",
+                                "provider" to "openai-codex",
+                                "reasoning_effort" to "xhigh",
+                                "usage" to
+                                    mapOf(
+                                        "context_used" to 44_000,
+                                        "context_max" to 272_000,
+                                        "input" to 640_000,
+                                    ),
+                            ),
                         "messages" to
                             listOf(
                                 mapOf(
@@ -1475,6 +1587,13 @@ class ChatViewModelTest {
                 "session-tip",
                 viewModel.uiState.value.currentSessionId,
             )
+            assertEquals(
+                "openai-codex/gpt-5.6-sol",
+                viewModel.uiState.value.currentSessionModel,
+            )
+            assertEquals("xhigh", viewModel.uiState.value.reasoningLevel)
+            assertEquals(44_000L, viewModel.uiState.value.contextUsage?.usedTokens)
+            assertEquals(640_000L, viewModel.uiState.value.contextUsage?.inputTokens)
             assertEquals(3, messages.size)
             assertEquals("Earlier question", messages[0].content)
             assertEquals(MessageRole.USER, messages[0].role)

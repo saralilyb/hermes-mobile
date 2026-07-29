@@ -63,6 +63,8 @@ private const val REDIRECT_UNSUPPORTED_CODE = 4010
 private data class PendingRpcRequest(
     val method: String,
     val resumeSessionId: String? = null,
+    /** Runtime session that initiated a branch, used to fence late responses. */
+    val branchSessionId: String? = null,
     /** Session/text captured for a session.redirect so a 4010 rejection can resend. */
     val redirectSessionId: String? = null,
     val redirectText: String? = null,
@@ -384,6 +386,22 @@ class ChatViewModel(
     }
 
     private fun handleWsEvent(event: WsEvent) {
+        val rpcId =
+            when (event) {
+                is WsEvent.RpcResult -> event.id
+                is WsEvent.RpcError -> event.id
+                else -> null
+            }
+        val pending = rpcId?.let(pendingRequests::get)
+        if (
+            pending?.method == WsMethods.SESSION_BRANCH &&
+            pending.branchSessionId != null &&
+            pending.branchSessionId != runtimeSessionId
+        ) {
+            pendingRequests.remove(rpcId)
+            return
+        }
+
         when (event) {
             is WsEvent.MessageStart,
             is WsEvent.MessageComplete,
@@ -440,8 +458,7 @@ class ChatViewModel(
                 if (isCurrentSession(event.sessionId)) {
                     val info = event.data
 
-                    @Suppress("UNCHECKED_CAST")
-                    val usage = info?.get("usage") as? Map<String, Any?>
+                    val usage = info?.get("usage") as? Map<*, *>
                     val model = (info?.get("model") as? String)?.trim().orEmpty()
                     val provider = (info?.get("provider") as? String)?.trim().orEmpty()
                     val reasoningEffort = (info?.get("reasoning_effort") as? String)?.trim()
@@ -615,6 +632,13 @@ class ChatViewModel(
             WsMethods.SESSION_BRANCH -> {
                 val resultMap = result as? Map<String, Any?> ?: return
                 val newId = resultMap["session_id"] as? String ?: return
+
+                val info = resultMap["info"] as? Map<*, *>
+                val usage = info?.get("usage") as? Map<*, *>
+
+                val model = (info?.get("model") as? String)?.trim().orEmpty()
+                val provider = (info?.get("provider") as? String)?.trim().orEmpty()
+                val reasoningEffort = (info?.get("reasoning_effort") as? String)?.trim()
                 runtimeSessionId = newId
                 _uiState.update {
                     it.copy(
@@ -622,6 +646,18 @@ class ChatViewModel(
                         isLoading = false,
                         messages = emptyList(),
                         chatTitle = (resultMap["title"] as? String)?.takeIf { t -> t.isNotBlank() } ?: "Hermes",
+                        currentSessionModel =
+                            model.takeIf { it.isNotEmpty() }?.let { resolvedModel ->
+                                if (provider.isEmpty() || resolvedModel.startsWith("$provider/")) {
+                                    resolvedModel
+                                } else {
+                                    "$provider/$resolvedModel"
+                                }
+                            },
+                        reasoningLevel = reasoningEffort?.takeIf { it.isNotEmpty() },
+                        // Never use the parent snapshot as the previous value:
+                        // the branch response carries child-scoped info.
+                        contextUsage = parseContextUsage(usage, previous = null),
                     )
                 }
                 ActiveSessionHolder.set(newId)
@@ -667,11 +703,12 @@ class ChatViewModel(
                         ?: selectedSessionId
                 runtimeSessionId = resultMap?.get("session_id") as? String
 
-                // Parse session info from backend — model, provider, reasoning_effort
-                val infoMap = resultMap?.get("info") as? Map<String, Any?>
+                // Parse the session-scoped snapshot returned by the backend.
+                val infoMap = resultMap?.get("info") as? Map<*, *>
                 val model = infoMap?.get("model") as? String
                 val provider = infoMap?.get("provider") as? String
                 val reasoningEffort = infoMap?.get("reasoning_effort") as? String
+                val usage = infoMap?.get("usage") as? Map<*, *>
 
                 // B8 (Jun 20 2026, kanban t_session_resume): do NOT reload
                 // cached messages here — switchSession() already did so before
@@ -694,6 +731,9 @@ class ChatViewModel(
                             } else {
                                 reasoningEffort
                             },
+                        // `switchSession()` cleared the previous session's
+                        // reading. Hydrate only from this resume response.
+                        contextUsage = parseContextUsage(usage, previous = null),
                     )
                 }
                 if (sessionId != null) {
@@ -1111,7 +1151,7 @@ class ChatViewModel(
             wsClient.send(
                 WsMethods.SESSION_BRANCH,
                 params,
-                onSent = { id -> trackRequest(id, WsMethods.SESSION_BRANCH) },
+                onSent = { id -> trackBranchRequest(id, sessionId) },
             )
         }
     }
@@ -2449,6 +2489,17 @@ class ChatViewModel(
             PendingRpcRequest(
                 method = WsMethods.SESSION_RESUME,
                 resumeSessionId = sessionId,
+            )
+    }
+
+    private fun trackBranchRequest(
+        id: String,
+        sessionId: String,
+    ) {
+        pendingRequests[id] =
+            PendingRpcRequest(
+                method = WsMethods.SESSION_BRANCH,
+                branchSessionId = sessionId,
             )
     }
 

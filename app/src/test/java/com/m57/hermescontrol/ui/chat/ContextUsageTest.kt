@@ -64,6 +64,6 @@ class ContextUsageTest {
         val previous = ContextUsage(usedTokens = 12_000L, maxTokens = 272_000L)
 
         assertEquals(previous, parseContextUsage(null, previous))
-        assertEquals(previous, parseContextUsage(emptyMap(), previous))
+        assertEquals(previous, parseContextUsage(emptyMap<String, Any?>(), previous))
     }
 }

@@ -74,8 +74,8 @@ private fun Any?.asUsageLong(): Long? =
  * The window maximum and cumulative counters may still retain their latest
  * known values when a partial block omits them.
  */
-fun parseContextUsage(
-    usage: Map<String, Any?>?,
+internal fun parseContextUsage(
+    usage: Map<*, *>?,
     previous: ContextUsage? = null,
 ): ContextUsage? {
     if (usage.isNullOrEmpty()) return previous
