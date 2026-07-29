@@ -362,7 +362,10 @@ class SettingsViewModel(
         AuthManager.setToken(null)
         AuthManager.setSessionCookie(null)
         AuthManager.setWsAuthParam("token")
-        HermesWsClient.disconnect()
+        // Clear queued frames: they were composed under the credentials being
+        // discarded here, and would otherwise be flushed into whichever
+        // profile's session connects next.
+        HermesWsClient.disconnect(clearPendingMessages = true)
         // Don't rebuild ApiClient here — let the navigation complete first
     }
 

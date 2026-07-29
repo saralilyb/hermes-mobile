@@ -69,6 +69,21 @@ object HermesWsClient {
     private const val MAX_BACKOFF_MS = 30_000L
     private const val BACKOFF_MULTIPLIER = 2.0
 
+    // ── Outbound queue settings ──────────────────────────────────────────
+
+    /**
+     * OkHttp refuses a send once the outgoing buffer would exceed 16 MiB. A
+     * frame that large is rejected again on every retry, so it is dropped
+     * rather than queued into a livelock.
+     */
+    private const val MAX_OUTBOUND_MESSAGE_BYTES = 16 * 1024 * 1024
+
+    /**
+     * Grace period for a congested — but still live — socket to drain after a
+     * rejected send, before it is cancelled and reconnected.
+     */
+    private const val OUTBOUND_DRAIN_TIMEOUT_MS = 5_000L
+
     // ── Internal state (all access through synchronized / atomic) ────────
 
     private val requestId = AtomicInteger(0)
@@ -76,6 +91,23 @@ object HermesWsClient {
     private val intentionalClose = AtomicBoolean(false)
     private val ticketAuthRetryUsed = AtomicBoolean(false)
     private val messageQueue = ConcurrentLinkedQueue<String>()
+
+    /**
+     * Guards outbound-queue mutation and reconnect-job scheduling so a send, a
+     * disconnect, and the [NetworkMonitor] collector cannot interleave. Never
+     * held across ticket minting or socket construction.
+     */
+    private val connectionLock = Any()
+
+    /**
+     * False while a credential-clearing [disconnect] is in effect, so a send
+     * racing that disconnect cannot re-populate the queue that was just
+     * cleared. Reset by [connect].
+     */
+    private val acceptQueuedMessages = AtomicBoolean(true)
+
+    @Volatile
+    private var outboundDrainJob: Job? = null
 
     @Volatile
     private var webSocket: WebSocket? = null
@@ -173,9 +205,18 @@ object HermesWsClient {
                         .getOrDefault(false)
                 if (connected && !isConnected && !intentionalClose.get() && autoReconnect) {
                     Log.d(TAG, "Network restored — triggering immediate reconnect")
-                    currentBackoff = INITIAL_BACKOFF_MS
-                    reconnectJob?.cancel()
-                    openSocket()
+                    // Serialize against scheduleReconnect(): both cancel and
+                    // replace reconnectJob, so without the lock the collector
+                    // and a backoff timer can each open a socket onto the same
+                    // `webSocket` field. openSocket() is dispatched rather than
+                    // called inline so the lock is never held across ticket
+                    // minting or the handshake.
+                    synchronized(connectionLock) {
+                        if (intentionalClose.get() || isConnected) return@synchronized
+                        currentBackoff = INITIAL_BACKOFF_MS
+                        reconnectJob?.cancel()
+                        reconnectJob = wsScope.launch { openSocket() }
+                    }
                 }
             }
         }
@@ -226,6 +267,7 @@ object HermesWsClient {
         }
         intentionalClose.set(false)
         ticketAuthRetryUsed.set(false)
+        acceptQueuedMessages.set(true)
         currentBackoff = INITIAL_BACKOFF_MS
         _connectionStatus.value = ConnectionStatus.CONNECTING
         openSocket()
@@ -328,17 +370,36 @@ object HermesWsClient {
         TRANSIENT_FAILURE,
     }
 
-    /** Cleanly close the WebSocket and stop auto-reconnect. */
-    fun disconnect() {
-        intentionalClose.set(true)
-        ticketAuthRetryUsed.set(false)
-        reconnectJob?.cancel()
-        reconnectJob = null
-        stopHealthTracking()
-        webSocket?.close(1000, "Client closed")
-        webSocket = null
-        connected.set(false)
-        _connectionStatus.value = ConnectionStatus.DISCONNECTED
+    /**
+     * Cleanly close the WebSocket and stop auto-reconnect.
+     *
+     * Pass [clearPendingMessages] whenever the credentials behind the
+     * connection are being discarded — logout, sign-in-required routing, or a
+     * successful login that may target a different profile. Queued frames were
+     * composed against the previous identity; without clearing them the next
+     * [onOpen] would flush them into whichever session opens next.
+     *
+     * A plain reconnect (same credentials, same profile) must keep the queue,
+     * which is the whole reason it exists.
+     */
+    fun disconnect(clearPendingMessages: Boolean = false) {
+        synchronized(connectionLock) {
+            intentionalClose.set(true)
+            ticketAuthRetryUsed.set(false)
+            acceptQueuedMessages.set(!clearPendingMessages)
+            reconnectJob?.cancel()
+            reconnectJob = null
+            outboundDrainJob?.cancel()
+            outboundDrainJob = null
+            stopHealthTracking()
+            webSocket?.close(1000, "Client closed")
+            webSocket = null
+            connected.set(false)
+            if (clearPendingMessages) {
+                messageQueue.clear()
+            }
+            _connectionStatus.value = ConnectionStatus.DISCONNECTED
+        }
     }
 
     // ── Awaited RPC request layer (issue #526) ─────────────────────────
@@ -447,14 +508,102 @@ object HermesWsClient {
         onSent?.invoke(id)
         val request = JsonRpcRequest(id = id, method = method, params = params.mapValues { it.value.toJsonElement() })
         val json = OkHttpProvider.json.encodeToString(request)
-        val ws = webSocket
-        if (ws != null && connected.get()) {
-            ws.send(json)
-        } else {
-            Log.d(TAG, "WS disconnected — queuing message")
-            messageQueue.add(json)
+        synchronized(connectionLock) {
+            val ws = webSocket
+            if (ws != null && connected.get()) {
+                // OkHttp returns false when the frame could not be enqueued —
+                // the socket is closing or its outgoing buffer is full. The
+                // previous code ignored that and silently dropped the message.
+                if (!ws.send(json)) {
+                    if (webSocket !== ws || !acceptQueuedMessages.get()) return@synchronized
+                    if (isRetryableMessage(json)) {
+                        Log.w(TAG, "WS rejected outgoing message — queuing for reconnect")
+                        messageQueue.add(json)
+                        recoverRejectedSocket(ws)
+                    } else {
+                        Log.w(TAG, "WS rejected oversized outgoing message — not retrying")
+                    }
+                }
+            } else if (acceptQueuedMessages.get()) {
+                if (isRetryableMessage(json)) {
+                    Log.d(TAG, "WS disconnected — queuing message")
+                    messageQueue.add(json)
+                } else {
+                    Log.w(TAG, "WS disconnected with oversized outgoing message — not queueing")
+                }
+            } else {
+                Log.w(TAG, "WS credentials cleared — dropping outgoing message")
+            }
         }
         return id
+    }
+
+    /**
+     * A frame larger than OkHttp's outgoing-buffer ceiling is rejected again on
+     * every retry, so queueing it would livelock the drain loop. The cheap
+     * length checks avoid encoding the string except in the ambiguous band.
+     */
+    private fun isRetryableMessage(json: String): Boolean {
+        if (json.length > MAX_OUTBOUND_MESSAGE_BYTES) return false
+        if (json.length <= MAX_OUTBOUND_MESSAGE_BYTES / 4) return true
+        return json.toByteArray(Charsets.UTF_8).size <= MAX_OUTBOUND_MESSAGE_BYTES
+    }
+
+    /**
+     * Recover from a send OkHttp refused. The socket is no longer usable for
+     * new frames, but it may still be draining what it already accepted, so
+     * give it a bounded grace period before cancelling and reconnecting.
+     *
+     * Caller must hold [connectionLock].
+     */
+    private fun recoverRejectedSocket(ws: WebSocket) {
+        connected.set(false)
+        _connectionStatus.value = ConnectionStatus.RECONNECTING
+        if (ws.queueSize() == 0L) {
+            ws.cancel()
+            scheduleReconnect()
+            return
+        }
+        if (intentionalClose.get()) return
+        outboundDrainJob?.cancel()
+        outboundDrainJob =
+            wsScope.launch {
+                delay(OUTBOUND_DRAIN_TIMEOUT_MS)
+                synchronized(connectionLock) {
+                    if (!connected.get() && !intentionalClose.get() && webSocket === ws) {
+                        ws.cancel()
+                        outboundDrainJob = null
+                        scheduleReconnect()
+                    }
+                }
+            }
+    }
+
+    /**
+     * Flush queued frames onto a freshly opened socket.
+     *
+     * Peeks rather than polls: a frame OkHttp refuses stays at the head of the
+     * queue so the next connection can retry it, instead of being dropped the
+     * way the previous unconditional `poll()` loop did. An oversized frame can
+     * never succeed, so it is discarded to avoid livelocking the loop.
+     */
+    private fun drainQueue(ws: WebSocket) {
+        synchronized(connectionLock) {
+            while (true) {
+                val msg = messageQueue.peek() ?: break
+                if (!isRetryableMessage(msg)) {
+                    Log.w(TAG, "Dropping oversized queued message")
+                    messageQueue.poll()
+                    continue
+                }
+                if (!ws.send(msg)) {
+                    Log.w(TAG, "WS rejected queued message — retaining for next connection")
+                    recoverRejectedSocket(ws)
+                    return
+                }
+                messageQueue.poll()
+            }
+        }
     }
 
     /** Convenience: submit a user prompt to an existing session. */
@@ -526,32 +675,36 @@ object HermesWsClient {
     }
 
     private fun scheduleReconnect() {
-        if (intentionalClose.get()) return
-        if (!AuthManager.isAutoReconnect()) {
-            if (BuildConfig.DEBUG) Log.d(TAG, "Auto-reconnect disabled")
-            _connectionStatus.value = ConnectionStatus.DISCONNECTED
-            return
-        }
-        if (!NetworkMonitor.isConnected.value) {
-            Log.d(TAG, "No network available — delaying reconnect scheduling")
-            _connectionStatus.value = ConnectionStatus.NO_NETWORK
-            return
-        }
-        val delay = currentBackoff
-        currentBackoff =
-            (currentBackoff * BACKOFF_MULTIPLIER)
-                .toLong()
-                .coerceAtMost(MAX_BACKOFF_MS)
-        if (BuildConfig.DEBUG) Log.d(TAG, "Reconnecting in ${delay}ms …")
-
-        reconnectJob?.cancel()
-        reconnectJob =
-            wsScope.launch {
-                delay(delay)
-                if (!intentionalClose.get() && !connected.get()) {
-                    openSocket()
-                }
+        // Reentrant: recoverRejectedSocket() and drainQueue() already hold the
+        // lock when they land here.
+        synchronized(connectionLock) {
+            if (intentionalClose.get()) return
+            if (!AuthManager.isAutoReconnect()) {
+                if (BuildConfig.DEBUG) Log.d(TAG, "Auto-reconnect disabled")
+                _connectionStatus.value = ConnectionStatus.DISCONNECTED
+                return
             }
+            if (!NetworkMonitor.isConnected.value) {
+                Log.d(TAG, "No network available — delaying reconnect scheduling")
+                _connectionStatus.value = ConnectionStatus.NO_NETWORK
+                return
+            }
+            val delay = currentBackoff
+            currentBackoff =
+                (currentBackoff * BACKOFF_MULTIPLIER)
+                    .toLong()
+                    .coerceAtMost(MAX_BACKOFF_MS)
+            if (BuildConfig.DEBUG) Log.d(TAG, "Reconnecting in ${delay}ms …")
+
+            reconnectJob?.cancel()
+            reconnectJob =
+                wsScope.launch {
+                    delay(delay)
+                    if (!intentionalClose.get() && !connected.get()) {
+                        openSocket()
+                    }
+                }
+        }
     }
 
     /**
@@ -595,12 +748,7 @@ object HermesWsClient {
             currentBackoff = INITIAL_BACKOFF_MS
             startHealthTracking()
 
-            while (messageQueue.isNotEmpty()) {
-                val msg = messageQueue.poll()
-                if (msg != null) {
-                    webSocket.send(msg)
-                }
-            }
+            drainQueue(webSocket)
         }
 
         override fun onMessage(

@@ -137,7 +137,9 @@ fun MainNavigation(sessionId: String? = null) {
     val signInRequired by AuthSessionState.signInRequired.collectAsState()
     LaunchedEffect(signInRequired) {
         if (signInRequired) {
-            HermesWsClient.disconnect()
+            // The session behind any queued frame is gone; drop them rather
+            // than replaying them after re-authentication.
+            HermesWsClient.disconnect(clearPendingMessages = true)
             NavigationController.resetTo(AuthLoginScreen)
         }
     }
