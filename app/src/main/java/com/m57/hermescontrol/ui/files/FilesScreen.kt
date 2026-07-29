@@ -47,6 +47,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -88,6 +89,10 @@ fun FilesScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(viewModel) {
+        viewModel.refresh()
+    }
 
     val uploadLauncher =
         rememberLauncherForActivityResult(

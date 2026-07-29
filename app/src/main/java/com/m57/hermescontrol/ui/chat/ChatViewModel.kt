@@ -2288,7 +2288,7 @@ class ChatViewModel(
                             bytes = bytes,
                         )
                     }.getOrElse {
-                        showOpenError("Could not open ${attachment.name}: ${it.message}")
+                        showOpenError(R.string.attachment_error_open, attachment.name)
                         return@launch
                     }
                 openBytes(ctx, localFile)
@@ -2297,7 +2297,7 @@ class ChatViewModel(
         }
         val path =
             attachment.gatewayPath ?: run {
-                showOpenError("Missing gateway path for ${attachment.name}")
+                showOpenError(R.string.attachment_error_missing_gateway_path, attachment.name)
                 return
             }
         viewModelScope.launch(Dispatchers.IO) {
@@ -2307,23 +2307,23 @@ class ChatViewModel(
                 }
 
                 is GatewayFileResult.NotFound -> {
-                    showOpenError("File not found on gateway: ${attachment.name}")
+                    showOpenError(R.string.attachment_error_not_found, attachment.name)
                 }
 
                 is GatewayFileResult.Forbidden -> {
-                    showOpenError("Access denied: ${attachment.name}")
+                    showOpenError(R.string.attachment_error_access_denied, attachment.name)
                 }
 
                 is GatewayFileResult.TooLarge -> {
-                    showOpenError("File too large to open: ${attachment.name}")
+                    showOpenError(R.string.attachment_error_too_large, attachment.name)
                 }
 
                 is GatewayFileResult.Unauthorized -> {
-                    showOpenError("Session expired — reconnect to open: ${attachment.name}")
+                    showOpenError(R.string.attachment_error_session_expired, attachment.name)
                 }
 
                 is GatewayFileResult.Failure -> {
-                    showOpenError("Could not open ${attachment.name}: ${result.throwable.message}")
+                    showOpenError(R.string.attachment_error_open, attachment.name)
                 }
             }
         }
@@ -2346,7 +2346,7 @@ class ChatViewModel(
                     out,
                 )
             openWithView(ctx, uri, file.mimeType)
-        }.onFailure { showOpenError("Could not open ${file.name}: ${it.message}") }
+        }.onFailure { showOpenError(R.string.attachment_error_open, file.name) }
     }
 
     /** Fire an ACTION_VIEW intent; throws if no activity can handle the type. */
@@ -2371,14 +2371,21 @@ class ChatViewModel(
                     addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             val chooser =
-                android.content.Intent.createChooser(fallbackIntent, "Open file").apply {
+                android.content.Intent.createChooser(
+                    fallbackIntent,
+                    ctx.getString(R.string.attachment_chooser_open),
+                ).apply {
                     addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             ctx.startActivity(chooser)
         }
     }
 
-    private fun showOpenError(message: String) {
+    private fun showOpenError(
+        @androidx.annotation.StringRes resourceId: Int,
+        vararg args: Any,
+    ) {
+        val message = getApplication<Application>().getString(resourceId, *args)
         _uiState.update { it.copy(openError = message) }
     }
 

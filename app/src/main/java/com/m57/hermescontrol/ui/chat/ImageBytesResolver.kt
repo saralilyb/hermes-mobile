@@ -9,9 +9,15 @@ import com.m57.hermescontrol.data.remote.OkHttpProvider
 import com.m57.hermescontrol.data.remote.readBytesLimited
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.Request
+import okhttp3.Response
+import java.io.IOException
 import java.util.Base64
+import kotlin.coroutines.resume
 
 private const val MAX_DATA_URL_METADATA_CHARS = 1024
 
@@ -131,29 +137,61 @@ object ImageBytesResolver {
         return Result.Bytes(bytes, mime, extensionForMime(mime))
     }
 
-    private fun fetchHttp(
+    internal suspend fun fetchHttp(
         model: String,
         fallbackMime: String,
-    ): Result {
-        val request =
-            Request
-                .Builder()
-                .url(model)
-                .build()
-        return runCatching {
-            OkHttpProvider.publicMedia.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) return Result.Error("Download failed (HTTP ${resp.code})")
-                val bytes = resp.body.readBytesLimited() ?: return Result.Error("Image is too large")
-                val mime =
-                    resp
-                        .header("Content-Type")
-                        ?.substringBefore(";")
-                        ?.ifBlank { fallbackMime }
-                        ?: fallbackMime
-                Result.Bytes(bytes, mime, extensionForMime(mime))
-            }
-        }.getOrElse { e -> Result.Error(e.message ?: "Could not download image") }
-    }
+        callFactory: Call.Factory = OkHttpProvider.publicMedia,
+    ): Result =
+        suspendCancellableCoroutine { continuation ->
+            val request =
+                Request
+                    .Builder()
+                    .url(model)
+                    .build()
+            val call = callFactory.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(
+                object : Callback {
+                    override fun onFailure(
+                        call: Call,
+                        e: IOException,
+                    ) {
+                        if (continuation.isActive) {
+                            continuation.resume(Result.Error(e.message ?: "Could not download image"))
+                        }
+                    }
+
+                    override fun onResponse(
+                        call: Call,
+                        response: Response,
+                    ) {
+                        val result =
+                            runCatching {
+                                response.use { resp ->
+                                    if (!resp.isSuccessful) {
+                                        return@use Result.Error("Download failed (HTTP ${resp.code})")
+                                    }
+                                    val bytes =
+                                        resp.body.readBytesLimited()
+                                            ?: return@use Result.Error("Image is too large")
+                                    val mime =
+                                        resp
+                                            .header("Content-Type")
+                                            ?.substringBefore(";")
+                                            ?.ifBlank { fallbackMime }
+                                            ?: fallbackMime
+                                    Result.Bytes(bytes, mime, extensionForMime(mime))
+                                }
+                            }.getOrElse { e ->
+                                Result.Error(e.message ?: "Could not download image")
+                            }
+                        if (continuation.isActive) {
+                            continuation.resume(result)
+                        }
+                    }
+                },
+            )
+        }
 
     fun extensionForMime(mime: String): String =
         when (mime.lowercase()) {

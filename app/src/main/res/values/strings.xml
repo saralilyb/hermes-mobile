@@ -933,4 +933,11 @@
     <string name="image_viewer_share_failed">Could not share image</string>
     <string name="gif_action_play">Play GIF</string>
     <string name="gif_action_pause">Pause GIF</string>
+    <string name="attachment_chooser_open">Open file</string>
+    <string name="attachment_error_open">Could not open %1$s</string>
+    <string name="attachment_error_missing_gateway_path">Missing gateway path for %1$s</string>
+    <string name="attachment_error_not_found">File not found on gateway: %1$s</string>
+    <string name="attachment_error_access_denied">Access denied: %1$s</string>
+    <string name="attachment_error_too_large">File too large to open: %1$s</string>
+    <string name="attachment_error_session_expired">Session expired — reconnect to open: %1$s</string>
 </resources>
