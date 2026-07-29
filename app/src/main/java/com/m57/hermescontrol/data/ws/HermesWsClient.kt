@@ -469,6 +469,26 @@ object HermesWsClient {
             onSent = onSent,
         )
 
+    /**
+     * Convenience: steer the active model turn while it is still generating
+     * (backend `session.redirect`).
+     *
+     * Fire-and-forget. The backend either rewrites the live turn, queues the
+     * correction as the next turn, or rejects it with `4010` when the running
+     * agent cannot be redirected. The caller's ViewModel is responsible for
+     * falling back to [sendMessage] on `4010` so the typed text is never lost.
+     */
+    fun sendRedirect(
+        sessionId: String,
+        text: String,
+        onSent: ((String) -> Unit)? = null,
+    ): String =
+        send(
+            method = WsMethods.SESSION_REDIRECT,
+            params = mapOf("session_id" to sessionId, "text" to text),
+            onSent = onSent,
+        )
+
     // ── Internal ─────────────────────────────────────────────────────────
 
     private fun openSocket() {

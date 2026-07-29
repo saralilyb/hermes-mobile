@@ -27,6 +27,7 @@ import com.m57.hermescontrol.data.ws.CommandBlocklist
 import com.m57.hermescontrol.data.ws.CommandCatalog
 import com.m57.hermescontrol.data.ws.ConnectionStatus
 import com.m57.hermescontrol.data.ws.HermesWsClient
+import com.m57.hermescontrol.data.ws.JsonRpcError
 import com.m57.hermescontrol.data.ws.WsEvent
 import com.m57.hermescontrol.data.ws.WsMethods
 import com.m57.hermescontrol.data.ws.toJsonElement
@@ -53,9 +54,18 @@ import java.util.concurrent.ConcurrentHashMap
 private const val TAG = "ChatViewModel"
 private const val MESSAGE_PAGE_SIZE = 150
 
+/**
+ * Gateway error code for "agent does not support active-turn redirect"
+ * (hermes-agent `tui_gateway/server.py`, `session.redirect` handler).
+ */
+private const val REDIRECT_UNSUPPORTED_CODE = 4010
+
 private data class PendingRpcRequest(
     val method: String,
     val resumeSessionId: String? = null,
+    /** Session/text captured for a session.redirect so a 4010 rejection can resend. */
+    val redirectSessionId: String? = null,
+    val redirectText: String? = null,
 )
 
 data class ChatUiState(
@@ -749,12 +759,45 @@ class ChatViewModel(
         id: String,
         error: Any?,
     ) {
-        val method = pendingRequests.remove(id)?.method ?: return
+        val request = pendingRequests.remove(id) ?: return
+        val method = request.method
+        val errorCode =
+            when (error) {
+                is JsonRpcError -> error.code
+                is Map<*, *> -> (error["code"] as? Number)?.toInt()
+                else -> null
+            }
         val errorMsg =
             when (error) {
+                is JsonRpcError -> error.message
                 is Map<*, *> -> error["message"] as? String ?: error.toString()
                 else -> error.toString()
             }
+
+        // A gateway whose running agent cannot steer an in-flight turn answers
+        // session.redirect with 4010. The user's text is already on screen but
+        // was never delivered, so resend it as a normal prompt rather than
+        // surfacing an error and losing the message (issue #710).
+        if (method == WsMethods.SESSION_REDIRECT) {
+            val sessionId = request.redirectSessionId
+            val text = request.redirectText
+            if (errorCode == REDIRECT_UNSUPPORTED_CODE && sessionId != null && !text.isNullOrBlank()) {
+                Log.d(TAG, "session.redirect unsupported — resending as prompt.submit")
+                // ChatWsEventReducer.onRpcError already ran for this event and
+                // parked a generic error banner. The rejection is recoverable,
+                // so clear it — the user should see the resent turn, not a
+                // failure they cannot act on.
+                _uiState.update { it.copy(errorMessage = null) }
+                viewModelScope.launch(Dispatchers.IO) {
+                    wsClient.sendMessage(
+                        sessionId,
+                        text,
+                        onSent = { retryId -> trackRequest(retryId, WsMethods.PROMPT_SUBMIT) },
+                    )
+                }
+                return
+            }
+        }
 
         // Surface error in UI (these are server-pushed RpcError for
         // fire-and-forget RPCs — awaited RPCs handle their own failure
@@ -800,6 +843,11 @@ class ChatViewModel(
         // Snapshot + clear attachments so the input bar empties immediately
         val attachments = _uiState.value.pendingAttachments.toList()
         clearAttachments()
+
+        // Read the streaming flag BEFORE the optimistic update below sets
+        // isAgentTyping = true, otherwise every send would look mid-turn and
+        // route through session.redirect (issue #710).
+        val wasStreaming = _uiState.value.isAgentTyping
 
         val userMessage =
             ChatMessage(
@@ -893,11 +941,28 @@ class ChatViewModel(
                         if (text.isNotBlank()) "\n\n$text" else ""
                 }
 
-            wsClient.sendMessage(
-                agentSessionId,
-                fullText,
-                onSent = { id -> trackRequest(id, WsMethods.PROMPT_SUBMIT) },
-            )
+            // While a turn is still streaming and the prompt carries no
+            // attachments, steer the in-flight turn via session.redirect
+            // instead of queueing a second prompt.submit (issue #710).
+            // session.redirect is text-only, so any attachment send stays on
+            // the normal path. A backend that cannot redirect answers 4010;
+            // handleRpcError re-sends the text as a normal prompt so the
+            // typed message is never silently lost.
+            if (wasStreaming && attachments.isEmpty()) {
+                wsClient.sendRedirect(
+                    agentSessionId,
+                    fullText,
+                    onSent = { id ->
+                        trackRedirectRequest(id, agentSessionId, fullText)
+                    },
+                )
+            } else {
+                wsClient.sendMessage(
+                    agentSessionId,
+                    fullText,
+                    onSent = { id -> trackRequest(id, WsMethods.PROMPT_SUBMIT) },
+                )
+            }
         }
     }
 
@@ -2290,6 +2355,24 @@ class ChatViewModel(
         method: String,
     ) {
         pendingRequests[id] = PendingRpcRequest(method)
+    }
+
+    /**
+     * Track a `session.redirect` alongside the text it carried, so a `4010`
+     * rejection (running agent cannot be redirected) can resend the same text
+     * as a normal prompt instead of dropping it.
+     */
+    private fun trackRedirectRequest(
+        id: String,
+        sessionId: String,
+        text: String,
+    ) {
+        pendingRequests[id] =
+            PendingRpcRequest(
+                method = WsMethods.SESSION_REDIRECT,
+                redirectSessionId = sessionId,
+                redirectText = text,
+            )
     }
 
     private fun trackResumeRequest(
