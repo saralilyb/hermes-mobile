@@ -36,6 +36,28 @@ class ContextUsageTest {
     }
 
     @Test
+    fun parseContextUsage_preservesZeroWindowOccupancyAndRejectsNegativeValues() {
+        val emptyWindow =
+            parseContextUsage(
+                mapOf(
+                    "context_used" to 0,
+                    "context_max" to 272_000,
+                ),
+            )
+        assertEquals(0L, emptyWindow?.usedTokens)
+        listOf(-1, -0.5, 0.5).forEach { invalidValue ->
+            val invalidWindow =
+                parseContextUsage(
+                    mapOf(
+                        "context_used" to invalidValue,
+                        "context_max" to 272_000,
+                    ),
+                )
+            assertNull(invalidWindow?.usedTokens)
+        }
+    }
+
+    @Test
     fun parseContextUsage_explicitUnknownClearsOnlyTheNumerator() {
         val previous =
             ContextUsage(

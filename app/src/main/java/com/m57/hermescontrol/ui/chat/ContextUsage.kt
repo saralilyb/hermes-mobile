@@ -48,12 +48,17 @@ data class ContextUsage(
  *
  * `JsonElement.toAny()` tries `doubleOrNull` before `longOrNull`, so integral
  * counts arrive as [Double] — a plain `as? Long` cast silently yields null for
- * every token count the gateway sends.
+ * every token count the gateway sends. Usage counts must still be exact
+ * integers; `Number.toLong()` would incorrectly truncate fractional values.
  */
 private fun Any?.asUsageLong(): Long? =
     when (this) {
         is Number -> {
-            toLong()
+            try {
+                toString().toBigDecimalOrNull()?.toBigIntegerExact()?.longValueExact()
+            } catch (_: ArithmeticException) {
+                null
+            }
         }
 
         is String -> {
@@ -81,7 +86,7 @@ internal fun parseContextUsage(
     previous: ContextUsage? = null,
 ): ContextUsage? {
     if (usage.isNullOrEmpty()) return previous
-    val used = usage["context_used"].asUsageLong()?.takeIf { it > 0L }
+    val used = usage["context_used"].asUsageLong()?.takeIf { it >= 0L }
     val max = usage["context_max"].asUsageLong()?.takeIf { it > 0L }
     return ContextUsage(
         usedTokens = used,
