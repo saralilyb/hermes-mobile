@@ -21,6 +21,73 @@ abstract class HermesDatabase : RoomDatabase() {
         @Volatile
         private var instance: HermesDatabase? = null
 
+        internal val MIGRATION_2_3 =
+            object : Migration(2, 3) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_chat_messages_session_id_timestamp` " +
+                            "ON `chat_messages` (`session_id`, `timestamp`)",
+                    )
+                }
+            }
+
+        internal val MIGRATION_3_4 =
+            object : Migration(3, 4) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE `chat_messages` ADD COLUMN `reasoning_text` TEXT NOT NULL DEFAULT ''",
+                    )
+                }
+            }
+
+        // A database created directly at schema 4 has no SQL default on
+        // reasoning_text. Rebuild the table so Room sees the canonical schema
+        // after adding attachments_json; a plain ALTER leaves schema 5 invalid.
+        internal val MIGRATION_4_5 =
+            object : Migration(4, 5) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        """
+                        CREATE TABLE `_new_chat_messages` (
+                            `id` TEXT NOT NULL,
+                            `session_id` TEXT NOT NULL,
+                            `role` TEXT NOT NULL,
+                            `content` TEXT NOT NULL,
+                            `reasoning_text` TEXT NOT NULL DEFAULT '',
+                            `timestamp` INTEGER NOT NULL,
+                            `tool_name` TEXT,
+                            `tool_status` TEXT,
+                            `is_streaming` INTEGER NOT NULL,
+                            `attachments_json` TEXT NOT NULL DEFAULT '[]',
+                            PRIMARY KEY(`id`)
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        """
+                        INSERT INTO `_new_chat_messages` (
+                            `id`, `session_id`, `role`, `content`,
+                            `reasoning_text`, `timestamp`, `tool_name`,
+                            `tool_status`, `is_streaming`, `attachments_json`
+                        )
+                        SELECT
+                            `id`, `session_id`, `role`, `content`,
+                            `reasoning_text`, `timestamp`, `tool_name`,
+                            `tool_status`, `is_streaming`, '[]'
+                        FROM `chat_messages`
+                        """.trimIndent(),
+                    )
+                    db.execSQL("DROP TABLE `chat_messages`")
+                    db.execSQL(
+                        "ALTER TABLE `_new_chat_messages` RENAME TO `chat_messages`",
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_chat_messages_session_id_timestamp` " +
+                            "ON `chat_messages` (`session_id`, `timestamp`)",
+                    )
+                }
+            }
+
         fun get(context: Context): HermesDatabase =
             instance ?: synchronized(this) {
                 // SQLCipher can't open plaintext SQLite databases — if an old
@@ -35,42 +102,13 @@ abstract class HermesDatabase : RoomDatabase() {
                 System.loadLibrary("sqlcipher")
                 val factory = SupportOpenHelperFactory(AuthManager.getDatabasePassword())
 
-                val migration2to3 =
-                    object : Migration(2, 3) {
-                        override fun migrate(db: SupportSQLiteDatabase) {
-                            db.execSQL(
-                                "CREATE INDEX IF NOT EXISTS `index_chat_messages_session_id_timestamp` " +
-                                    "ON `chat_messages` (`session_id`, `timestamp`)",
-                            )
-                        }
-                    }
-
-                val migration3to4 =
-                    object : Migration(3, 4) {
-                        override fun migrate(db: SupportSQLiteDatabase) {
-                            db.execSQL(
-                                "ALTER TABLE `chat_messages` ADD COLUMN `reasoning_text` TEXT NOT NULL DEFAULT ''",
-                            )
-                        }
-                    }
-
-                val migration4to5 =
-                    object : Migration(4, 5) {
-                        override fun migrate(db: SupportSQLiteDatabase) {
-                            db.execSQL(
-                                "ALTER TABLE `chat_messages` ADD COLUMN " +
-                                    "`attachments_json` TEXT NOT NULL DEFAULT '[]'",
-                            )
-                        }
-                    }
-
                 instance ?: Room
                     .databaseBuilder(
                         context.applicationContext,
                         HermesDatabase::class.java,
                         "hermes_control.db",
                     ).openHelperFactory(factory)
-                    .addMigrations(migration2to3, migration3to4, migration4to5)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .fallbackToDestructiveMigration(false)
                     .build()
                     .also { instance = it }
