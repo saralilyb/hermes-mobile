@@ -182,6 +182,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.sqlcipher)
     ksp(libs.androidx.room.compiler)
+    androidTestImplementation(libs.androidx.room.testing)
 
     // Local tests: jUnit, coroutines, Android runner
     testImplementation(libs.junit)
