@@ -339,6 +339,7 @@ object ChatWsEventReducer {
                 role = MessageRole.TOOL,
                 content = contentJson,
                 toolName = event.name,
+                toolCallId = event.data.toolCallIdOrNull(),
                 toolStatus = ToolStatus.RUNNING,
             )
 
@@ -392,12 +393,21 @@ object ChatWsEventReducer {
                 OkHttpProvider.json.encodeToString(it.toJsonElement())
             } ?: ""
         val messages = state.messages.toMutableList()
+        val completedToolCallId = event.data.toolCallIdOrNull()
         val toolIdx =
-            messages.indexOfLast {
-                it.role == MessageRole.TOOL &&
-                    it.toolName == event.name &&
-                    it.toolStatus == ToolStatus.RUNNING
-            }
+            completedToolCallId
+                ?.let { toolCallId ->
+                    messages.indexOfLast {
+                        it.role == MessageRole.TOOL &&
+                            it.toolCallId == toolCallId &&
+                            it.toolStatus == ToolStatus.RUNNING
+                    }
+                }?.takeIf { it >= 0 }
+                ?: messages.indexOfLast {
+                    it.role == MessageRole.TOOL &&
+                        it.toolName == event.name &&
+                        it.toolStatus == ToolStatus.RUNNING
+                }
         if (toolIdx < 0) return ReducerResult(state = state, streamingState = streamingState)
 
         val updated =
@@ -449,18 +459,36 @@ object ChatWsEventReducer {
 
         // Prefer RUNNING tool, fall back to COMPLETED
         var toolIdx =
-            messages.indexOfLast {
-                it.role == MessageRole.TOOL &&
-                    it.toolName == event.name &&
-                    it.toolStatus == ToolStatus.RUNNING
-            }
-        if (toolIdx < 0) {
-            toolIdx =
-                messages.indexOfLast {
+            event.toolId
+                .takeIf { it.isNotBlank() }
+                ?.let { toolCallId ->
+                    messages.indexOfLast {
+                        it.role == MessageRole.TOOL &&
+                            it.toolCallId == toolCallId &&
+                            it.toolStatus == ToolStatus.RUNNING
+                    }
+                }?.takeIf { it >= 0 }
+                ?: messages.indexOfLast {
                     it.role == MessageRole.TOOL &&
                         it.toolName == event.name &&
-                        it.toolStatus == ToolStatus.COMPLETED
+                        it.toolStatus == ToolStatus.RUNNING
                 }
+        if (toolIdx < 0) {
+            toolIdx =
+                event.toolId
+                    .takeIf { it.isNotBlank() }
+                    ?.let { toolCallId ->
+                        messages.indexOfLast {
+                            it.role == MessageRole.TOOL &&
+                                it.toolCallId == toolCallId &&
+                                it.toolStatus == ToolStatus.COMPLETED
+                        }
+                    }?.takeIf { it >= 0 }
+                    ?: messages.indexOfLast {
+                        it.role == MessageRole.TOOL &&
+                            it.toolName == event.name &&
+                            it.toolStatus == ToolStatus.COMPLETED
+                    }
         }
         if (toolIdx < 0) return ReducerResult(state = state, streamingState = streamingState)
 
@@ -744,6 +772,10 @@ sealed class ReducerEffect {
         val messageId: String,
     ) : ReducerEffect()
 }
+
+private fun Map<String, Any?>?.toolCallIdOrNull(): String? =
+    (this?.get("tool_id") as? String)
+        ?: (this?.get("tool_call_id") as? String)
 
 @Suppress("UNCHECKED_CAST")
 fun extractTodosFromMap(data: Map<String, Any?>?): List<TodoItem>? {

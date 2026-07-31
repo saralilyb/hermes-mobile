@@ -401,6 +401,60 @@ class ChatWsEventReducerTest {
     }
 
     @Test
+    fun testToolComplete_matchesConcurrentSameNameToolByCallId() {
+        val initialState = ChatUiState(currentSessionId = "session-1")
+        val firstStart =
+            WsEvent.ToolStart(
+                name = "terminal",
+                data = mapOf("tool_id" to "call-a", "command" to "first"),
+                sessionId = "session-1",
+            )
+        val secondStart =
+            WsEvent.ToolStart(
+                name = "terminal",
+                data = mapOf("tool_id" to "call-b", "command" to "second"),
+                sessionId = "session-1",
+            )
+        val afterFirst =
+            ChatWsEventReducer.reduce(
+                state = initialState,
+                streamingState = StreamingState(),
+                event = firstStart,
+                currentSessionId = "session-1",
+            )
+        val afterSecond =
+            ChatWsEventReducer.reduce(
+                state = afterFirst.state,
+                streamingState = StreamingState(),
+                event = secondStart,
+                currentSessionId = "session-1",
+            )
+
+        val completed =
+            ChatWsEventReducer.reduce(
+                state = afterSecond.state,
+                streamingState = StreamingState(),
+                event =
+                    WsEvent.ToolComplete(
+                        name = "terminal",
+                        data = mapOf("tool_id" to "call-a", "output" to "done"),
+                        sessionId = "session-1",
+                    ),
+                currentSessionId = "session-1",
+            )
+
+        assertEquals(
+            listOf("call-a", "call-b"),
+            completed.state.messages.map { it.toolCallId },
+        )
+        assertEquals(
+            listOf(ToolStatus.COMPLETED, ToolStatus.RUNNING),
+            completed.state.messages.map { it.toolStatus },
+        )
+        assertTrue(completed.state.messages.first().content.contains("done"))
+    }
+
+    @Test
     fun testToolStart_extractsAgentTodos() {
         val state = ChatUiState(currentSessionId = "session-1")
         val todoEvent =

@@ -456,7 +456,7 @@ class McpServersViewModel :
 
     fun startMcpOAuthFlow(
         server: McpServer,
-        onOpenBrowser: (String) -> Unit,
+        onOpenBrowser: (String) -> Boolean,
     ) {
         val startGeneration = ++oauthStartGeneration
         oauthStartJob?.cancel()
@@ -508,8 +508,11 @@ class McpServersViewModel :
                                                 ),
                                         )
                                     }
-                                    onOpenBrowser(url)
-                                    startPollingOAuthFlow(flow.flowId, url)
+                                    if (onOpenBrowser(url)) {
+                                        startPollingOAuthFlow(flow.flowId, url)
+                                    } else {
+                                        reportOAuthBrowserLaunchFailure()
+                                    }
                                 }
                             }
                         }
@@ -568,6 +571,10 @@ class McpServersViewModel :
                             }
                         }
                         is NetworkResult.Failure -> {
+                            if (McpOAuthPolicy.isTerminalPollError(result.error)) {
+                                failOAuthFlow("OAuth authorization expired; try again")
+                                return@launch
+                            }
                             consecutiveFailures += 1
                             if (consecutiveFailures >= McpOAuthPolicy.MAX_CONSECUTIVE_POLL_FAILURES) {
                                 failOAuthFlow("OAuth status check failed; try again")
@@ -583,6 +590,16 @@ class McpServersViewModel :
     fun reportOAuthBrowserLaunchFailure() {
         _uiState.update {
             it.copy(toastMessage = "No browser could open the OAuth authorization page")
+        }
+    }
+
+    fun retryMcpOAuthBrowser(onOpenBrowser: (String) -> Boolean) {
+        val flow = _uiState.value.activeOAuthFlow ?: return
+        val url = McpOAuthPolicy.authorizationUrlOrNull(flow.authorizationUrl) ?: return
+        if (onOpenBrowser(url)) {
+            startPollingOAuthFlow(flow.flowId, url)
+        } else {
+            reportOAuthBrowserLaunchFailure()
         }
     }
 

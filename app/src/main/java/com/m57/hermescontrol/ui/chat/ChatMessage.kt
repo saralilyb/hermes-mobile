@@ -33,6 +33,8 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis(),
     val isStreaming: Boolean = false,
     val toolName: String? = null,
+    /** Stable backend identity for concurrent same-name tool calls. */
+    val toolCallId: String? = null,
     val toolStatus: ToolStatus? = null,
     val approvalInfo: ApprovalInfo? = null,
     /** Transient clarify request data — when present, renders [ClarifyBubble] inline. */

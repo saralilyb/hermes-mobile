@@ -186,11 +186,7 @@ fun McpServersScreen(
                             viewModel = viewModel,
                             spacing = spacing,
                             onClick = { showDetail = server },
-                            onOpenBrowser = { url ->
-                                if (!openOAuthAuthorization(context, url)) {
-                                    viewModel.reportOAuthBrowserLaunchFailure()
-                                }
-                            },
+                            onOpenBrowser = { url -> openOAuthAuthorization(context, url) },
                         )
                     }
 
@@ -222,10 +218,8 @@ fun McpServersScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        flow.authorizationUrl?.let { url ->
-                            if (!openOAuthAuthorization(context, url)) {
-                                viewModel.reportOAuthBrowserLaunchFailure()
-                            }
+                        viewModel.retryMcpOAuthBrowser { url ->
+                            openOAuthAuthorization(context, url)
                         }
                     },
                 ) {
@@ -415,7 +409,7 @@ private fun ServerCard(
     viewModel: McpServersViewModel,
     spacing: com.m57.hermescontrol.theme.Spacing,
     onClick: () -> Unit,
-    onOpenBrowser: (String) -> Unit,
+    onOpenBrowser: (String) -> Boolean,
 ) {
     var showEnv by remember { mutableStateOf(false) }
 

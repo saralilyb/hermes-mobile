@@ -34,6 +34,10 @@ data class SessionMessage(
     val content: String? = null,
     val timestamp: JsonElement? = null,
     val type: String? = null,
+    @SerialName("tool_call_id")
+    val toolCallId: String? = null,
+    @SerialName("tool_name")
+    val toolName: String? = null,
     @Serializable(with = JsonElementStringSerializer::class)
     val reasoning: String? = null,
     @SerialName("reasoning_text")
