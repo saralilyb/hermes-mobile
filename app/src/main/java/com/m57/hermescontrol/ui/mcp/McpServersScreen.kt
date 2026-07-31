@@ -1,5 +1,8 @@
 package com.m57.hermescontrol.ui.mcp
 
+import android.content.Context
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -184,14 +187,8 @@ fun McpServersScreen(
                             spacing = spacing,
                             onClick = { showDetail = server },
                             onOpenBrowser = { url ->
-                                try {
-                                    context.startActivity(
-                                        android.content.Intent(
-                                            android.content.Intent.ACTION_VIEW,
-                                            android.net.Uri.parse(url),
-                                        ),
-                                    )
-                                } catch (_: Exception) {
+                                if (!openOAuthAuthorization(context, url)) {
+                                    viewModel.reportOAuthBrowserLaunchFailure()
                                 }
                             },
                         )
@@ -226,14 +223,8 @@ fun McpServersScreen(
                 Button(
                     onClick = {
                         flow.authorizationUrl?.let { url ->
-                            try {
-                                context.startActivity(
-                                    android.content.Intent(
-                                        android.content.Intent.ACTION_VIEW,
-                                        android.net.Uri.parse(url),
-                                    ),
-                                )
-                            } catch (_: Exception) {
+                            if (!openOAuthAuthorization(context, url)) {
+                                viewModel.reportOAuthBrowserLaunchFailure()
                             }
                         }
                     },
@@ -270,6 +261,19 @@ fun McpServersScreen(
             },
         )
     }
+}
+
+private fun openOAuthAuthorization(
+    context: Context,
+    url: String,
+): Boolean {
+    val safeUrl = McpOAuthPolicy.authorizationUrlOrNull(url) ?: return false
+    return runCatching {
+        CustomTabsIntent
+            .Builder()
+            .build()
+            .launchUrl(context, Uri.parse(safeUrl))
+    }.isSuccess
 }
 
 // ── Sections ──────────────────────────────────────────────────────
@@ -489,22 +493,24 @@ private fun ServerCard(
 
             Spacer(modifier = Modifier.height(spacing.sm))
 
+            if (server.auth == "oauth") {
+                FilledTonalButton(
+                    onClick = { viewModel.startMcpOAuthFlow(server, onOpenBrowser) },
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                ) {
+                    Icon(Icons.Filled.Key, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(spacing.xs))
+                    Text(stringResource(R.string.mcp_servers_action_authorize))
+                }
+                Spacer(modifier = Modifier.height(spacing.sm))
+            }
+
             // Action buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
-                if (server.auth == "oauth") {
-                    FilledTonalButton(
-                        onClick = { viewModel.startMcpOAuthFlow(server, onOpenBrowser) },
-                        modifier = Modifier.weight(1.2f),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-                    ) {
-                        Icon(Icons.Filled.Key, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(spacing.xs))
-                        Text(stringResource(R.string.mcp_servers_action_authorize), maxLines = 1)
-                    }
-                }
                 FilledTonalButton(
                     onClick = { viewModel.testServer(server.name) },
                     modifier = Modifier.weight(1f),

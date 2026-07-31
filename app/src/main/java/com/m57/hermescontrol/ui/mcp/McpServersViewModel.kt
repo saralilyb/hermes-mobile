@@ -14,6 +14,8 @@ import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -448,14 +450,20 @@ class McpServersViewModel :
 
     // ── OAuth ─────────────────────────────────────────────────
 
-    private var oauthPollJob: kotlinx.coroutines.Job? = null
+    private var oauthPollJob: Job? = null
 
     fun startMcpOAuthFlow(
         server: McpServer,
         onOpenBrowser: (String) -> Unit,
     ) {
         oauthPollJob?.cancel()
-        _uiState.update { it.copy(toastMessage = "Starting OAuth authorization…") }
+        oauthPollJob = null
+        _uiState.update {
+            it.copy(
+                activeOAuthFlow = null,
+                toastMessage = "Starting OAuth authorization…",
+            )
+        }
         viewModelScope.launch {
             val result =
                 withContext(Dispatchers.IO) {
@@ -464,75 +472,109 @@ class McpServersViewModel :
             when (result) {
                 is NetworkResult.Success -> {
                     val flow = result.data
-                    _uiState.update { it.copy(activeOAuthFlow = flow) }
-                    flow.authorizationUrl?.let { url ->
-                        onOpenBrowser(url)
-                        startPollingOAuthFlow(flow.flowId)
-                    } ?: run {
-                        _uiState.update {
-                            it.copy(
-                                toastMessage = "Failed to start OAuth: No authorization URL returned",
-                            )
+                    when (McpOAuthPolicy.classify(flow.status)) {
+                        OAuthFlowState.SUCCEEDED -> completeOAuthFlow()
+                        OAuthFlowState.FAILED -> {
+                            failOAuthFlow(flow.error ?: "OAuth server rejected the request")
+                        }
+                        OAuthFlowState.PENDING -> {
+                            val url = McpOAuthPolicy.authorizationUrlOrNull(flow.authorizationUrl)
+                            if (url == null) {
+                                failOAuthFlow("OAuth server returned an unsafe authorization URL")
+                                return@launch
+                            }
+                            _uiState.update {
+                                it.copy(activeOAuthFlow = flow.copy(authorizationUrl = url))
+                            }
+                            onOpenBrowser(url)
+                            startPollingOAuthFlow(flow.flowId, url)
                         }
                     }
                 }
                 is NetworkResult.Failure -> {
-                    _uiState.update { it.copy(toastMessage = "Failed to start OAuth: ${result.error.message}") }
+                    failOAuthFlow("Failed to start OAuth: ${result.error.message}")
                 }
             }
         }
     }
 
-    private fun startPollingOAuthFlow(flowId: String) {
+    private fun startPollingOAuthFlow(
+        flowId: String,
+        authorizationUrl: String,
+    ) {
         oauthPollJob?.cancel()
         oauthPollJob =
             viewModelScope.launch {
-                var polling = true
-                while (polling) {
-                    kotlinx.coroutines.delay(2000)
+                var consecutiveFailures = 0
+                repeat(McpOAuthPolicy.MAX_POLL_ATTEMPTS) {
+                    delay(McpOAuthPolicy.POLL_INTERVAL_MS)
                     val result =
                         withContext(Dispatchers.IO) {
                             safeApiCall { ApiClient.hermesApi.getMcpOAuthFlowStatus(flowId) }
                         }
                     when (result) {
                         is NetworkResult.Success -> {
+                            consecutiveFailures = 0
                             val flow = result.data
-                            _uiState.update { it.copy(activeOAuthFlow = flow) }
-                            when (flow.status) {
-                                "approved", "completed" -> {
-                                    polling = false
+                            when (McpOAuthPolicy.classify(flow.status)) {
+                                OAuthFlowState.SUCCEEDED -> {
+                                    completeOAuthFlow()
+                                    return@launch
+                                }
+                                OAuthFlowState.FAILED -> {
+                                    failOAuthFlow(flow.error ?: "Unexpected OAuth flow status")
+                                    return@launch
+                                }
+                                OAuthFlowState.PENDING -> {
                                     _uiState.update {
                                         it.copy(
-                                            activeOAuthFlow = null,
-                                            toastMessage = "OAuth authorization successful!",
+                                            activeOAuthFlow =
+                                                flow.copy(
+                                                    authorizationUrl = authorizationUrl,
+                                                ),
                                         )
                                     }
-                                    loadServers()
-                                }
-                                "error" -> {
-                                    polling = false
-                                    _uiState.update {
-                                        it.copy(
-                                            activeOAuthFlow = null,
-                                            toastMessage = "OAuth failed: ${flow.error ?: "Unknown error"}",
-                                        )
-                                    }
-                                }
-                                "authorization_required" -> {
-                                    // Keep polling
-                                }
-                                else -> {
-                                    // Check if worker is done or expired
-                                    // Continue polling until status transitions
                                 }
                             }
                         }
                         is NetworkResult.Failure -> {
-                            // Keep polling or stop after too many failures? Let's just log/toast n retry a few times
+                            consecutiveFailures += 1
+                            if (consecutiveFailures >= McpOAuthPolicy.MAX_CONSECUTIVE_POLL_FAILURES) {
+                                failOAuthFlow("OAuth status check failed; try again")
+                                return@launch
+                            }
                         }
                     }
                 }
+                failOAuthFlow("OAuth authorization timed out; try again")
             }
+    }
+
+    fun reportOAuthBrowserLaunchFailure() {
+        _uiState.update {
+            it.copy(toastMessage = "No browser could open the OAuth authorization page")
+        }
+    }
+
+    private fun completeOAuthFlow() {
+        oauthPollJob = null
+        _uiState.update {
+            it.copy(
+                activeOAuthFlow = null,
+                toastMessage = "OAuth authorization successful",
+            )
+        }
+        loadServers()
+    }
+
+    private fun failOAuthFlow(message: String) {
+        oauthPollJob = null
+        _uiState.update {
+            it.copy(
+                activeOAuthFlow = null,
+                toastMessage = "OAuth failed: $message",
+            )
+        }
     }
 
     fun dismissOAuthFlow() {
