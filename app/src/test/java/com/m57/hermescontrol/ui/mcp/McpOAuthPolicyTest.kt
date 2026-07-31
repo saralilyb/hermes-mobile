@@ -1,10 +1,39 @@
 package com.m57.hermescontrol.ui.mcp
 
+import com.m57.hermescontrol.data.remote.NetworkError
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class McpOAuthPolicyTest {
+    @Test
+    fun pollingDeadline_matchesBackendFlowLifetime() {
+        assertEquals(
+            5 * 60 * 1_000L,
+            McpOAuthPolicy.FLOW_TIMEOUT_MS,
+        )
+        assertEquals(
+            McpOAuthPolicy.FLOW_TIMEOUT_MS,
+            McpOAuthPolicy.MAX_POLL_ATTEMPTS * McpOAuthPolicy.POLL_INTERVAL_MS,
+        )
+    }
+
+    @Test
+    fun terminalPollErrors_stopExpiredOrUnauthorizedFlows() {
+        assertTrue(McpOAuthPolicy.isTerminalPollError(NetworkError.Http(404, "gone")))
+        assertTrue(McpOAuthPolicy.isTerminalPollError(NetworkError.Http(403, "forbidden")))
+        assertTrue(McpOAuthPolicy.isTerminalPollError(NetworkError.AuthExpired()))
+        assertFalse(McpOAuthPolicy.isTerminalPollError(NetworkError.Http(500, "retry")))
+    }
+
+    @Test
+    fun remainingFlowTime_neverExtendsBackendDeadline() {
+        assertEquals(4_000L, McpOAuthPolicy.remainingFlowTimeMs(5_000L, 1_000L))
+        assertEquals(0L, McpOAuthPolicy.remainingFlowTimeMs(5_000L, 5_001L))
+    }
+
     @Test
     fun authorizationUrl_acceptsHttpsProviderUrl() {
         assertEquals(

@@ -1942,40 +1942,14 @@ class ChatViewModel(
                         withContext(Dispatchers.IO) { repo.persistMessages(incoming, sessionId) }
                         _uiState.update { current ->
                             if (current.currentSessionId != sessionId) return@update current
-                            val unmatchedIncoming = incoming.toMutableList()
-                            val mergedList = mutableListOf<ChatMessage>()
-
-                            for (existing in current.messages) {
-                                val existingServerIndex = serverMessageIndex(existing.id, sessionId)
-                                if (existingServerIndex != null) {
-                                    val matchIdx = unmatchedIncoming.indexOfFirst { it.id == existing.id }
-                                    if (matchIdx >= 0) {
-                                        mergedList.add(unmatchedIncoming.removeAt(matchIdx))
-                                    } else {
-                                        mergedList.add(existing)
-                                    }
-                                } else {
-                                    val matchIdx =
-                                        unmatchedIncoming.indexOfFirst { inc ->
-                                            inc.role == existing.role && (
-                                                inc.content == existing.content ||
-                                                    (
-                                                        existing.role == MessageRole.TOOL &&
-                                                            existing.toolStatus == ToolStatus.RUNNING &&
-                                                            inc.toolName != null &&
-                                                            inc.toolName == existing.toolName
-                                                    )
-                                            )
-                                        }
-                                    if (matchIdx >= 0) {
-                                        mergedList.add(unmatchedIncoming.removeAt(matchIdx))
-                                    } else {
-                                        mergedList.add(existing)
-                                    }
-                                }
-                            }
-                            mergedList.addAll(unmatchedIncoming)
-                            val merged = mergedList.distinctBy { it.id }
+                            val merged =
+                                mergeSyncedMessages(
+                                    current = current.messages,
+                                    incoming = incoming,
+                                    isServerMessage = { id ->
+                                        serverMessageIndex(id, sessionId) != null
+                                    },
+                                )
                             if (sameMessages(current.messages, merged)) {
                                 current
                             } else {
@@ -2137,6 +2111,9 @@ class ChatViewModel(
                 attachments = attachments,
                 timestamp = timestamp,
                 isStreaming = false,
+                toolName = msg.toolName,
+                toolCallId = msg.toolCallId,
+                toolStatus = if (role == MessageRole.TOOL) ToolStatus.COMPLETED else null,
             )
         }
     }
@@ -2215,6 +2192,21 @@ class ChatViewModel(
                             ?.toLong()
                             ?: System.currentTimeMillis() + index,
                     isStreaming = false,
+                    toolName =
+                        if (role == MessageRole.TOOL) {
+                            (message["tool_name"] as? String)
+                                ?: (message["name"] as? String)
+                        } else {
+                            null
+                        },
+                    toolCallId =
+                        if (role == MessageRole.TOOL) {
+                            (message["tool_call_id"] as? String)
+                                ?: (message["tool_id"] as? String)
+                        } else {
+                            null
+                        },
+                    toolStatus = if (role == MessageRole.TOOL) ToolStatus.COMPLETED else null,
                 )
             }
         if (resumedMessages.isEmpty()) return
@@ -2471,7 +2463,10 @@ class ChatViewModel(
                 a.id == b.id &&
                     a.role == b.role &&
                     a.content == b.content &&
-                    a.reasoningText == b.reasoningText
+                    a.reasoningText == b.reasoningText &&
+                    a.toolName == b.toolName &&
+                    a.toolCallId == b.toolCallId &&
+                    a.toolStatus == b.toolStatus
             }
 
     // ── UI actions ───────────────────────────────────────────────────────

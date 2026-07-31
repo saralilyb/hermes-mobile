@@ -1,6 +1,7 @@
 package com.m57.hermescontrol.data.remote
 
 import com.m57.hermescontrol.data.local.AuthSessionState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -126,6 +127,8 @@ suspend inline fun <reified T> safeApiCall(
                 }
                 return NetworkResult.Failure(error)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: IOException) {
             lastException = e
             if (attempt == retries || !isRetryable(e)) {

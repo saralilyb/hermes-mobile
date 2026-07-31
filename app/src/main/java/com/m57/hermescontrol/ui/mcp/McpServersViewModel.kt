@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class AddServerMode { HTTP, Stdio }
 
@@ -453,15 +454,21 @@ class McpServersViewModel :
     private var oauthStartJob: Job? = null
     private var oauthStartGeneration = 0
     private var oauthPollJob: Job? = null
+    private var oauthDeadlineJob: Job? = null
+    private var oauthFlowDeadlineMs: Long? = null
 
     fun startMcpOAuthFlow(
         server: McpServer,
-        onOpenBrowser: (String) -> Unit,
+        onOpenBrowser: (String) -> Boolean,
     ) {
         val startGeneration = ++oauthStartGeneration
+        val flowDeadlineMs = monotonicTimeMs() + McpOAuthPolicy.FLOW_TIMEOUT_MS
         oauthStartJob?.cancel()
         oauthPollJob?.cancel()
         oauthPollJob = null
+        oauthDeadlineJob?.cancel()
+        oauthDeadlineJob = null
+        oauthFlowDeadlineMs = null
         _uiState.update {
             it.copy(
                 activeOAuthFlow = null,
@@ -477,6 +484,7 @@ class McpServersViewModel :
                                 ApiClient.hermesApi.authMcpServer(server.name)
                             }
                         }
+                    if (oauthStartGeneration != startGeneration) return@launch
                     when (result) {
                         is NetworkResult.Success -> {
                             val flow = result.data
@@ -489,6 +497,15 @@ class McpServersViewModel :
                                     )
                                 }
                                 OAuthFlowState.PENDING -> {
+                                    if (McpOAuthPolicy.remainingFlowTimeMs(
+                                            deadlineMs = flowDeadlineMs,
+                                            nowMs = monotonicTimeMs(),
+                                        ) == 0L
+                                    ) {
+                                        failOAuthFlow("OAuth authorization timed out; try again")
+                                        return@launch
+                                    }
+                                    oauthFlowDeadlineMs = flowDeadlineMs
                                     val url =
                                         McpOAuthPolicy.authorizationUrlOrNull(
                                             flow.authorizationUrl,
@@ -508,8 +525,12 @@ class McpServersViewModel :
                                                 ),
                                         )
                                     }
-                                    onOpenBrowser(url)
-                                    startPollingOAuthFlow(flow.flowId, url)
+                                    startOAuthDeadline(flow.flowId)
+                                    if (onOpenBrowser(url)) {
+                                        startPollingOAuthFlow(flow.flowId, url)
+                                    } else {
+                                        reportOAuthBrowserLaunchFailure()
+                                    }
                                 }
                             }
                         }
@@ -528,6 +549,25 @@ class McpServersViewModel :
             }
     }
 
+    private fun startOAuthDeadline(flowId: String) {
+        val deadlineMs = oauthFlowDeadlineMs ?: return
+        val remainingFlowTimeMs =
+            McpOAuthPolicy.remainingFlowTimeMs(
+                deadlineMs = deadlineMs,
+                nowMs = monotonicTimeMs(),
+            )
+        oauthDeadlineJob?.cancel()
+        oauthDeadlineJob =
+            viewModelScope.launch {
+                delay(remainingFlowTimeMs)
+                if (_uiState.value.activeOAuthFlow?.flowId == flowId) {
+                    oauthPollJob?.cancel()
+                    oauthPollJob = null
+                    failOAuthFlow("OAuth authorization timed out; try again")
+                }
+            }
+    }
+
     private fun startPollingOAuthFlow(
         flowId: String,
         authorizationUrl: String,
@@ -535,48 +575,77 @@ class McpServersViewModel :
         oauthPollJob?.cancel()
         oauthPollJob =
             viewModelScope.launch {
+                val deadlineMs = oauthFlowDeadlineMs
+                if (deadlineMs == null) {
+                    failOAuthFlow("OAuth authorization state was lost; try again")
+                    return@launch
+                }
+                val remainingFlowTimeMs =
+                    McpOAuthPolicy.remainingFlowTimeMs(
+                        deadlineMs = deadlineMs,
+                        nowMs = monotonicTimeMs(),
+                    )
+                if (remainingFlowTimeMs == 0L) {
+                    failOAuthFlow("OAuth authorization timed out; try again")
+                    return@launch
+                }
                 var consecutiveFailures = 0
-                repeat(McpOAuthPolicy.MAX_POLL_ATTEMPTS) {
-                    delay(McpOAuthPolicy.POLL_INTERVAL_MS)
-                    val result =
-                        withContext(Dispatchers.IO) {
-                            safeApiCall { ApiClient.hermesApi.getMcpOAuthFlowStatus(flowId) }
-                        }
-                    when (result) {
-                        is NetworkResult.Success -> {
-                            consecutiveFailures = 0
-                            val flow = result.data
-                            when (McpOAuthPolicy.classify(flow.status)) {
-                                OAuthFlowState.SUCCEEDED -> {
-                                    completeOAuthFlow()
-                                    return@launch
+                val reachedTerminalState =
+                    withTimeoutOrNull(remainingFlowTimeMs) {
+                        repeat(McpOAuthPolicy.MAX_POLL_ATTEMPTS) {
+                            delay(McpOAuthPolicy.POLL_INTERVAL_MS)
+                            val result =
+                                withContext(Dispatchers.IO) {
+                                    safeApiCall { ApiClient.hermesApi.getMcpOAuthFlowStatus(flowId) }
                                 }
-                                OAuthFlowState.FAILED -> {
-                                    failOAuthFlow(flow.error ?: "Unexpected OAuth flow status")
-                                    return@launch
+                            if (_uiState.value.activeOAuthFlow?.flowId != flowId) {
+                                return@withTimeoutOrNull true
+                            }
+                            when (result) {
+                                is NetworkResult.Success -> {
+                                    consecutiveFailures = 0
+                                    val flow = result.data
+                                    when (McpOAuthPolicy.classify(flow.status)) {
+                                        OAuthFlowState.SUCCEEDED -> {
+                                            completeOAuthFlow()
+                                            return@withTimeoutOrNull true
+                                        }
+                                        OAuthFlowState.FAILED -> {
+                                            failOAuthFlow(flow.error ?: "Unexpected OAuth flow status")
+                                            return@withTimeoutOrNull true
+                                        }
+                                        OAuthFlowState.PENDING -> {
+                                            _uiState.update {
+                                                it.copy(
+                                                    activeOAuthFlow =
+                                                        flow.copy(
+                                                            authorizationUrl = authorizationUrl,
+                                                        ),
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
-                                OAuthFlowState.PENDING -> {
-                                    _uiState.update {
-                                        it.copy(
-                                            activeOAuthFlow =
-                                                flow.copy(
-                                                    authorizationUrl = authorizationUrl,
-                                                ),
-                                        )
+                                is NetworkResult.Failure -> {
+                                    if (McpOAuthPolicy.isTerminalPollError(result.error)) {
+                                        failOAuthFlow("OAuth authorization expired; try again")
+                                        return@withTimeoutOrNull true
+                                    }
+                                    consecutiveFailures += 1
+                                    if (consecutiveFailures >= McpOAuthPolicy.MAX_CONSECUTIVE_POLL_FAILURES) {
+                                        failOAuthFlow("OAuth status check failed; try again")
+                                        return@withTimeoutOrNull true
                                     }
                                 }
                             }
                         }
-                        is NetworkResult.Failure -> {
-                            consecutiveFailures += 1
-                            if (consecutiveFailures >= McpOAuthPolicy.MAX_CONSECUTIVE_POLL_FAILURES) {
-                                failOAuthFlow("OAuth status check failed; try again")
-                                return@launch
-                            }
-                        }
+                        false
                     }
+                if (reachedTerminalState != true &&
+                    _uiState.value.activeOAuthFlow?.flowId == flowId
+                ) {
+                    failOAuthFlow("OAuth authorization timed out; try again")
                 }
-                failOAuthFlow("OAuth authorization timed out; try again")
             }
     }
 
@@ -586,8 +655,28 @@ class McpServersViewModel :
         }
     }
 
+    fun retryMcpOAuthBrowser(onOpenBrowser: (String) -> Boolean) {
+        val flow = _uiState.value.activeOAuthFlow ?: return
+        val url = McpOAuthPolicy.authorizationUrlOrNull(flow.authorizationUrl) ?: return
+        val deadlineMs = oauthFlowDeadlineMs
+        if (deadlineMs == null ||
+            McpOAuthPolicy.remainingFlowTimeMs(deadlineMs, monotonicTimeMs()) == 0L
+        ) {
+            failOAuthFlow("OAuth authorization timed out; try again")
+            return
+        }
+        if (onOpenBrowser(url)) {
+            startPollingOAuthFlow(flow.flowId, url)
+        } else {
+            reportOAuthBrowserLaunchFailure()
+        }
+    }
+
     private fun completeOAuthFlow() {
         oauthPollJob = null
+        oauthDeadlineJob?.cancel()
+        oauthDeadlineJob = null
+        oauthFlowDeadlineMs = null
         _uiState.update {
             it.copy(
                 activeOAuthFlow = null,
@@ -599,6 +688,9 @@ class McpServersViewModel :
 
     private fun failOAuthFlow(message: String) {
         oauthPollJob = null
+        oauthDeadlineJob?.cancel()
+        oauthDeadlineJob = null
+        oauthFlowDeadlineMs = null
         _uiState.update {
             it.copy(
                 activeOAuthFlow = null,
@@ -613,6 +705,9 @@ class McpServersViewModel :
         oauthStartJob = null
         oauthPollJob?.cancel()
         oauthPollJob = null
+        oauthDeadlineJob?.cancel()
+        oauthDeadlineJob = null
+        oauthFlowDeadlineMs = null
         _uiState.update { it.copy(activeOAuthFlow = null) }
     }
 
@@ -637,4 +732,6 @@ class McpServersViewModel :
     override fun clearToast() {
         _uiState.update { it.copy(toastMessage = null) }
     }
+
+    private fun monotonicTimeMs(): Long = System.nanoTime() / 1_000_000L
 }

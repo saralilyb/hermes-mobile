@@ -733,4 +733,83 @@ class HermesApiServiceMockWebServerTest {
             val request = mockServer.takeRequest()
             assertEquals("/api/providers/oauth/nous/poll/sess-xyz", request.path)
         }
+
+    @Test
+    fun authMcpServer_parsesSnakeCaseFlowAndEncodesServerName() =
+        runBlocking {
+            mockServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody(
+                        """
+                        {
+                            "flow_id": "flow-123",
+                            "server_name": "github remote",
+                            "status": "authorization_required",
+                            "authorization_url": "https://idp.example/authorize"
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+
+            val response = api.authMcpServer("github remote")
+
+            assertTrue(response.isSuccessful)
+            assertEquals("flow-123", response.body()?.flowId)
+            assertEquals("github remote", response.body()?.serverName)
+            assertEquals("https://idp.example/authorize", response.body()?.authorizationUrl)
+            assertEquals("/api/mcp/servers/github%20remote/auth", mockServer.takeRequest().path)
+        }
+
+    @Test
+    fun getMcpOAuthFlowStatus_usesFlowPath() =
+        runBlocking {
+            mockServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody(
+                        """
+                        {
+                            "flow_id": "flow-123",
+                            "server_name": "github",
+                            "status": "approved"
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+
+            val response = api.getMcpOAuthFlowStatus("flow-123")
+
+            assertEquals("approved", response.body()?.status)
+            assertEquals("/api/mcp/oauth/flows/flow-123", mockServer.takeRequest().path)
+        }
+
+    @Test
+    fun getSessionMessages_parsesToolIdentity() =
+        runBlocking {
+            mockServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody(
+                        """
+                        {
+                            "messages": [
+                                {
+                                    "role": "tool",
+                                    "content": {"output": "done"},
+                                    "tool_name": "terminal",
+                                    "tool_call_id": "call-123"
+                                }
+                            ]
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+
+            val response = api.getSessionMessages("session-1")
+            val message = response.body()?.messages?.single()
+
+            assertEquals("terminal", message?.toolName)
+            assertEquals("call-123", message?.toolCallId)
+        }
 }

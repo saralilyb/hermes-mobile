@@ -61,6 +61,7 @@ jobs:
             compileHermesDebugSources \
             compileIrisDebugSources \
             --no-daemon \
+            --max-workers=1 \
             --no-build-cache
 
       - name: Perform CodeQL analysis
