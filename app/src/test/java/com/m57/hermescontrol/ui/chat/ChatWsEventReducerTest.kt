@@ -440,20 +440,11 @@ class ChatWsEventReducerTest {
                 toolName = "todo",
                 content = """{"todos":[{"id":"a","content":"Write tests","status":"completed"}]}""",
             )
-        val state = ChatUiState(messages = listOf(todoMessage), currentSessionId = "session-1")
-        val event = WsEvent.MessageToken(token = "hello", sessionId = "session-1")
+        val todos = hydrateTodosFromMessages(listOf(todoMessage))
 
-        val result =
-            ChatWsEventReducer.reduce(
-                state = state,
-                streamingState = StreamingState(),
-                event = event,
-                currentSessionId = "session-1",
-            )
-
-        assertEquals(1, result.state.todos.size)
-        assertEquals("Write tests", result.state.todos[0].content)
-        assertTrue(result.state.todos[0].isCompleted)
+        assertEquals(1, todos.size)
+        assertEquals("Write tests", todos[0].content)
+        assertTrue(todos[0].isCompleted)
     }
 
     @Test

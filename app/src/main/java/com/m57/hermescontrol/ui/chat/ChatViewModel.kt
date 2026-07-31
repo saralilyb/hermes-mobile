@@ -654,6 +654,8 @@ class ChatViewModel(
                         isSessionReady = true,
                         isLoading = false,
                         messages = emptyList(),
+                        subagentIndicators = emptyList(),
+                        todos = emptyList(),
                         chatTitle = "Hermes",
                         currentSessionModel = null,
                         modelSwitchConfirmation = null,
@@ -685,6 +687,8 @@ class ChatViewModel(
                         isSessionReady = true,
                         isLoading = false,
                         messages = emptyList(),
+                        subagentIndicators = emptyList(),
+                        todos = emptyList(),
                         chatTitle = (resultMap["title"] as? String)?.takeIf { t -> t.isNotBlank() } ?: "Hermes",
                         currentSessionModel =
                             model.takeIf { it.isNotEmpty() }?.let { resolvedModel ->
@@ -1345,6 +1349,8 @@ class ChatViewModel(
                 currentSessionId = null,
                 isSessionReady = false,
                 messages = emptyList(),
+                subagentIndicators = emptyList(),
+                todos = emptyList(),
                 chatTitle = "Hermes",
                 currentSessionModel = null,
                 contextUsage = null,
@@ -1744,6 +1750,8 @@ class ChatViewModel(
                 hasOlderMessages = false,
                 currentSessionId = sessionId,
                 messages = emptyList(),
+                subagentIndicators = emptyList(),
+                todos = emptyList(),
                 chatTitle = title,
                 showSessionPicker = false,
                 isAgentTyping = false,
@@ -1779,7 +1787,11 @@ class ChatViewModel(
             _uiState.update { state ->
                 // Only replace if still showing this session
                 if (state.currentSessionId == sessionId) {
-                    state.copy(messages = cachedMessages, isLoading = false)
+                    state.copy(
+                        messages = cachedMessages,
+                        todos = restoredTodos(state.todos, cachedMessages),
+                        isLoading = false,
+                    )
                 } else {
                     state
                 }
@@ -1825,6 +1837,7 @@ class ChatViewModel(
                         } else {
                             state.copy(
                                 messages = chatMessages,
+                                todos = restoredTodos(state.todos, chatMessages),
                                 isLoading = false,
                                 hasOlderMessages =
                                     offset > 0 && chatMessages.isNotEmpty(),
@@ -1882,10 +1895,15 @@ class ChatViewModel(
                             return@update current
                         }
                         loadedMessageOffset = effectiveOffset
+                        val mergedMessages =
+                            (older + current.messages).distinctBy { it.id }
                         current.copy(
-                            messages =
-                                (older + current.messages)
-                                    .distinctBy { it.id },
+                            messages = mergedMessages,
+                            todos =
+                                restoredTodos(
+                                    current.todos,
+                                    mergedMessages,
+                                ),
                             isLoadingOlder = false,
                             hasOlderMessages =
                                 effectiveOffset > 0 && older.isNotEmpty(),
@@ -1943,6 +1961,7 @@ class ChatViewModel(
                                                 inc.content == existing.content ||
                                                     (
                                                         existing.role == MessageRole.TOOL &&
+                                                            existing.toolStatus == ToolStatus.RUNNING &&
                                                             inc.toolName != null &&
                                                             inc.toolName == existing.toolName
                                                     )
@@ -1957,7 +1976,14 @@ class ChatViewModel(
                             }
                             mergedList.addAll(unmatchedIncoming)
                             val merged = mergedList.distinctBy { it.id }
-                            if (sameMessages(current.messages, merged)) current else current.copy(messages = merged)
+                            if (sameMessages(current.messages, merged)) {
+                                current
+                            } else {
+                                current.copy(
+                                    messages = merged,
+                                    todos = restoredTodos(current.todos, merged),
+                                )
+                            }
                         }
                     }
 
@@ -1968,6 +1994,11 @@ class ChatViewModel(
             }
         }
     }
+
+    private fun restoredTodos(
+        currentTodos: List<TodoItem>,
+        messages: List<ChatMessage>,
+    ): List<TodoItem> = hydrateTodosFromMessages(messages).ifEmpty { currentTodos }
 
     private suspend fun fetchServerMessageCount(sessionId: String): Int {
         val known =

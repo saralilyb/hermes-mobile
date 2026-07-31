@@ -450,12 +450,16 @@ class McpServersViewModel :
 
     // ── OAuth ─────────────────────────────────────────────────
 
+    private var oauthStartJob: Job? = null
+    private var oauthStartGeneration = 0
     private var oauthPollJob: Job? = null
 
     fun startMcpOAuthFlow(
         server: McpServer,
         onOpenBrowser: (String) -> Unit,
     ) {
+        val startGeneration = ++oauthStartGeneration
+        oauthStartJob?.cancel()
         oauthPollJob?.cancel()
         oauthPollJob = null
         _uiState.update {
@@ -464,38 +468,64 @@ class McpServersViewModel :
                 toastMessage = "Starting OAuth authorization…",
             )
         }
-        viewModelScope.launch {
-            val result =
-                withContext(Dispatchers.IO) {
-                    safeApiCall { ApiClient.hermesApi.authMcpServer(server.name) }
-                }
-            when (result) {
-                is NetworkResult.Success -> {
-                    val flow = result.data
-                    when (McpOAuthPolicy.classify(flow.status)) {
-                        OAuthFlowState.SUCCEEDED -> completeOAuthFlow()
-                        OAuthFlowState.FAILED -> {
-                            failOAuthFlow(flow.error ?: "OAuth server rejected the request")
+        oauthStartJob =
+            viewModelScope.launch {
+                try {
+                    val result =
+                        withContext(Dispatchers.IO) {
+                            safeApiCall {
+                                ApiClient.hermesApi.authMcpServer(server.name)
+                            }
                         }
-                        OAuthFlowState.PENDING -> {
-                            val url = McpOAuthPolicy.authorizationUrlOrNull(flow.authorizationUrl)
-                            if (url == null) {
-                                failOAuthFlow("OAuth server returned an unsafe authorization URL")
-                                return@launch
+                    when (result) {
+                        is NetworkResult.Success -> {
+                            val flow = result.data
+                            when (McpOAuthPolicy.classify(flow.status)) {
+                                OAuthFlowState.SUCCEEDED -> completeOAuthFlow()
+                                OAuthFlowState.FAILED -> {
+                                    failOAuthFlow(
+                                        flow.error
+                                            ?: "OAuth server rejected the request",
+                                    )
+                                }
+                                OAuthFlowState.PENDING -> {
+                                    val url =
+                                        McpOAuthPolicy.authorizationUrlOrNull(
+                                            flow.authorizationUrl,
+                                        )
+                                    if (url == null) {
+                                        failOAuthFlow(
+                                            "OAuth server returned an unsafe " +
+                                                "authorization URL",
+                                        )
+                                        return@launch
+                                    }
+                                    _uiState.update {
+                                        it.copy(
+                                            activeOAuthFlow =
+                                                flow.copy(
+                                                    authorizationUrl = url,
+                                                ),
+                                        )
+                                    }
+                                    onOpenBrowser(url)
+                                    startPollingOAuthFlow(flow.flowId, url)
+                                }
                             }
-                            _uiState.update {
-                                it.copy(activeOAuthFlow = flow.copy(authorizationUrl = url))
-                            }
-                            onOpenBrowser(url)
-                            startPollingOAuthFlow(flow.flowId, url)
+                        }
+                        is NetworkResult.Failure -> {
+                            failOAuthFlow(
+                                "Failed to start OAuth: " +
+                                    result.error.message,
+                            )
                         }
                     }
-                }
-                is NetworkResult.Failure -> {
-                    failOAuthFlow("Failed to start OAuth: ${result.error.message}")
+                } finally {
+                    if (oauthStartGeneration == startGeneration) {
+                        oauthStartJob = null
+                    }
                 }
             }
-        }
     }
 
     private fun startPollingOAuthFlow(
@@ -578,6 +608,9 @@ class McpServersViewModel :
     }
 
     fun dismissOAuthFlow() {
+        oauthStartGeneration += 1
+        oauthStartJob?.cancel()
+        oauthStartJob = null
         oauthPollJob?.cancel()
         oauthPollJob = null
         _uiState.update { it.copy(activeOAuthFlow = null) }

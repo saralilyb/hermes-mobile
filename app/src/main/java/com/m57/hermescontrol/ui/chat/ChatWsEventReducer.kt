@@ -46,18 +46,8 @@ object ChatWsEventReducer {
         if (eventSessionId != null && currentSessionId != null && eventSessionId != currentSessionId) {
             return ReducerResult(state = state, streamingState = streamingState)
         }
-        val result = reduceInternal(state, streamingState, event)
-        val hydratedTodos =
-            if (result.state.todos.isEmpty() && result.state.messages.isNotEmpty()) {
-                hydrateTodosFromMessages(result.state.messages)
-            } else {
-                result.state.todos
-            }
-        return if (hydratedTodos !== result.state.todos) {
-            result.copy(state = result.state.copy(todos = hydratedTodos))
-        } else {
-            result
-        }
+
+        return reduceInternal(state, streamingState, event)
     }
 
     private fun reduceInternal(
