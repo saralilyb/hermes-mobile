@@ -517,6 +517,19 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun testSendMessage_rejectsPromptUntilNewSessionIsReady() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+
+            viewModel.createNewSession()
+            advanceUntilIdle()
+
+            assertFalse(viewModel.uiState.value.isSessionReady)
+            assertFalse(viewModel.sendMessage("first prompt"))
+            verify(exactly = 0) { HermesWsClient.sendMessage(any(), any(), any()) }
+        }
+
+    @Test
     fun testContextUsage_tracksLiveWindowForCurrentSessionOnly() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()

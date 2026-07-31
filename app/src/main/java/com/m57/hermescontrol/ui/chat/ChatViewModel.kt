@@ -78,6 +78,7 @@ private data class PendingRpcRequest(
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val currentSessionId: String? = null,
+    val isSessionReady: Boolean = false,
     val sessions: List<SessionUi> = emptyList(),
     val chatTitle: String = "Hermes",
     val connectionStatus: ConnectionStatus = ConnectionStatus.DISCONNECTED,
@@ -302,7 +303,12 @@ class ChatViewModel(
                     status == ConnectionStatus.NO_NETWORK ||
                     status == ConnectionStatus.AUTH_EXPIRED
                 ) {
-                    _uiState.update { it.copy(isLoading = false) }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isSessionReady = false,
+                        )
+                    }
                     // Fail any in-flight awaited RPCs so callers don't hang
                     // across the disconnect (delegated to HermesWsClient, issue #526).
                     wsClient.rejectAllPending()
@@ -643,6 +649,7 @@ class ChatViewModel(
                 _uiState.update {
                     it.copy(
                         currentSessionId = storageId,
+                        isSessionReady = true,
                         isLoading = false,
                         messages = emptyList(),
                         chatTitle = "Hermes",
@@ -673,6 +680,7 @@ class ChatViewModel(
                 _uiState.update {
                     it.copy(
                         currentSessionId = newId,
+                        isSessionReady = true,
                         isLoading = false,
                         messages = emptyList(),
                         chatTitle = (resultMap["title"] as? String)?.takeIf { t -> t.isNotBlank() } ?: "Hermes",
@@ -749,6 +757,7 @@ class ChatViewModel(
                     it.copy(
                         isLoading = false,
                         currentSessionId = sessionId,
+                        isSessionReady = runtimeSessionId != null,
                         currentSessionModel =
                             if (model != null && provider != null) {
                                 "$provider/$model"
@@ -918,10 +927,12 @@ class ChatViewModel(
      * 4. For each file → await `file.attach` (requires session_id), collect @file: refs
      * 5. Send `prompt.submit` with text + @file: refs — images auto-picked up by backend
      */
-    fun sendMessage(text: String) {
-        if (text.isBlank() && _uiState.value.pendingAttachments.isEmpty()) return
-        val storageSessionId = _uiState.value.currentSessionId ?: return
-        val agentSessionId = runtimeSessionId ?: return
+    fun sendMessage(text: String): Boolean {
+        val state = _uiState.value
+        if (!state.isSessionReady) return false
+        if (text.isBlank() && state.pendingAttachments.isEmpty()) return false
+        val storageSessionId = state.currentSessionId ?: return false
+        val agentSessionId = runtimeSessionId ?: return false
 
         val trimmed = text.trim()
         if (trimmed.startsWith("/", ignoreCase = true)) {
@@ -929,10 +940,10 @@ class ChatViewModel(
             // of requiring the user to hand-type the provider/model.
             if (isModelPickerCommand(trimmed)) {
                 openModelPicker()
-                return
+                return true
             }
             handleSlashCommand(trimmed)
-            return
+            return true
         }
 
         // Snapshot + clear attachments so the input bar empties immediately
@@ -1059,6 +1070,7 @@ class ChatViewModel(
                 )
             }
         }
+        return true
     }
 
     /** Read and encode a `content://` or `file://` URI to Base64 via ContentResolver, avoiding large allocations. */
@@ -1329,6 +1341,7 @@ class ChatViewModel(
             it.copy(
                 isLoading = setLoading,
                 currentSessionId = null,
+                isSessionReady = false,
                 messages = emptyList(),
                 chatTitle = "Hermes",
                 currentSessionModel = null,
@@ -1724,6 +1737,7 @@ class ChatViewModel(
             val title = it.sessions.find { s -> s.id == sessionId }?.title ?: "Hermes"
             it.copy(
                 isLoading = true,
+                isSessionReady = false,
                 isLoadingOlder = false,
                 hasOlderMessages = false,
                 currentSessionId = sessionId,

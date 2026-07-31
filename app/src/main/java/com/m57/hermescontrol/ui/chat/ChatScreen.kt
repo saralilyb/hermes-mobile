@@ -543,10 +543,11 @@ fun ChatScreen(
                 inputFieldValue = inputFieldValue,
                 onInputChange = { inputFieldValue = it },
                 onSend = {
-                    viewModel.sendMessage(inputFieldValue.text)
-                    inputFieldValue = TextFieldValue("")
-                    // Jump to bottom after send (serialized through the controller).
-                    scrollController.jumpToBottom(animated = true)
+                    if (viewModel.sendMessage(inputFieldValue.text)) {
+                        inputFieldValue = TextFieldValue("")
+                        // Jump to bottom after send (serialized through the controller).
+                        scrollController.jumpToBottom(animated = true)
+                    }
                 },
                 onMicTap = {
                     if (isListening) {
@@ -583,6 +584,7 @@ fun ChatScreen(
                 isListening = isListening,
                 isAgentTyping = state.isAgentTyping,
                 isConnected = state.isConnected,
+                isSessionReady = state.isSessionReady,
                 commandCatalog = state.commandCatalog,
                 pendingAttachments = state.pendingAttachments,
                 onCameraTap = {
