@@ -21,10 +21,16 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
 - **Auth:** encrypted bearer tokens for direct mode; endpoint-scoped encrypted
   cookies plus short-lived WebSocket tickets for gated mode
 - **Upstream base:** selectively reconciled through `Hy4ri/hermes-mobile`
-  `v1.19.0`; retain downstream HTTPS enforcement, profile-scoped credentials,
-  single-use ticket handling, complete-history pagination, signing, and release
-  automation. The gateway-file/media stack and Keys redesign have been
-  integrated with downstream auth and sensitive-clipboard adaptations.
+  `v1.19.2` plus hosted MCP OAuth and CodeQL changes through `422bb9f`;
+  retain downstream HTTPS enforcement, profile-scoped credentials, single-use
+  ticket handling, complete-history pagination, signing, and release automation.
+  The gateway-file/media stack and Keys redesign have been integrated with
+  downstream auth and sensitive-clipboard adaptations. The v1.19.2 diff,
+  delegation, and self-improvement surfaces were ported directly; its ticket
+  recovery and context-meter changes were already covered by stricter downstream
+  implementations. Hosted MCP OAuth uses allowlisted HTTPS browser handoff and
+  bounded status polling. CodeQL compiles both product flavors and pins every
+  third-party action by commit SHA.
   Permanently exclude these upstream commits rather than reconsidering them on
   each reconciliation:
   - `7927944` (#698), the auth-expiry routing revert. Downstream intentionally
@@ -35,6 +41,13 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
     Room, REST history, resume, and pagination, and flushes transition buffers
     only after session fencing. The upstream pre-fence flush lets a delayed
     event from a previous session mutate the active session's buffers.
+  - `e39544e` (#740), the transient-ticket and rejected-send patch, as a
+    wholesale cherry-pick. Downstream already distinguishes retryable ticket
+    failures, serializes reconnects, fences stale sockets, retains rejected
+    frames, and clears queued frames on credential changes.
+  - `698d2f6` (#746), the REST-polled context-meter patch. Downstream instead
+    uses the active session's live gateway `usage` payload, scopes it across
+    session transitions, and preserves a model-specific denominator fallback.
 
 ## Build & Test Commands
 
@@ -76,6 +89,11 @@ chmod +x ktlint
 
 Every Gradle job validates `gradle-wrapper.jar` and uses the remote build cache
 (`GRADLE_ENCRYPTED_KEY` secret). `concurrency.cancel-in-progress: true`.
+
+The separate `.github/workflows/codeql.yml` workflow runs Java/Kotlin CodeQL on
+pushes and pull requests to `main`, weekly, or by manual dispatch. It uses a
+manual build with `compileHermesDebugSources` and `compileIrisDebugSources` so
+both product flavors are analyzed.
 
 ### Releasing (`.github/workflows/release.yml`)
 
