@@ -27,6 +27,11 @@ internal object McpOAuthPolicy {
         error is NetworkError.AuthExpired ||
             error is NetworkError.Http && error.code in setOf(403, 404)
 
+    fun remainingFlowTimeMs(
+        deadlineMs: Long,
+        nowMs: Long,
+    ): Long = (deadlineMs - nowMs).coerceAtLeast(0L)
+
     /**
      * Accept only ordinary HTTPS authorization URLs. The URL comes from a
      * remote dashboard response and is handed to another app through an

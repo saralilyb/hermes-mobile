@@ -395,19 +395,19 @@ object ChatWsEventReducer {
         val messages = state.messages.toMutableList()
         val completedToolCallId = event.data.toolCallIdOrNull()
         val toolIdx =
-            completedToolCallId
-                ?.let { toolCallId ->
-                    messages.indexOfLast {
-                        it.role == MessageRole.TOOL &&
-                            it.toolCallId == toolCallId &&
-                            it.toolStatus == ToolStatus.RUNNING
-                    }
-                }?.takeIf { it >= 0 }
-                ?: messages.indexOfLast {
+            if (completedToolCallId != null) {
+                messages.indexOfLast {
+                    it.role == MessageRole.TOOL &&
+                        it.toolCallId == completedToolCallId &&
+                        it.toolStatus == ToolStatus.RUNNING
+                }
+            } else {
+                messages.indexOfLast {
                     it.role == MessageRole.TOOL &&
                         it.toolName == event.name &&
                         it.toolStatus == ToolStatus.RUNNING
                 }
+            }
         if (toolIdx < 0) return ReducerResult(state = state, streamingState = streamingState)
 
         val updated =
@@ -457,38 +457,39 @@ object ChatWsEventReducer {
 
         val messages = state.messages.toMutableList()
 
-        // Prefer RUNNING tool, fall back to COMPLETED
+        val riskToolCallId = event.toolId.takeIf { it.isNotBlank() }
+
+        // Prefer RUNNING tool, fall back to COMPLETED. A named fallback is
+        // safe only for legacy events that do not carry a stable identity.
         var toolIdx =
-            event.toolId
-                .takeIf { it.isNotBlank() }
-                ?.let { toolCallId ->
-                    messages.indexOfLast {
-                        it.role == MessageRole.TOOL &&
-                            it.toolCallId == toolCallId &&
-                            it.toolStatus == ToolStatus.RUNNING
-                    }
-                }?.takeIf { it >= 0 }
-                ?: messages.indexOfLast {
+            if (riskToolCallId != null) {
+                messages.indexOfLast {
+                    it.role == MessageRole.TOOL &&
+                        it.toolCallId == riskToolCallId &&
+                        it.toolStatus == ToolStatus.RUNNING
+                }
+            } else {
+                messages.indexOfLast {
                     it.role == MessageRole.TOOL &&
                         it.toolName == event.name &&
                         it.toolStatus == ToolStatus.RUNNING
                 }
+            }
         if (toolIdx < 0) {
             toolIdx =
-                event.toolId
-                    .takeIf { it.isNotBlank() }
-                    ?.let { toolCallId ->
-                        messages.indexOfLast {
-                            it.role == MessageRole.TOOL &&
-                                it.toolCallId == toolCallId &&
-                                it.toolStatus == ToolStatus.COMPLETED
-                        }
-                    }?.takeIf { it >= 0 }
-                    ?: messages.indexOfLast {
+                if (riskToolCallId != null) {
+                    messages.indexOfLast {
+                        it.role == MessageRole.TOOL &&
+                            it.toolCallId == riskToolCallId &&
+                            it.toolStatus == ToolStatus.COMPLETED
+                    }
+                } else {
+                    messages.indexOfLast {
                         it.role == MessageRole.TOOL &&
                             it.toolName == event.name &&
                             it.toolStatus == ToolStatus.COMPLETED
                     }
+                }
         }
         if (toolIdx < 0) return ReducerResult(state = state, streamingState = streamingState)
 

@@ -1,6 +1,7 @@
 package com.m57.hermescontrol.data.remote
 
 import com.m57.hermescontrol.data.local.AuthSessionState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -79,6 +80,21 @@ class NetworkResultTest {
                 }
             assertEquals(NetworkResult.Success::class, result::class)
             assertEquals("Success", (result as NetworkResult.Success).data)
+        }
+
+    @Test
+    fun testSafeApiCall_propagatesCancellation() =
+        runBlocking {
+            var cancellationPropagated = false
+            try {
+                safeApiCall<String> {
+                    throw CancellationException("cancelled")
+                }
+            } catch (_: CancellationException) {
+                cancellationPropagated = true
+            }
+
+            assertTrue(cancellationPropagated)
         }
 
     @Test

@@ -35,6 +35,10 @@ internal fun mergeSyncedMessages(
                     val sameCallId =
                         existing.toolCallId != null &&
                             existing.toolCallId == candidate.toolCallId
+                    val conflictingCallIds =
+                        existing.toolCallId != null &&
+                            candidate.toolCallId != null &&
+                            existing.toolCallId != candidate.toolCallId
                     val unambiguousLegacyTool =
                         existing.role == MessageRole.TOOL &&
                             existing.toolStatus == ToolStatus.RUNNING &&
@@ -46,7 +50,7 @@ internal fun mergeSyncedMessages(
                             incomingToolCounts[candidate.toolName] == 1
                     sameRole && (
                         sameCallId ||
-                            candidate.content == existing.content ||
+                            (!conflictingCallIds && candidate.content == existing.content) ||
                             unambiguousLegacyTool
                     )
                 }

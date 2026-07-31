@@ -455,6 +455,89 @@ class ChatWsEventReducerTest {
     }
 
     @Test
+    fun testToolComplete_unknownCallIdDoesNotUseSameNameFallback() {
+        val state =
+            ChatUiState(
+                currentSessionId = "session-1",
+                messages =
+                    listOf(
+                        ChatMessage(
+                            role = MessageRole.TOOL,
+                            content = "a",
+                            toolName = "terminal",
+                            toolCallId = "call-a",
+                            toolStatus = ToolStatus.RUNNING,
+                        ),
+                        ChatMessage(
+                            role = MessageRole.TOOL,
+                            content = "b",
+                            toolName = "terminal",
+                            toolCallId = "call-b",
+                            toolStatus = ToolStatus.RUNNING,
+                        ),
+                    ),
+            )
+
+        val result =
+            ChatWsEventReducer.reduce(
+                state = state,
+                streamingState = StreamingState(),
+                event =
+                    WsEvent.ToolComplete(
+                        name = "terminal",
+                        data = mapOf("tool_id" to "missing", "output" to "done"),
+                        sessionId = "session-1",
+                    ),
+                currentSessionId = "session-1",
+            )
+
+        assertTrue(result.state.messages.all { it.toolStatus == ToolStatus.RUNNING })
+    }
+
+    @Test
+    fun testToolOutputRisk_unknownCallIdDoesNotUseSameNameFallback() {
+        val state =
+            ChatUiState(
+                currentSessionId = "session-1",
+                messages =
+                    listOf(
+                        ChatMessage(
+                            role = MessageRole.TOOL,
+                            content = "a",
+                            toolName = "terminal",
+                            toolCallId = "call-a",
+                            toolStatus = ToolStatus.COMPLETED,
+                        ),
+                        ChatMessage(
+                            role = MessageRole.TOOL,
+                            content = "b",
+                            toolName = "terminal",
+                            toolCallId = "call-b",
+                            toolStatus = ToolStatus.COMPLETED,
+                        ),
+                    ),
+            )
+
+        val result =
+            ChatWsEventReducer.reduce(
+                state = state,
+                streamingState = StreamingState(),
+                event =
+                    WsEvent.ToolOutputRisk(
+                        toolId = "missing",
+                        name = "terminal",
+                        risk = "high",
+                        findings = listOf("unsafe"),
+                        redacted = false,
+                        sessionId = "session-1",
+                    ),
+                currentSessionId = "session-1",
+            )
+
+        assertTrue(result.state.messages.all { it.toolOutputRiskData == null })
+    }
+
+    @Test
     fun testToolStart_extractsAgentTodos() {
         val state = ChatUiState(currentSessionId = "session-1")
         val todoEvent =

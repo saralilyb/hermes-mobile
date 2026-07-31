@@ -454,15 +454,18 @@ class McpServersViewModel :
     private var oauthStartJob: Job? = null
     private var oauthStartGeneration = 0
     private var oauthPollJob: Job? = null
+    private var oauthFlowDeadlineMs: Long? = null
 
     fun startMcpOAuthFlow(
         server: McpServer,
         onOpenBrowser: (String) -> Boolean,
     ) {
         val startGeneration = ++oauthStartGeneration
+        val flowDeadlineMs = monotonicTimeMs() + McpOAuthPolicy.FLOW_TIMEOUT_MS
         oauthStartJob?.cancel()
         oauthPollJob?.cancel()
         oauthPollJob = null
+        oauthFlowDeadlineMs = null
         _uiState.update {
             it.copy(
                 activeOAuthFlow = null,
@@ -478,6 +481,7 @@ class McpServersViewModel :
                                 ApiClient.hermesApi.authMcpServer(server.name)
                             }
                         }
+                    if (oauthStartGeneration != startGeneration) return@launch
                     when (result) {
                         is NetworkResult.Success -> {
                             val flow = result.data
@@ -490,6 +494,7 @@ class McpServersViewModel :
                                     )
                                 }
                                 OAuthFlowState.PENDING -> {
+                                    oauthFlowDeadlineMs = flowDeadlineMs
                                     val url =
                                         McpOAuthPolicy.authorizationUrlOrNull(
                                             flow.authorizationUrl,
@@ -539,15 +544,32 @@ class McpServersViewModel :
         oauthPollJob?.cancel()
         oauthPollJob =
             viewModelScope.launch {
+                val deadlineMs = oauthFlowDeadlineMs
+                if (deadlineMs == null) {
+                    failOAuthFlow("OAuth authorization state was lost; try again")
+                    return@launch
+                }
+                val remainingFlowTimeMs =
+                    McpOAuthPolicy.remainingFlowTimeMs(
+                        deadlineMs = deadlineMs,
+                        nowMs = monotonicTimeMs(),
+                    )
+                if (remainingFlowTimeMs == 0L) {
+                    failOAuthFlow("OAuth authorization timed out; try again")
+                    return@launch
+                }
                 var consecutiveFailures = 0
                 val reachedTerminalState =
-                    withTimeoutOrNull(McpOAuthPolicy.FLOW_TIMEOUT_MS) {
+                    withTimeoutOrNull(remainingFlowTimeMs) {
                         repeat(McpOAuthPolicy.MAX_POLL_ATTEMPTS) {
                             delay(McpOAuthPolicy.POLL_INTERVAL_MS)
                             val result =
                                 withContext(Dispatchers.IO) {
                                     safeApiCall { ApiClient.hermesApi.getMcpOAuthFlowStatus(flowId) }
                                 }
+                            if (_uiState.value.activeOAuthFlow?.flowId != flowId) {
+                                return@withTimeoutOrNull true
+                            }
                             when (result) {
                                 is NetworkResult.Success -> {
                                     consecutiveFailures = 0
@@ -588,7 +610,9 @@ class McpServersViewModel :
                         }
                         false
                     }
-                if (reachedTerminalState != true) {
+                if (reachedTerminalState != true &&
+                    _uiState.value.activeOAuthFlow?.flowId == flowId
+                ) {
                     failOAuthFlow("OAuth authorization timed out; try again")
                 }
             }
@@ -612,6 +636,7 @@ class McpServersViewModel :
 
     private fun completeOAuthFlow() {
         oauthPollJob = null
+        oauthFlowDeadlineMs = null
         _uiState.update {
             it.copy(
                 activeOAuthFlow = null,
@@ -623,6 +648,7 @@ class McpServersViewModel :
 
     private fun failOAuthFlow(message: String) {
         oauthPollJob = null
+        oauthFlowDeadlineMs = null
         _uiState.update {
             it.copy(
                 activeOAuthFlow = null,
@@ -637,6 +663,7 @@ class McpServersViewModel :
         oauthStartJob = null
         oauthPollJob?.cancel()
         oauthPollJob = null
+        oauthFlowDeadlineMs = null
         _uiState.update { it.copy(activeOAuthFlow = null) }
     }
 
@@ -661,4 +688,6 @@ class McpServersViewModel :
     override fun clearToast() {
         _uiState.update { it.copy(toastMessage = null) }
     }
+
+    private fun monotonicTimeMs(): Long = System.nanoTime() / 1_000_000L
 }

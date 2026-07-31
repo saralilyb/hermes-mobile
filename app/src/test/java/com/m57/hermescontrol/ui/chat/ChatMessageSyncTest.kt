@@ -8,13 +8,13 @@ class ChatMessageSyncTest {
     fun sameNameTools_matchByCallIdWhenServerResultsArriveOutOfOrder() {
         val current =
             listOf(
-                runningTool(id = "local-a", callId = "call-a"),
-                runningTool(id = "local-b", callId = "call-b"),
+                runningTool(id = "local-a", callId = "call-a", content = "same-content"),
+                runningTool(id = "local-b", callId = "call-b", content = "same-content"),
             )
         val incoming =
             listOf(
-                completedTool(id = "rest-session-10", callId = "call-b"),
-                completedTool(id = "rest-session-11", callId = "call-a"),
+                completedTool(id = "rest-session-10", callId = "call-b", content = "same-content"),
+                completedTool(id = "rest-session-11", callId = "call-a", content = "same-content"),
             )
 
         val merged =
@@ -50,10 +50,11 @@ class ChatMessageSyncTest {
     private fun runningTool(
         id: String,
         callId: String?,
+        content: String = "starting $id",
     ) = ChatMessage(
         id = id,
         role = MessageRole.TOOL,
-        content = "starting $id",
+        content = content,
         toolName = "terminal",
         toolCallId = callId,
         toolStatus = ToolStatus.RUNNING,
@@ -62,10 +63,11 @@ class ChatMessageSyncTest {
     private fun completedTool(
         id: String,
         callId: String?,
+        content: String = "finished $id",
     ) = ChatMessage(
         id = id,
         role = MessageRole.TOOL,
-        content = "finished $id",
+        content = content,
         toolName = "terminal",
         toolCallId = callId,
         toolStatus = ToolStatus.COMPLETED,

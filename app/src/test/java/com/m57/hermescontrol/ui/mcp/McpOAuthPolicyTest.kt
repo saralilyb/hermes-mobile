@@ -29,6 +29,12 @@ class McpOAuthPolicyTest {
     }
 
     @Test
+    fun remainingFlowTime_neverExtendsBackendDeadline() {
+        assertEquals(4_000L, McpOAuthPolicy.remainingFlowTimeMs(5_000L, 1_000L))
+        assertEquals(0L, McpOAuthPolicy.remainingFlowTimeMs(5_000L, 5_001L))
+    }
+
+    @Test
     fun authorizationUrl_acceptsHttpsProviderUrl() {
         assertEquals(
             "https://idp.example/authorize?state=opaque",
