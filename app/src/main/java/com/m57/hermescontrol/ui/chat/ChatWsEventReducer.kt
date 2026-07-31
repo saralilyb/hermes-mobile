@@ -4,6 +4,9 @@ import com.m57.hermescontrol.data.remote.OkHttpProvider
 import com.m57.hermescontrol.data.ws.WsEvent
 import com.m57.hermescontrol.data.ws.toJsonElement
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Pure state reducer for WebSocket events.
@@ -37,11 +40,13 @@ object ChatWsEventReducer {
                 is WsEvent.ToolProgress -> event.sessionId
                 is WsEvent.ToolGenerating -> event.sessionId
                 is WsEvent.SubagentEvent -> event.sessionId
+                is WsEvent.ReviewSummary -> event.sessionId
                 else -> null
             }
         if (eventSessionId != null && currentSessionId != null && eventSessionId != currentSessionId) {
             return ReducerResult(state = state, streamingState = streamingState)
         }
+
         return reduceInternal(state, streamingState, event)
     }
 
@@ -80,6 +85,8 @@ object ChatWsEventReducer {
             is WsEvent.SubagentEvent -> onSubagentEvent(state, streamingState, event)
 
             is WsEvent.ClarifyRequest -> onClarifyRequest(state, streamingState, event)
+
+            is WsEvent.ReviewSummary -> onReviewSummary(state, streamingState, event)
 
             is WsEvent.RpcError -> onRpcError(state, streamingState, event)
 
@@ -134,6 +141,13 @@ object ChatWsEventReducer {
             )
         val effects = mutableListOf<ReducerEffect>()
 
+        val cleanedSubagents =
+            if (state.subagentIndicators.all { it.isComplete || it.isFailed }) {
+                emptyList()
+            } else {
+                state.subagentIndicators
+            }
+
         // Build new state: finalize any orphan streaming message, then set the new one
         var orphan: ChatMessage? = null
         val preState =
@@ -143,10 +157,12 @@ object ChatWsEventReducer {
                 state.copy(
                     messages = state.messages + finalized,
                     isAgentTyping = true,
+                    subagentIndicators = cleanedSubagents,
                 )
             } else {
                 state.copy(
                     isAgentTyping = true,
+                    subagentIndicators = cleanedSubagents,
                 )
             }
         val newStreamingState =
@@ -355,8 +371,11 @@ object ChatWsEventReducer {
             effects.add(ReducerEffect.PersistMessage(toolMessage, sid))
         }
 
+        val parsedTodos = if (event.name == "todo") extractTodosFromMap(event.data) else null
+        val nextTodos = parsedTodos ?: newState.todos
+
         return ReducerResult(
-            state = newState.copy(messages = newState.messages + toolMessage),
+            state = newState.copy(messages = newState.messages + toolMessage, todos = nextTodos),
             effects = effects,
         )
     }
@@ -393,8 +412,12 @@ object ChatWsEventReducer {
         if (sid != null) {
             effects.add(ReducerEffect.PersistMessage(updated, sid))
         }
+
+        val parsedTodos = if (event.name == "todo") extractTodosFromMap(event.data) else null
+        val nextTodos = parsedTodos ?: state.todos
+
         return ReducerResult(
-            state = state.copy(messages = messages),
+            state = state.copy(messages = messages, todos = nextTodos),
             streamingState = streamingState,
             effects = effects,
         )
@@ -469,6 +492,25 @@ object ChatWsEventReducer {
                     isAgentTyping = false,
                 ),
         )
+
+    // ── ReviewSummary (Self-improvement background review) ──────────────
+
+    private fun onReviewSummary(
+        state: ChatUiState,
+        streamingState: StreamingState,
+        event: WsEvent.ReviewSummary,
+    ): ReducerResult {
+        if (event.text.isBlank()) return ReducerResult(state = state, streamingState = streamingState)
+        val systemMessage =
+            ChatMessage(
+                role = MessageRole.SYSTEM,
+                content = event.text,
+            )
+        return ReducerResult(
+            state = state.copy(messages = state.messages + systemMessage),
+            streamingState = streamingState,
+        )
+    }
 
     // ── RpcError ──────────────────────────────────────────────────────
 
@@ -594,6 +636,8 @@ object ChatWsEventReducer {
         val text = event.payload?.get("text") as? String
         val status = event.payload?.get("status") as? String
         val summary = event.payload?.get("summary") as? String
+        val durationSeconds = (event.payload?.get("duration_seconds") as? Number)?.toDouble()
+        val model = event.payload?.get("model") as? String
         val subagentId =
             event.payload?.get(
                 "subagent_id",
@@ -609,18 +653,22 @@ object ChatWsEventReducer {
                 -1
             }
 
-        // A completed delegation is no longer "in flight" — drop its indicator
-        // so it doesn't linger in the chat after the subagent finishes.
-        if (event.type == "subagent.complete") {
-            if (idx >= 0) {
-                indicators.removeAt(idx)
-                return ReducerResult(
-                    state = state.copy(subagentIndicators = indicators),
-                    streamingState = streamingState,
-                )
-            }
-            return ReducerResult(state = state, streamingState = streamingState)
+        val existingLogs = if (idx >= 0) indicators[idx].logs else emptyList()
+        val newLogs = existingLogs.toMutableList()
+        if (!text.isNullOrBlank() && newLogs.lastOrNull()?.text != text) {
+            newLogs.add(SubagentLogLine(text = text, isError = status == "failed"))
         }
+        if (event.type == "subagent.complete" && !summary.isNullOrBlank() && newLogs.lastOrNull()?.text != summary) {
+            newLogs.add(SubagentLogLine(text = summary, isSummary = true))
+        }
+        val trimmedLogs = newLogs.takeLast(30)
+
+        val finalStatus =
+            if (event.type == "subagent.complete") {
+                status ?: "completed"
+            } else {
+                status ?: (if (idx >= 0) indicators[idx].status else "running")
+            }
 
         val indicator =
             SubagentIndicator(
@@ -628,10 +676,13 @@ object ChatWsEventReducer {
                 goal = goal ?: (if (idx >= 0) indicators[idx].goal else null),
                 taskIndex = taskIndex ?: (if (idx >= 0) indicators[idx].taskIndex else null),
                 taskCount = taskCount ?: (if (idx >= 0) indicators[idx].taskCount else null),
-                text = text ?: (if (idx >= 0) indicators[idx].text else null),
-                status = status ?: (if (idx >= 0) indicators[idx].status else null),
+                text = summary ?: text ?: (if (idx >= 0) indicators[idx].text else null),
+                status = finalStatus,
                 summary = summary ?: (if (idx >= 0) indicators[idx].summary else null),
                 subagentId = subagentId ?: (if (idx >= 0) indicators[idx].subagentId else null),
+                logs = trimmedLogs,
+                durationSeconds = durationSeconds ?: (if (idx >= 0) indicators[idx].durationSeconds else null),
+                model = model ?: (if (idx >= 0) indicators[idx].model else null),
             )
 
         if (idx >= 0) {
@@ -692,4 +743,63 @@ sealed class ReducerEffect {
         val sessionId: String,
         val messageId: String,
     ) : ReducerEffect()
+}
+
+@Suppress("UNCHECKED_CAST")
+fun extractTodosFromMap(data: Map<String, Any?>?): List<TodoItem>? {
+    if (data == null) return null
+    val rawList =
+        (data["todos"] as? List<*>)
+            ?: ((data["args"] as? Map<String, Any?>)?.get("todos") as? List<*>)
+            ?: ((data["parameters"] as? Map<String, Any?>)?.get("todos") as? List<*>)
+            ?: ((data["result"] as? Map<String, Any?>)?.get("todos") as? List<*>)
+            ?: return null
+
+    val items = mutableListOf<TodoItem>()
+    for (elem in rawList) {
+        val map = elem as? Map<String, Any?> ?: continue
+        val id = (map["id"] as? String) ?: continue
+        val content = (map["content"] as? String) ?: (map["text"] as? String) ?: ""
+        val status = (map["status"] as? String) ?: "pending"
+        items.add(TodoItem(id = id, content = content, status = status))
+    }
+    return items.takeIf { it.isNotEmpty() }
+}
+
+fun extractTodosFromJson(content: String): List<TodoItem>? {
+    if (content.isBlank()) return null
+    return try {
+        val element = OkHttpProvider.json.parseToJsonElement(content)
+        val obj = element as? JsonObject ?: return null
+        val todosArray =
+            (obj["todos"] as? JsonArray)
+                ?: ((obj["args"] as? JsonObject)?.get("todos") as? JsonArray)
+                ?: ((obj["result"] as? JsonObject)?.get("todos") as? JsonArray)
+                ?: ((obj["parameters"] as? JsonObject)?.get("todos") as? JsonArray)
+                ?: return null
+
+        todosArray.mapNotNull { item ->
+            val itemObj = item as? JsonObject ?: return@mapNotNull null
+            val id = (itemObj["id"] as? JsonPrimitive)?.content ?: return@mapNotNull null
+            val contentStr =
+                (itemObj["content"] as? JsonPrimitive)?.content
+                    ?: (itemObj["text"] as? JsonPrimitive)?.content ?: ""
+            val status = (itemObj["status"] as? JsonPrimitive)?.content ?: "pending"
+            TodoItem(id = id, content = contentStr, status = status)
+        }.takeIf { it.isNotEmpty() }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+fun hydrateTodosFromMessages(messages: List<ChatMessage>): List<TodoItem> {
+    for (msg in messages.asReversed()) {
+        if (msg.role == MessageRole.TOOL && (msg.toolName == "todo" || msg.content.contains("\"todos\""))) {
+            val todos = extractTodosFromJson(msg.content)
+            if (!todos.isNullOrEmpty()) {
+                return todos
+            }
+        }
+    }
+    return emptyList()
 }

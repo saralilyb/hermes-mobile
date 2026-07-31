@@ -85,6 +85,7 @@ import com.m57.hermescontrol.theme.HermesStatusColors
 import com.m57.hermescontrol.theme.LightOnSurface
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
 import com.m57.hermescontrol.theme.onColorFor
+import com.m57.hermescontrol.ui.chat.components.DiffViewCard
 import com.m57.hermescontrol.ui.chat.components.ReasoningCard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -471,11 +472,69 @@ private fun AssistantBubble(
 }
 
 @Composable
+private fun SelfImprovementReviewCard(
+    content: String,
+    modifier: Modifier = Modifier,
+) {
+    val cleanText =
+        content
+            .removePrefix("💾")
+            .replace(Regex("^\\s*Self-improvement review:\\s*", RegexOption.IGNORE_CASE), "")
+            .trim()
+    val isSkill =
+        cleanText.contains("skill", ignoreCase = true) ||
+            cleanText.contains("SKILL.md", ignoreCase = true)
+    val icon = if (isSkill) "⚡" else "🧠"
+    val title =
+        if (isSkill) {
+            "Self-Improvement Review • Skill Patched"
+        } else {
+            "Self-Improvement Review • Memory Updated"
+        }
+
+    Card(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .testTag("self_improvement_review_card"),
+        shape = RoundedCornerShape(10.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = icon, fontSize = 16.sp)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = cleanText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
 private fun SystemBubble(
     message: ChatMessage,
     onRespondApproval: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    if (message.content.contains("Self-improvement review:", ignoreCase = true)) {
+        SelfImprovementReviewCard(content = message.content, modifier = modifier)
+        return
+    }
+
     Column(
         modifier =
             modifier
@@ -560,6 +619,8 @@ data class ParsedToolData(
     val mainOutput: String? = null,
     val extraFields: Map<String, String> = emptyMap(),
     val isRunning: Boolean = false,
+    val diffOutput: String? = null,
+    val diffPath: String? = null,
 )
 
 private fun formatTodoToolOutput(
@@ -938,7 +999,13 @@ fun parseToolOutput(
             val errorMsg = dataSource.get("error")?.takeIf { !it.isJsonNull }?.asString
             val usage = dataSource.get("usage")?.takeIf { !it.isJsonNull }?.asString
 
-            val summaryText = "💾 $action${target?.let { " ($it)" } ?: ""}"
+            val summaryText =
+                when (action.lowercase()) {
+                    "add" -> "🧠 Memory Saved${target?.let { " ($it)" } ?: ""}"
+                    "replace", "update" -> "🧠 Memory Updated${target?.let { " ($it)" } ?: ""}"
+                    "remove", "delete" -> "🧠 Memory Removed${target?.let { " ($it)" } ?: ""}"
+                    else -> "🧠 Memory $action${target?.let { " ($it)" } ?: ""}"
+                }
             val mainOutput =
                 when {
                     errorMsg != null -> "❌ $errorMsg"
@@ -956,6 +1023,48 @@ fun parseToolOutput(
                             it.toString()
                         }
                     } ?: "Memory"} $action done"
+                }
+            val duration = obj.get("duration_s")?.takeIf { !it.isJsonNull }?.asDouble
+            return ParsedToolData(
+                toolName = resolvedToolName,
+                args = args,
+                result = dataSource.entrySet().associate { it.key to it.value.toString() },
+                summaryText = summaryText,
+                mainOutput = mainOutput,
+                durationSec = duration,
+                isRunning = isRunning,
+            )
+        }
+
+        // ── Skill Manage-specific formatting (Self-Improvement) ──
+        if (resolvedToolName == "skill_manage") {
+            val action = argsObj?.get("action")?.takeIf { !it.isJsonNull }?.asString ?: ""
+            val name = argsObj?.get("name")?.takeIf { !it.isJsonNull }?.asString
+            val category = argsObj?.get("category")?.takeIf { !it.isJsonNull }?.asString
+            val errorMsg = dataSource.get("error")?.takeIf { !it.isJsonNull }?.asString
+            val success = dataSource.get("success")?.takeIf { !it.isJsonNull }?.asBoolean ?: true
+            val msg = dataSource.get("message")?.takeIf { !it.isJsonNull }?.asString
+
+            val summaryText =
+                when (action.lowercase()) {
+                    "create" -> "⚡ Skill Created${name?.let { ": $it" } ?: ""}"
+                    "patch" -> "⚡ Skill Patched${name?.let { ": $it" } ?: ""}"
+                    "edit" -> "⚡ Skill Edited${name?.let { ": $it" } ?: ""}"
+                    "delete" -> "⚡ Skill Archived${name?.let { ": $it" } ?: ""}"
+                    "write_file" -> "⚡ Skill File Written${name?.let { ": $it" } ?: ""}"
+                    "remove_file" -> "⚡ Skill File Removed${name?.let { ": $it" } ?: ""}"
+                    else ->
+                        "⚡ Skill ${action.replaceFirstChar {
+                            if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString()
+                        }}${name?.let { ": $it" } ?: ""}"
+                }
+            val mainOutput =
+                when {
+                    errorMsg != null -> "❌ $errorMsg"
+                    !success -> "❌ Skill operation failed"
+                    msg != null -> "✅ $msg"
+                    name != null -> "✅ Skill '$name' $action succeeded${category?.let { " [$it]" } ?: ""}"
+                    else -> "✅ Skill $action done"
                 }
             val duration = obj.get("duration_s")?.takeIf { !it.isJsonNull }?.asDouble
             return ParsedToolData(
@@ -1688,7 +1797,19 @@ fun parseToolOutput(
         val hasStderr = dataSource.has("stderr")
         val hasExitCode = dataSource.has("exit_code") || dataSource.has("exitCode")
 
-        if (hasOutput || hasStdout || hasStderr || hasExitCode) {
+        val isTerminalTool =
+            resolvedToolName == "terminal" ||
+                resolvedToolName == "bash" ||
+                resolvedToolName == "sh" ||
+                resolvedToolName == "cmd" ||
+                resolvedToolName == "exec"
+
+        val isDiffTool =
+            resolvedToolName == "patch" ||
+                resolvedToolName == "write_file" ||
+                resolvedToolName == "edit"
+
+        if (!isDiffTool && (isTerminalTool || hasOutput || hasStdout || hasStderr || hasExitCode)) {
             val terminalOutput =
                 (
                     dataSource.get("output")?.takeIf { !it.isJsonNull }?.asString
@@ -1760,6 +1881,50 @@ fun parseToolOutput(
                 }
             }
 
+            val diffCandidate =
+                dataSource.get("diff")?.takeIf { !it.isJsonNull }?.let {
+                    if (it.isJsonPrimitive) it.asString else it.toString()
+                }
+                    ?: dataSource.get("patch")?.takeIf { !it.isJsonNull }?.let {
+                        if (it.isJsonPrimitive) it.asString else it.toString()
+                    }
+                    ?: mainOutput
+
+            val filePathArg =
+                args["path"]?.toString()
+                    ?: argsObj?.get("path")?.takeIf { !it.isJsonNull }?.asString
+
+            val oldStrArg = args["old_string"]?.toString()
+            val newStrArg = args["new_string"]?.toString()
+
+            val isDiffTool =
+                resolvedToolName == "patch" ||
+                    resolvedToolName == "edit" ||
+                    resolvedToolName == "write_file"
+
+            val extractedDiffOutput =
+                when {
+                    diffCandidate != null && (
+                        diffCandidate.contains("\n-") ||
+                            diffCandidate.contains("\n+") ||
+                            diffCandidate.startsWith("--- ") ||
+                            diffCandidate.startsWith("+++ ") ||
+                            diffCandidate.startsWith("*** ") ||
+                            diffCandidate.startsWith("@@ ")
+                    ) -> diffCandidate
+
+                    isDiffTool && oldStrArg != null && newStrArg != null -> {
+                        val pathHeader = filePathArg ?: "file"
+                        "--- $pathHeader\n+++ $pathHeader\n@@ -1,1 +1,1 @@\n-$oldStrArg\n+$newStrArg"
+                    }
+
+                    isDiffTool && args["patch"] != null -> {
+                        args["patch"].toString()
+                    }
+
+                    else -> null
+                }
+
             val duration = obj.get("duration_s")?.takeIf { !it.isJsonNull }?.asDouble
 
             ParsedToolData(
@@ -1771,6 +1936,8 @@ fun parseToolOutput(
                 extraFields = extraFields,
                 durationSec = duration,
                 isRunning = isRunning,
+                diffOutput = extractedDiffOutput,
+                diffPath = filePathArg,
             )
         }
     } catch (e: Exception) {
@@ -1848,51 +2015,57 @@ private fun ExpandedToolContent(
                 )
             }
         } else {
-            // ── Generic tool output ──
-            parsed.mainOutput?.let {
-                Text(
-                    text = it,
-                    style =
-                        MaterialTheme.typography.bodySmall.copy(
-                            color = contentColor.copy(alpha = 0.9f),
-                            fontSize = 12.sp,
-                        ),
+            // ── Generic tool output / Diff view ──
+            if (parsed.diffOutput != null) {
+                DiffViewCard(
+                    diffText = parsed.diffOutput,
+                    filePath = parsed.diffPath,
                 )
-            }
-            parsed.extraFields.forEach { (key, value) ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
+            } else {
+                parsed.mainOutput?.let {
                     Text(
-                        text = "$key:",
-                        style =
-                            MaterialTheme.typography.labelSmall.copy(
-                                color = contentColor.copy(alpha = 0.6f),
-                                fontWeight = FontWeight.Bold,
-                            ),
-                    )
-                    Text(
-                        text = value,
+                        text = it,
                         style =
                             MaterialTheme.typography.bodySmall.copy(
                                 color = contentColor.copy(alpha = 0.9f),
-                                fontSize = 11.sp,
+                                fontSize = 12.sp,
                             ),
                     )
                 }
+                parsed.extraFields.forEach { (key, value) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "$key:",
+                            style =
+                                MaterialTheme.typography.labelSmall.copy(
+                                    color = contentColor.copy(alpha = 0.6f),
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                        )
+                        Text(
+                            text = value,
+                            style =
+                                MaterialTheme.typography.bodySmall.copy(
+                                    color = contentColor.copy(alpha = 0.9f),
+                                    fontSize = 11.sp,
+                                ),
+                        )
+                    }
+                }
             }
-
-            // Duration footer
-            parsed.durationSec?.let { dur ->
-                Text(
-                    text = "Duration: ${"%.1f".format(dur)}s",
-                    style =
-                        MaterialTheme.typography.labelSmall.copy(
-                            color = contentColor.copy(alpha = 0.5f),
-                        ),
-                )
-            }
+        }
+        // Duration footer
+        parsed.durationSec?.let { dur ->
+            Text(
+                text = "Duration: ${"%.1f".format(dur)}s",
+                style =
+                    MaterialTheme.typography.labelSmall.copy(
+                        color = contentColor.copy(alpha = 0.5f),
+                    ),
+            )
         }
     }
 }

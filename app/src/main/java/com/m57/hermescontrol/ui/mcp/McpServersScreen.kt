@@ -1,5 +1,8 @@
 package com.m57.hermescontrol.ui.mcp
 
+import android.content.Context
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Storage
@@ -50,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -85,6 +90,7 @@ fun McpServersScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val spacing = LocalSpacing.current
+    val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     var showDetail by remember { mutableStateOf<McpServer?>(null) }
 
@@ -180,6 +186,11 @@ fun McpServersScreen(
                             viewModel = viewModel,
                             spacing = spacing,
                             onClick = { showDetail = server },
+                            onOpenBrowser = { url ->
+                                if (!openOAuthAuthorization(context, url)) {
+                                    viewModel.reportOAuthBrowserLaunchFailure()
+                                }
+                            },
                         )
                     }
 
@@ -204,6 +215,65 @@ fun McpServersScreen(
             onDismiss = { showDetail = null },
         )
     }
+
+    state.activeOAuthFlow?.let { flow ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { viewModel.dismissOAuthFlow() },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        flow.authorizationUrl?.let { url ->
+                            if (!openOAuthAuthorization(context, url)) {
+                                viewModel.reportOAuthBrowserLaunchFailure()
+                            }
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.mcp_servers_oauth_dialog_open_browser))
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { viewModel.dismissOAuthFlow() }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+            title = {
+                Text(stringResource(R.string.mcp_servers_oauth_dialog_title))
+            },
+            text = {
+                Column {
+                    Text(stringResource(R.string.mcp_servers_oauth_dialog_desc))
+                    Spacer(modifier = Modifier.height(spacing.sm))
+                    Text(
+                        text = stringResource(R.string.mcp_servers_oauth_dialog_status, flow.status),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    flow.error?.let { err ->
+                        Spacer(modifier = Modifier.height(spacing.xs))
+                        Text(
+                            text = stringResource(R.string.mcp_servers_oauth_dialog_error, err),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
+        )
+    }
+}
+
+private fun openOAuthAuthorization(
+    context: Context,
+    url: String,
+): Boolean {
+    val safeUrl = McpOAuthPolicy.authorizationUrlOrNull(url) ?: return false
+    return runCatching {
+        CustomTabsIntent
+            .Builder()
+            .build()
+            .launchUrl(context, Uri.parse(safeUrl))
+    }.isSuccess
 }
 
 // ── Sections ──────────────────────────────────────────────────────
@@ -345,6 +415,7 @@ private fun ServerCard(
     viewModel: McpServersViewModel,
     spacing: com.m57.hermescontrol.theme.Spacing,
     onClick: () -> Unit,
+    onOpenBrowser: (String) -> Unit,
 ) {
     var showEnv by remember { mutableStateOf(false) }
 
@@ -421,6 +492,19 @@ private fun ServerCard(
             }
 
             Spacer(modifier = Modifier.height(spacing.sm))
+
+            if (server.auth == "oauth") {
+                FilledTonalButton(
+                    onClick = { viewModel.startMcpOAuthFlow(server, onOpenBrowser) },
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                ) {
+                    Icon(Icons.Filled.Key, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(spacing.xs))
+                    Text(stringResource(R.string.mcp_servers_action_authorize))
+                }
+                Spacer(modifier = Modifier.height(spacing.sm))
+            }
 
             // Action buttons
             Row(

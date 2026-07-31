@@ -88,6 +88,8 @@ import com.m57.hermescontrol.ui.chat.components.ContextUsageDialog
 import com.m57.hermescontrol.ui.chat.components.ReactionHeartsOverlay
 import com.m57.hermescontrol.ui.chat.components.ReloginDialog
 import com.m57.hermescontrol.ui.chat.components.SearchBarRow
+import com.m57.hermescontrol.ui.chat.components.StickySubagentBar
+import com.m57.hermescontrol.ui.chat.components.SubagentInspectionSheet
 import com.m57.hermescontrol.ui.chat.components.rememberChatScrollController
 import com.m57.hermescontrol.ui.chat.components.tailContentKey
 import com.m57.hermescontrol.ui.common.AutoScrollingTitleText
@@ -195,6 +197,7 @@ fun ChatScreen(
         streamingState.streamingMessage,
         streamingState.isThinking,
         state.subagentIndicators,
+        state.todos,
         state.clarifyRequest,
     ) {
         scrollController.onTailChanged(
@@ -220,6 +223,7 @@ fun ChatScreen(
     var isListening by rememberSaveable { mutableStateOf(false) }
     var lastAnimatedMessageId by rememberSaveable { mutableStateOf<String?>(null) }
     var showReloginDialog by rememberSaveable { mutableStateOf(false) }
+    var showSubagentInspectionSheet by rememberSaveable { mutableStateOf(false) }
     var viewingImage by rememberSaveable { mutableStateOf<ImageViewerModel?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val isDark = isSystemInDarkTheme()
@@ -481,6 +485,15 @@ fun ChatScreen(
                 }
             }
 
+            StickySubagentBar(
+                indicators = state.subagentIndicators,
+                todos = state.todos,
+                onClick = {
+                    showSubagentInspectionSheet = true
+                    scrollController.resumeFollowing()
+                },
+            )
+
             Box(
                 modifier =
                     Modifier
@@ -505,7 +518,6 @@ fun ChatScreen(
                     lastAnimatedMessageId = lastAnimatedMessageId,
                     onLastAnimatedMessageIdChange = { lastAnimatedMessageId = it },
                     viewModel = viewModel,
-                    subagentIndicators = state.subagentIndicators,
                     clarifyRequest = state.clarifyRequest,
                     onRespondClarify = viewModel::respondToClarify,
                     onDismissClarify = viewModel::dismissClarify,
@@ -543,10 +555,11 @@ fun ChatScreen(
                 inputFieldValue = inputFieldValue,
                 onInputChange = { inputFieldValue = it },
                 onSend = {
-                    viewModel.sendMessage(inputFieldValue.text)
-                    inputFieldValue = TextFieldValue("")
-                    // Jump to bottom after send (serialized through the controller).
-                    scrollController.jumpToBottom(animated = true)
+                    if (viewModel.sendMessage(inputFieldValue.text)) {
+                        inputFieldValue = TextFieldValue("")
+                        // Jump to bottom after send (serialized through the controller).
+                        scrollController.jumpToBottom(animated = true)
+                    }
                 },
                 onMicTap = {
                     if (isListening) {
@@ -583,6 +596,7 @@ fun ChatScreen(
                 isListening = isListening,
                 isAgentTyping = state.isAgentTyping,
                 isConnected = state.isConnected,
+                isSessionReady = state.isSessionReady,
                 commandCatalog = state.commandCatalog,
                 pendingAttachments = state.pendingAttachments,
                 onCameraTap = {
@@ -669,6 +683,14 @@ fun ChatScreen(
                         Text(stringResource(R.string.common_cancel))
                     }
                 },
+            )
+        }
+
+        if (showSubagentInspectionSheet) {
+            SubagentInspectionSheet(
+                indicators = state.subagentIndicators,
+                todos = state.todos,
+                onDismiss = { showSubagentInspectionSheet = false },
             )
         }
 

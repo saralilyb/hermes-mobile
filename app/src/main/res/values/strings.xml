@@ -355,6 +355,10 @@
 
     <!-- Curator section -->
     <string name="system_sec_curator">Skill curator</string>
+    <!-- Self-Improvement & Learning Activity -->
+    <string name="system_sec_self_improvement">Self-Improvement &amp; Learning Activity</string>
+    <string name="system_self_improvement_desc">Chronological log of agent skills, memories, and fact store updates learned over time.</string>
+    <string name="system_self_improvement_no_activity">No self-improvement events recorded yet.</string>
     <string name="system_status_active">active</string>
     <string name="system_status_paused">paused</string>
     <string name="system_status_disabled">disabled</string>
@@ -694,6 +698,12 @@
     <string name="mcp_servers_auth_header">Header</string>
     <string name="mcp_servers_auth_oauth">OAuth</string>
     <string name="mcp_servers_field_bearer_token">Bearer token</string>
+    <string name="mcp_servers_action_authorize">Authorize</string>
+    <string name="mcp_servers_oauth_dialog_title">MCP OAuth Flow</string>
+    <string name="mcp_servers_oauth_dialog_status">Status: %1$s</string>
+    <string name="mcp_servers_oauth_dialog_error">Error: %1$s</string>
+    <string name="mcp_servers_oauth_dialog_desc">An authorization page has been opened in your browser. Complete the login, then return here.</string>
+    <string name="mcp_servers_oauth_dialog_open_browser">Open browser</string>
 
      <!-- Gateway Screen -->
     <string name="gateway_status_running">GATEWAY RUNNING</string>

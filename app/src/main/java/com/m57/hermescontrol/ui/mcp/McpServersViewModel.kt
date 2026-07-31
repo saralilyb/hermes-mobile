@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.AddMcpServerRequest
 import com.m57.hermescontrol.data.model.McpCatalogEntry
 import com.m57.hermescontrol.data.model.McpCatalogInstallRequest
+import com.m57.hermescontrol.data.model.McpOAuthFlowResponse
 import com.m57.hermescontrol.data.model.McpServer
 import com.m57.hermescontrol.data.model.McpServerToggleRequest
 import com.m57.hermescontrol.data.remote.ApiClient
@@ -13,6 +14,8 @@ import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,6 +51,7 @@ data class McpServersUiState(
     val catalogError: String? = null,
     val installingCatalogEntry: String? = null,
     val catalogInstallEnv: Map<String, String> = emptyMap(),
+    val activeOAuthFlow: McpOAuthFlowResponse? = null,
 )
 
 class McpServersViewModel :
@@ -442,6 +446,174 @@ class McpServersViewModel :
         value: String,
     ) {
         _uiState.update { it.copy(catalogInstallEnv = it.catalogInstallEnv + (key to value)) }
+    }
+
+    // ── OAuth ─────────────────────────────────────────────────
+
+    private var oauthStartJob: Job? = null
+    private var oauthStartGeneration = 0
+    private var oauthPollJob: Job? = null
+
+    fun startMcpOAuthFlow(
+        server: McpServer,
+        onOpenBrowser: (String) -> Unit,
+    ) {
+        val startGeneration = ++oauthStartGeneration
+        oauthStartJob?.cancel()
+        oauthPollJob?.cancel()
+        oauthPollJob = null
+        _uiState.update {
+            it.copy(
+                activeOAuthFlow = null,
+                toastMessage = "Starting OAuth authorization…",
+            )
+        }
+        oauthStartJob =
+            viewModelScope.launch {
+                try {
+                    val result =
+                        withContext(Dispatchers.IO) {
+                            safeApiCall {
+                                ApiClient.hermesApi.authMcpServer(server.name)
+                            }
+                        }
+                    when (result) {
+                        is NetworkResult.Success -> {
+                            val flow = result.data
+                            when (McpOAuthPolicy.classify(flow.status)) {
+                                OAuthFlowState.SUCCEEDED -> completeOAuthFlow()
+                                OAuthFlowState.FAILED -> {
+                                    failOAuthFlow(
+                                        flow.error
+                                            ?: "OAuth server rejected the request",
+                                    )
+                                }
+                                OAuthFlowState.PENDING -> {
+                                    val url =
+                                        McpOAuthPolicy.authorizationUrlOrNull(
+                                            flow.authorizationUrl,
+                                        )
+                                    if (url == null) {
+                                        failOAuthFlow(
+                                            "OAuth server returned an unsafe " +
+                                                "authorization URL",
+                                        )
+                                        return@launch
+                                    }
+                                    _uiState.update {
+                                        it.copy(
+                                            activeOAuthFlow =
+                                                flow.copy(
+                                                    authorizationUrl = url,
+                                                ),
+                                        )
+                                    }
+                                    onOpenBrowser(url)
+                                    startPollingOAuthFlow(flow.flowId, url)
+                                }
+                            }
+                        }
+                        is NetworkResult.Failure -> {
+                            failOAuthFlow(
+                                "Failed to start OAuth: " +
+                                    result.error.message,
+                            )
+                        }
+                    }
+                } finally {
+                    if (oauthStartGeneration == startGeneration) {
+                        oauthStartJob = null
+                    }
+                }
+            }
+    }
+
+    private fun startPollingOAuthFlow(
+        flowId: String,
+        authorizationUrl: String,
+    ) {
+        oauthPollJob?.cancel()
+        oauthPollJob =
+            viewModelScope.launch {
+                var consecutiveFailures = 0
+                repeat(McpOAuthPolicy.MAX_POLL_ATTEMPTS) {
+                    delay(McpOAuthPolicy.POLL_INTERVAL_MS)
+                    val result =
+                        withContext(Dispatchers.IO) {
+                            safeApiCall { ApiClient.hermesApi.getMcpOAuthFlowStatus(flowId) }
+                        }
+                    when (result) {
+                        is NetworkResult.Success -> {
+                            consecutiveFailures = 0
+                            val flow = result.data
+                            when (McpOAuthPolicy.classify(flow.status)) {
+                                OAuthFlowState.SUCCEEDED -> {
+                                    completeOAuthFlow()
+                                    return@launch
+                                }
+                                OAuthFlowState.FAILED -> {
+                                    failOAuthFlow(flow.error ?: "Unexpected OAuth flow status")
+                                    return@launch
+                                }
+                                OAuthFlowState.PENDING -> {
+                                    _uiState.update {
+                                        it.copy(
+                                            activeOAuthFlow =
+                                                flow.copy(
+                                                    authorizationUrl = authorizationUrl,
+                                                ),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        is NetworkResult.Failure -> {
+                            consecutiveFailures += 1
+                            if (consecutiveFailures >= McpOAuthPolicy.MAX_CONSECUTIVE_POLL_FAILURES) {
+                                failOAuthFlow("OAuth status check failed; try again")
+                                return@launch
+                            }
+                        }
+                    }
+                }
+                failOAuthFlow("OAuth authorization timed out; try again")
+            }
+    }
+
+    fun reportOAuthBrowserLaunchFailure() {
+        _uiState.update {
+            it.copy(toastMessage = "No browser could open the OAuth authorization page")
+        }
+    }
+
+    private fun completeOAuthFlow() {
+        oauthPollJob = null
+        _uiState.update {
+            it.copy(
+                activeOAuthFlow = null,
+                toastMessage = "OAuth authorization successful",
+            )
+        }
+        loadServers()
+    }
+
+    private fun failOAuthFlow(message: String) {
+        oauthPollJob = null
+        _uiState.update {
+            it.copy(
+                activeOAuthFlow = null,
+                toastMessage = "OAuth failed: $message",
+            )
+        }
+    }
+
+    fun dismissOAuthFlow() {
+        oauthStartGeneration += 1
+        oauthStartJob?.cancel()
+        oauthStartJob = null
+        oauthPollJob?.cancel()
+        oauthPollJob = null
+        _uiState.update { it.copy(activeOAuthFlow = null) }
     }
 
     // ── Helpers ──────────────────────────────────────────────

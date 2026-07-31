@@ -1,5 +1,7 @@
 package com.m57.hermescontrol.ui.chat
 
+import com.m57.hermescontrol.ui.chat.components.DiffLineType
+import com.m57.hermescontrol.ui.chat.components.parseDiffText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -243,5 +245,107 @@ class ToolBubbleParsingTest {
         assertEquals("done", parsed.stdout)
         assertEquals(0, parsed.exitCode)
         assertNull(parsed.summaryText) // no args → no summary
+    }
+
+    // ── Diff parsing & Patch tool tests ───────────────────────
+
+    @Test
+    fun testParseDiffText_unifiedDiff() {
+        val rawDiff =
+            """
+            --- app/src/Main.kt
+            +++ app/src/Main.kt
+            @@ -1,3 +1,3 @@
+             fun main() {
+            -    println("hello")
+            +    println("hello world")
+             }
+            """.trimIndent()
+
+        val result = parseDiffText(rawDiff)
+        assertEquals("app/src/Main.kt", result.filePath)
+        assertEquals(1, result.additionsCount)
+        assertEquals(1, result.deletionsCount)
+
+        val addedLine = result.lines.find { it.type == DiffLineType.ADDED }
+        assertNotNull(addedLine)
+        assertEquals("+    println(\"hello world\")", addedLine!!.text)
+    }
+
+    @Test
+    fun testParseToolOutput_patchReplaceMode() {
+        val json =
+            """{
+            "tool_id": "call_patch_1",
+            "name": "patch",
+            "args": {
+                "path": "app/config.json",
+                "old_string": "debug=false",
+                "new_string": "debug=true"
+            },
+            "result": {
+                "output": "--- app/config.json\n+++ app/config.json\n@@ -1,1 +1,1 @@\n-debug=false\n+debug=true"
+            }
+        }"""
+        val parsed = parseToolOutput(json, "patch", false)
+        assertNotNull(parsed)
+        assertEquals("app/config.json", parsed!!.diffPath)
+        val diffOutput = parsed.diffOutput
+        assertNotNull(diffOutput)
+        assertTrue(diffOutput!!.contains("-debug=false"))
+        assertTrue(diffOutput.contains("+debug=true"))
+    }
+
+    @Test
+    fun testParseToolOutput_editTool() {
+        val json =
+            """{
+            "tool_id": "call_edit_1",
+            "name": "edit",
+            "args": {
+                "path": "app/src/Main.kt",
+                "old_string": "val x = 1",
+                "new_string": "val x = 2"
+            },
+            "result": {
+                "output": "--- app/src/Main.kt\n+++ app/src/Main.kt\n@@ -1,1 +1,1 @@\n-val x = 1\n+val x = 2"
+            }
+        }"""
+        val parsed = parseToolOutput(json, "edit", false)
+        assertNotNull(parsed)
+        assertEquals("app/src/Main.kt", parsed!!.diffPath)
+        val editDiff = parsed.diffOutput
+        assertNotNull(editDiff)
+        assertTrue(editDiff!!.contains("-val x = 1"))
+        assertTrue(editDiff.contains("+val x = 2"))
+    }
+
+    @Test
+    fun testParseSkillManage_createAndPatch() {
+        val createJson =
+            """{
+            "tool_id": "call_sm_1",
+            "name": "skill_manage",
+            "args": {"action": "patch", "name": "our-workflow"},
+            "result": {"success": true, "message": "Patched skill our-workflow"}
+        }"""
+        val parsed = parseToolOutput(createJson, "skill_manage", false)
+        assertNotNull(parsed)
+        assertEquals("⚡ Skill Patched: our-workflow", parsed!!.summaryText)
+        assertEquals("✅ Patched skill our-workflow", parsed.mainOutput)
+    }
+
+    @Test
+    fun testParseMemory_selfImprovementBadge() {
+        val memJson =
+            """{
+            "tool_id": "call_mem_1",
+            "name": "memory",
+            "args": {"action": "add", "target": "user"},
+            "result": {"success": true, "usage": "1,200 / 2,200 chars"}
+        }"""
+        val parsed = parseToolOutput(memJson, "memory", false)
+        assertNotNull(parsed)
+        assertEquals("🧠 Memory Saved (user)", parsed!!.summaryText)
     }
 }

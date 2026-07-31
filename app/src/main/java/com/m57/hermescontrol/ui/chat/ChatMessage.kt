@@ -53,6 +53,30 @@ data class ChatMessage(
 )
 
 /**
+ * Single live transcript log entry for subagent execution.
+ */
+data class SubagentLogLine(
+    val timestamp: Long = System.currentTimeMillis(),
+    val text: String,
+    val isError: Boolean = false,
+    val isSummary: Boolean = false,
+)
+
+/**
+ * Representation of a single task/todo item in the agent's plan.
+ */
+data class TodoItem(
+    val id: String,
+    val content: String,
+    val status: String = "pending", // "pending" | "in_progress" | "completed" | "cancelled"
+) {
+    val isCompleted: Boolean get() = status == "completed" || status == "done"
+    val isInProgress: Boolean get() = status == "in_progress" || status == "running"
+    val isCancelled: Boolean get() = status == "cancelled" || status == "failed"
+    val isPending: Boolean get() = status == "pending" || status == "queued"
+}
+
+/**
  * Representation of subagent execution details for transient UI indicators.
  *
  * Events: `subagent.spawn_requested`, `subagent.start`, `subagent.progress`, `subagent.complete`
@@ -63,10 +87,18 @@ data class SubagentIndicator(
     val taskIndex: Int? = null,
     val taskCount: Int? = null,
     val text: String? = null, // preview line
-    val status: String? = null, // complete only
+    val status: String? = null, // running / queued / completed / failed
     val summary: String? = null, // complete only
     val subagentId: String? = null,
-)
+    val logs: List<SubagentLogLine> = emptyList(),
+    val durationSeconds: Double? = null,
+    val model: String? = null,
+) {
+    val isComplete: Boolean get() = type == "subagent.complete" || status == "completed" || status == "done"
+    val isFailed: Boolean get() = status == "failed" || status == "interrupted"
+    val isQueued: Boolean get() = status == "queued"
+    val isRunning: Boolean get() = !isComplete && !isFailed && !isQueued
+}
 
 enum class MessageRole {
     USER,

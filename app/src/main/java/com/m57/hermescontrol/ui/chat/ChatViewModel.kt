@@ -78,6 +78,7 @@ private data class PendingRpcRequest(
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val currentSessionId: String? = null,
+    val isSessionReady: Boolean = false,
     val sessions: List<SessionUi> = emptyList(),
     val chatTitle: String = "Hermes",
     val connectionStatus: ConnectionStatus = ConnectionStatus.DISCONNECTED,
@@ -145,6 +146,8 @@ data class ChatUiState(
     val modelContextLengthModel: String? = null,
     /** Whether the tappable context breakdown sheet is open. */
     val showContextDetail: Boolean = false,
+    /** Agent todo / plan items (issue #736). */
+    val todos: List<TodoItem> = emptyList(),
 ) {
     /** Convenience — derived from [connectionStatus]. */
     val isConnected: Boolean get() = connectionStatus == ConnectionStatus.CONNECTED
@@ -302,7 +305,12 @@ class ChatViewModel(
                     status == ConnectionStatus.NO_NETWORK ||
                     status == ConnectionStatus.AUTH_EXPIRED
                 ) {
-                    _uiState.update { it.copy(isLoading = false) }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isSessionReady = false,
+                        )
+                    }
                     // Fail any in-flight awaited RPCs so callers don't hang
                     // across the disconnect (delegated to HermesWsClient, issue #526).
                     wsClient.rejectAllPending()
@@ -643,8 +651,11 @@ class ChatViewModel(
                 _uiState.update {
                     it.copy(
                         currentSessionId = storageId,
+                        isSessionReady = true,
                         isLoading = false,
                         messages = emptyList(),
+                        subagentIndicators = emptyList(),
+                        todos = emptyList(),
                         chatTitle = "Hermes",
                         currentSessionModel = null,
                         modelSwitchConfirmation = null,
@@ -673,8 +684,11 @@ class ChatViewModel(
                 _uiState.update {
                     it.copy(
                         currentSessionId = newId,
+                        isSessionReady = true,
                         isLoading = false,
                         messages = emptyList(),
+                        subagentIndicators = emptyList(),
+                        todos = emptyList(),
                         chatTitle = (resultMap["title"] as? String)?.takeIf { t -> t.isNotBlank() } ?: "Hermes",
                         currentSessionModel =
                             model.takeIf { it.isNotEmpty() }?.let { resolvedModel ->
@@ -749,6 +763,7 @@ class ChatViewModel(
                     it.copy(
                         isLoading = false,
                         currentSessionId = sessionId,
+                        isSessionReady = runtimeSessionId != null,
                         currentSessionModel =
                             if (model != null && provider != null) {
                                 "$provider/$model"
@@ -918,10 +933,12 @@ class ChatViewModel(
      * 4. For each file → await `file.attach` (requires session_id), collect @file: refs
      * 5. Send `prompt.submit` with text + @file: refs — images auto-picked up by backend
      */
-    fun sendMessage(text: String) {
-        if (text.isBlank() && _uiState.value.pendingAttachments.isEmpty()) return
-        val storageSessionId = _uiState.value.currentSessionId ?: return
-        val agentSessionId = runtimeSessionId ?: return
+    fun sendMessage(text: String): Boolean {
+        val state = _uiState.value
+        if (!state.isSessionReady) return false
+        if (text.isBlank() && state.pendingAttachments.isEmpty()) return false
+        val storageSessionId = state.currentSessionId ?: return false
+        val agentSessionId = runtimeSessionId ?: return false
 
         val trimmed = text.trim()
         if (trimmed.startsWith("/", ignoreCase = true)) {
@@ -929,10 +946,10 @@ class ChatViewModel(
             // of requiring the user to hand-type the provider/model.
             if (isModelPickerCommand(trimmed)) {
                 openModelPicker()
-                return
+                return true
             }
             handleSlashCommand(trimmed)
-            return
+            return true
         }
 
         // Snapshot + clear attachments so the input bar empties immediately
@@ -1059,6 +1076,7 @@ class ChatViewModel(
                 )
             }
         }
+        return true
     }
 
     /** Read and encode a `content://` or `file://` URI to Base64 via ContentResolver, avoiding large allocations. */
@@ -1329,7 +1347,10 @@ class ChatViewModel(
             it.copy(
                 isLoading = setLoading,
                 currentSessionId = null,
+                isSessionReady = false,
                 messages = emptyList(),
+                subagentIndicators = emptyList(),
+                todos = emptyList(),
                 chatTitle = "Hermes",
                 currentSessionModel = null,
                 contextUsage = null,
@@ -1724,10 +1745,13 @@ class ChatViewModel(
             val title = it.sessions.find { s -> s.id == sessionId }?.title ?: "Hermes"
             it.copy(
                 isLoading = true,
+                isSessionReady = false,
                 isLoadingOlder = false,
                 hasOlderMessages = false,
                 currentSessionId = sessionId,
                 messages = emptyList(),
+                subagentIndicators = emptyList(),
+                todos = emptyList(),
                 chatTitle = title,
                 showSessionPicker = false,
                 isAgentTyping = false,
@@ -1763,7 +1787,11 @@ class ChatViewModel(
             _uiState.update { state ->
                 // Only replace if still showing this session
                 if (state.currentSessionId == sessionId) {
-                    state.copy(messages = cachedMessages, isLoading = false)
+                    state.copy(
+                        messages = cachedMessages,
+                        todos = restoredTodos(state.todos, cachedMessages),
+                        isLoading = false,
+                    )
                 } else {
                     state
                 }
@@ -1809,6 +1837,7 @@ class ChatViewModel(
                         } else {
                             state.copy(
                                 messages = chatMessages,
+                                todos = restoredTodos(state.todos, chatMessages),
                                 isLoading = false,
                                 hasOlderMessages =
                                     offset > 0 && chatMessages.isNotEmpty(),
@@ -1866,10 +1895,15 @@ class ChatViewModel(
                             return@update current
                         }
                         loadedMessageOffset = effectiveOffset
+                        val mergedMessages =
+                            (older + current.messages).distinctBy { it.id }
                         current.copy(
-                            messages =
-                                (older + current.messages)
-                                    .distinctBy { it.id },
+                            messages = mergedMessages,
+                            todos =
+                                restoredTodos(
+                                    current.todos,
+                                    mergedMessages,
+                                ),
                             isLoadingOlder = false,
                             hasOlderMessages =
                                 effectiveOffset > 0 && older.isNotEmpty(),
@@ -1908,23 +1942,48 @@ class ChatViewModel(
                         withContext(Dispatchers.IO) { repo.persistMessages(incoming, sessionId) }
                         _uiState.update { current ->
                             if (current.currentSessionId != sessionId) return@update current
-                            val unmatched = incoming.map { it.role to it.content }.toMutableList()
-                            val retained =
-                                current.messages.filter { existing ->
-                                    if (serverMessageIndex(existing.id, sessionId) != null) {
-                                        true
+                            val unmatchedIncoming = incoming.toMutableList()
+                            val mergedList = mutableListOf<ChatMessage>()
+
+                            for (existing in current.messages) {
+                                val existingServerIndex = serverMessageIndex(existing.id, sessionId)
+                                if (existingServerIndex != null) {
+                                    val matchIdx = unmatchedIncoming.indexOfFirst { it.id == existing.id }
+                                    if (matchIdx >= 0) {
+                                        mergedList.add(unmatchedIncoming.removeAt(matchIdx))
                                     } else {
-                                        val duplicate =
-                                            unmatched.indexOfFirst { (role, content) ->
-                                                role == existing.role && content == existing.content
-                                            }
-                                        if (duplicate >= 0) unmatched.removeAt(duplicate)
-                                        duplicate < 0
+                                        mergedList.add(existing)
+                                    }
+                                } else {
+                                    val matchIdx =
+                                        unmatchedIncoming.indexOfFirst { inc ->
+                                            inc.role == existing.role && (
+                                                inc.content == existing.content ||
+                                                    (
+                                                        existing.role == MessageRole.TOOL &&
+                                                            existing.toolStatus == ToolStatus.RUNNING &&
+                                                            inc.toolName != null &&
+                                                            inc.toolName == existing.toolName
+                                                    )
+                                            )
+                                        }
+                                    if (matchIdx >= 0) {
+                                        mergedList.add(unmatchedIncoming.removeAt(matchIdx))
+                                    } else {
+                                        mergedList.add(existing)
                                     }
                                 }
-                            val incomingIds = incoming.mapTo(mutableSetOf()) { it.id }
-                            val merged = retained.filterNot { it.id in incomingIds } + incoming
-                            if (sameMessages(current.messages, merged)) current else current.copy(messages = merged)
+                            }
+                            mergedList.addAll(unmatchedIncoming)
+                            val merged = mergedList.distinctBy { it.id }
+                            if (sameMessages(current.messages, merged)) {
+                                current
+                            } else {
+                                current.copy(
+                                    messages = merged,
+                                    todos = restoredTodos(current.todos, merged),
+                                )
+                            }
                         }
                     }
 
@@ -1935,6 +1994,11 @@ class ChatViewModel(
             }
         }
     }
+
+    private fun restoredTodos(
+        currentTodos: List<TodoItem>,
+        messages: List<ChatMessage>,
+    ): List<TodoItem> = hydrateTodosFromMessages(messages).ifEmpty { currentTodos }
 
     private suspend fun fetchServerMessageCount(sessionId: String): Int {
         val known =

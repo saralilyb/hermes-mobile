@@ -77,6 +77,7 @@ fun ChatInputBar(
     isListening: Boolean,
     isAgentTyping: Boolean,
     isConnected: Boolean,
+    isSessionReady: Boolean,
     commandCatalog: CommandCatalog,
     pendingAttachments: List<Attachment> = emptyList(),
     onCameraTap: () -> Unit = {},
@@ -93,7 +94,13 @@ fun ChatInputBar(
     // gateway's prompt.submit busy-input policy queues it as the next turn
     // (tui_gateway/server.py:_handle_busy_submit), so the message is never
     // dropped. Slash commands were already allowed; regular prompts now are too.
-    val canSend = ChatInputPolicy.canSend(inputFieldValue.text, pendingAttachments, isConnected)
+    val canSend =
+        ChatInputPolicy.canSend(
+            inputFieldValue.text,
+            pendingAttachments,
+            isConnected,
+            isSessionReady,
+        )
 
     // Attachment menu state
     var showAttachmentMenu by remember { mutableStateOf(false) }

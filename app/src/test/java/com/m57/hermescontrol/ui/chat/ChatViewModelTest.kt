@@ -485,8 +485,34 @@ class ChatViewModelTest {
                     sessionId = sessionId,
                 ),
             )
+            mockEventsFlow.emit(
+                WsEvent.ToolStart(
+                    name = "todo",
+                    data =
+                        mapOf(
+                            "todos" to
+                                listOf(
+                                    mapOf(
+                                        "id" to "1",
+                                        "content" to "Old task",
+                                        "status" to "in_progress",
+                                    ),
+                                ),
+                        ),
+                    sessionId = sessionId,
+                ),
+            )
+            mockEventsFlow.emit(
+                WsEvent.SubagentEvent(
+                    type = "subagent.start",
+                    payload = mapOf("subagent_id" to "old-agent"),
+                    sessionId = sessionId,
+                ),
+            )
             advanceUntilIdle()
             assertEquals("fireworks/glm-5p2", viewModel.uiState.value.currentSessionModel)
+            assertEquals(1, viewModel.uiState.value.todos.size)
+            assertEquals(1, viewModel.uiState.value.subagentIndicators.size)
 
             viewModel.createNewSession()
             advanceUntilIdle()
@@ -494,6 +520,8 @@ class ChatViewModelTest {
             assertNull(viewModel.uiState.value.currentSessionId)
             assertNull(viewModel.uiState.value.currentSessionModel)
             assertNull(ActiveSessionHolder.activeSessionId.value)
+            assertTrue(viewModel.uiState.value.todos.isEmpty())
+            assertTrue(viewModel.uiState.value.subagentIndicators.isEmpty())
 
             mockEventsFlow.emit(
                 WsEvent.SessionInfo(
@@ -514,6 +542,19 @@ class ChatViewModelTest {
 
             assertNull(viewModel.uiState.value.currentSessionModel)
             assertNull(viewModel.uiState.value.contextUsage)
+        }
+
+    @Test
+    fun testSendMessage_rejectsPromptUntilNewSessionIsReady() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+
+            viewModel.createNewSession()
+            advanceUntilIdle()
+
+            assertFalse(viewModel.uiState.value.isSessionReady)
+            assertFalse(viewModel.sendMessage("first prompt"))
+            verify(exactly = 0) { HermesWsClient.sendMessage(any(), any(), any()) }
         }
 
     @Test

@@ -3,6 +3,7 @@ package com.m57.hermescontrol.ui.chat
 import android.content.pm.PackageManager
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -55,6 +56,7 @@ class ChatScreenTest {
         val uiState =
             ChatUiState(
                 connectionStatus = ConnectionStatus.CONNECTED,
+                isSessionReady = true,
             )
         val mockViewModel = mockk<ChatViewModel>(relaxed = true)
         every { mockViewModel.uiState } returns MutableStateFlow(uiState).asStateFlow()
@@ -77,6 +79,31 @@ class ChatScreenTest {
         composeTestRule.onNodeWithTag("chat_input").performTextInput("Hello Hermes")
         composeTestRule.onNodeWithTag("send_button").assertIsDisplayed()
         composeTestRule.onNodeWithTag("mic_button").assertIsDisplayed()
+    }
+
+    @Test
+    fun newSession_keepsDraftUntilSessionCreateCompletes() {
+        val uiState =
+            ChatUiState(
+                connectionStatus = ConnectionStatus.CONNECTED,
+                isSessionReady = false,
+            )
+        val mockViewModel = mockk<ChatViewModel>(relaxed = true)
+        every { mockViewModel.uiState } returns MutableStateFlow(uiState).asStateFlow()
+        every { mockViewModel.streamingState } returns MutableStateFlow(StreamingState()).asStateFlow()
+
+        composeTestRule.setContent {
+            ChatScreen(
+                onOpenDrawer = {},
+                sessionId = null,
+                viewModel = mockViewModel,
+            )
+        }
+
+        composeTestRule.onNodeWithTag("chat_input").performTextInput("first prompt")
+        composeTestRule.onNodeWithTag("send_button").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("chat_input").assertTextEquals("first prompt")
+        verify(exactly = 0) { mockViewModel.sendMessage(any()) }
     }
 
     @Test
