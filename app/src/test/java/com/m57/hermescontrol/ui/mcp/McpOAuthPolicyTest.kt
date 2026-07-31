@@ -12,6 +12,10 @@ class McpOAuthPolicyTest {
     fun pollingDeadline_matchesBackendFlowLifetime() {
         assertEquals(
             5 * 60 * 1_000L,
+            McpOAuthPolicy.FLOW_TIMEOUT_MS,
+        )
+        assertEquals(
+            McpOAuthPolicy.FLOW_TIMEOUT_MS,
             McpOAuthPolicy.MAX_POLL_ATTEMPTS * McpOAuthPolicy.POLL_INTERVAL_MS,
         )
     }

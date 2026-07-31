@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class AddServerMode { HTTP, Stdio }
 
@@ -539,51 +540,57 @@ class McpServersViewModel :
         oauthPollJob =
             viewModelScope.launch {
                 var consecutiveFailures = 0
-                repeat(McpOAuthPolicy.MAX_POLL_ATTEMPTS) {
-                    delay(McpOAuthPolicy.POLL_INTERVAL_MS)
-                    val result =
-                        withContext(Dispatchers.IO) {
-                            safeApiCall { ApiClient.hermesApi.getMcpOAuthFlowStatus(flowId) }
-                        }
-                    when (result) {
-                        is NetworkResult.Success -> {
-                            consecutiveFailures = 0
-                            val flow = result.data
-                            when (McpOAuthPolicy.classify(flow.status)) {
-                                OAuthFlowState.SUCCEEDED -> {
-                                    completeOAuthFlow()
-                                    return@launch
+                val reachedTerminalState =
+                    withTimeoutOrNull(McpOAuthPolicy.FLOW_TIMEOUT_MS) {
+                        repeat(McpOAuthPolicy.MAX_POLL_ATTEMPTS) {
+                            delay(McpOAuthPolicy.POLL_INTERVAL_MS)
+                            val result =
+                                withContext(Dispatchers.IO) {
+                                    safeApiCall { ApiClient.hermesApi.getMcpOAuthFlowStatus(flowId) }
                                 }
-                                OAuthFlowState.FAILED -> {
-                                    failOAuthFlow(flow.error ?: "Unexpected OAuth flow status")
-                                    return@launch
+                            when (result) {
+                                is NetworkResult.Success -> {
+                                    consecutiveFailures = 0
+                                    val flow = result.data
+                                    when (McpOAuthPolicy.classify(flow.status)) {
+                                        OAuthFlowState.SUCCEEDED -> {
+                                            completeOAuthFlow()
+                                            return@withTimeoutOrNull true
+                                        }
+                                        OAuthFlowState.FAILED -> {
+                                            failOAuthFlow(flow.error ?: "Unexpected OAuth flow status")
+                                            return@withTimeoutOrNull true
+                                        }
+                                        OAuthFlowState.PENDING -> {
+                                            _uiState.update {
+                                                it.copy(
+                                                    activeOAuthFlow =
+                                                        flow.copy(
+                                                            authorizationUrl = authorizationUrl,
+                                                        ),
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
-                                OAuthFlowState.PENDING -> {
-                                    _uiState.update {
-                                        it.copy(
-                                            activeOAuthFlow =
-                                                flow.copy(
-                                                    authorizationUrl = authorizationUrl,
-                                                ),
-                                        )
+                                is NetworkResult.Failure -> {
+                                    if (McpOAuthPolicy.isTerminalPollError(result.error)) {
+                                        failOAuthFlow("OAuth authorization expired; try again")
+                                        return@withTimeoutOrNull true
+                                    }
+                                    consecutiveFailures += 1
+                                    if (consecutiveFailures >= McpOAuthPolicy.MAX_CONSECUTIVE_POLL_FAILURES) {
+                                        failOAuthFlow("OAuth status check failed; try again")
+                                        return@withTimeoutOrNull true
                                     }
                                 }
                             }
                         }
-                        is NetworkResult.Failure -> {
-                            if (McpOAuthPolicy.isTerminalPollError(result.error)) {
-                                failOAuthFlow("OAuth authorization expired; try again")
-                                return@launch
-                            }
-                            consecutiveFailures += 1
-                            if (consecutiveFailures >= McpOAuthPolicy.MAX_CONSECUTIVE_POLL_FAILURES) {
-                                failOAuthFlow("OAuth status check failed; try again")
-                                return@launch
-                            }
-                        }
+                        false
                     }
+                if (reachedTerminalState != true) {
+                    failOAuthFlow("OAuth authorization timed out; try again")
                 }
-                failOAuthFlow("OAuth authorization timed out; try again")
             }
     }
 

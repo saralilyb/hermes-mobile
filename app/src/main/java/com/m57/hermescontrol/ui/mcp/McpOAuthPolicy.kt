@@ -12,6 +12,7 @@ internal enum class OAuthFlowState {
 /** Closed policy for the dashboard-hosted MCP OAuth flow. */
 internal object McpOAuthPolicy {
     const val POLL_INTERVAL_MS = 2_000L
+    const val FLOW_TIMEOUT_MS = 5 * 60 * 1_000L
     const val MAX_CONSECUTIVE_POLL_FAILURES = 3
     const val MAX_POLL_ATTEMPTS = 150
 
