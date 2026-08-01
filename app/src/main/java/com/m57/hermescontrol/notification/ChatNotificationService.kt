@@ -26,15 +26,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
-internal val replyPendingIntentFlags =
-    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_ONE_SHOT
-internal val contentPendingIntentFlags =
-    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_ONE_SHOT
-
-internal fun notificationReplyAction(packageName: String): String = "$packageName.ACTION_NOTIFICATION_REPLY"
-
-internal fun notificationContentAction(packageName: String): String = "$packageName.ACTION_OPEN_CHAT_FROM_NOTIFICATION"
-
 /**
  * Foreground service that keeps the WebSocket connection alive while the app
  * is backgrounded and posts a notification when a new assistant reply
@@ -142,7 +133,7 @@ class ChatNotificationService : Service() {
 
             val replyIntent =
                 Intent(this, NotificationReplyReceiver::class.java).apply {
-                    action = notificationReplyAction(packageName)
+                    action = "$packageName.ACTION_NOTIFICATION_REPLY"
                     putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
                 }
 
@@ -151,7 +142,7 @@ class ChatNotificationService : Service() {
                     this,
                     sessionId.hashCode(),
                     replyIntent,
-                    replyPendingIntentFlags,
+                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_ONE_SHOT,
                 )
 
             val action =
@@ -173,17 +164,17 @@ class ChatNotificationService : Service() {
     private fun buildContentIntent(sessionId: String?): PendingIntent {
         val intent =
             Intent(this, MainActivity::class.java).apply {
-                action = notificationContentAction(packageName)
+                action = "$packageName.ACTION_OPEN_CHAT_FROM_NOTIFICATION"
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                if (!sessionId.isNullOrBlank()) {
-                    putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
-                }
             }
+        if (!sessionId.isNullOrBlank()) {
+            intent.putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
+        }
         return PendingIntent.getActivity(
             this,
             sessionId?.hashCode() ?: 0,
             intent,
-            contentPendingIntentFlags,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_ONE_SHOT,
         )
     }
 
