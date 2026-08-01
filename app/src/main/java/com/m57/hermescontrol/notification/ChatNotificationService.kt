@@ -132,10 +132,10 @@ class ChatNotificationService : Service() {
                     .build()
 
             val replyIntent =
-                Intent(this, NotificationReplyReceiver::class.java).apply {
-                    action = "$packageName.ACTION_NOTIFICATION_REPLY"
-                    putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
-                }
+                Intent(this, NotificationReplyReceiver::class.java)
+                    .setPackage(packageName)
+                    .setAction("$packageName.ACTION_NOTIFICATION_REPLY")
+                    .putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
 
             val replyPendingIntent =
                 PendingIntent.getBroadcast(
@@ -163,10 +163,10 @@ class ChatNotificationService : Service() {
 
     private fun buildContentIntent(sessionId: String?): PendingIntent {
         val intent =
-            Intent(this, MainActivity::class.java).apply {
-                action = "$packageName.ACTION_OPEN_CHAT_FROM_NOTIFICATION"
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
+            Intent(this, MainActivity::class.java)
+                .setPackage(packageName)
+                .setAction("$packageName.ACTION_OPEN_CHAT_FROM_NOTIFICATION")
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         if (!sessionId.isNullOrBlank()) {
             intent.putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
         }
