@@ -21,9 +21,10 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
 - **Auth:** encrypted bearer tokens for direct mode; endpoint-scoped encrypted
   cookies plus short-lived WebSocket tickets for gated mode
 - **Upstream base:** selectively reconciled through `Hy4ri/hermes-mobile`
-  `v1.19.2` plus hosted MCP OAuth and CodeQL changes through `422bb9f`;
-  retain downstream HTTPS enforcement, profile-scoped credentials, single-use
-  ticket handling, complete-history pagination, signing, and release automation.
+  `v1.19.2` plus hosted MCP OAuth, CodeQL, and notification hardening through
+  `dc74eb4`; retain downstream HTTPS enforcement, profile-scoped credentials,
+  single-use ticket handling, complete-history pagination, signing, and release
+  automation.
   The gateway-file/media stack and Keys redesign have been integrated with
   downstream auth and sensitive-clipboard adaptations. The v1.19.2 diff,
   delegation, and self-improvement surfaces were ported directly; its ticket
@@ -48,6 +49,14 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
   - `698d2f6` (#746), the REST-polled context-meter patch. Downstream instead
     uses the active session's live gateway `usage` payload, scopes it across
     session transitions, and preserves a model-specific denominator fallback.
+  - `c3e0269` (#754), the simplified issue and pull-request templates.
+    Downstream retains detailed dashboard-version, privacy-redaction, design,
+    test-evidence, flavor-CI, navigation, scaffold, and Room review prompts.
+  - `63b966b` (#732), the inline video player, as a wholesale cherry-pick. Its
+    raw `VideoView` header path can attach both cookies and bearer tokens to
+    arbitrary video origins, bypassing endpoint-scoped cookie and auth-mode
+    handling. Any future port needs typed media sources and authenticated
+    gateway fetching that preserves the existing media security boundaries.
 
 ## Build & Test Commands
 
