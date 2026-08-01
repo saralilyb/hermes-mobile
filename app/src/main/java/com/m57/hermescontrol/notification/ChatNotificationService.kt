@@ -132,16 +132,17 @@ class ChatNotificationService : Service() {
                     .build()
 
             val replyIntent =
-                Intent(this, NotificationReplyReceiver::class.java).apply {
-                    putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
-                }
+                Intent(this, NotificationReplyReceiver::class.java)
+                    .setPackage(packageName)
+                    .setAction("$packageName.ACTION_NOTIFICATION_REPLY")
+                    .putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
 
             val replyPendingIntent =
                 PendingIntent.getBroadcast(
                     this,
                     sessionId.hashCode(),
                     replyIntent,
-                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_ONE_SHOT,
                 )
 
             val action =
@@ -161,8 +162,11 @@ class ChatNotificationService : Service() {
     }
 
     private fun buildContentIntent(sessionId: String?): PendingIntent {
-        val intent = Intent(this, MainActivity::class.java)
-        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        val intent =
+            Intent(this, MainActivity::class.java)
+                .setPackage(packageName)
+                .setAction("$packageName.ACTION_OPEN_CHAT_FROM_NOTIFICATION")
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         if (!sessionId.isNullOrBlank()) {
             intent.putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
         }
@@ -170,7 +174,7 @@ class ChatNotificationService : Service() {
             this,
             sessionId?.hashCode() ?: 0,
             intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_ONE_SHOT,
         )
     }
 
