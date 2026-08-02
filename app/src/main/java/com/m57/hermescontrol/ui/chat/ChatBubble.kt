@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
@@ -61,7 +60,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -112,9 +110,6 @@ fun ChatBubble(
     onImageClick: (ImageViewerModel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
-    val maxBubbleWidth = screenWidth * 0.80f
-
     AnimatedVisibility(
         visible = true,
         enter =
@@ -127,7 +122,6 @@ fun ChatBubble(
             MessageRole.USER -> {
                 UserBubble(
                     message = message,
-                    maxWidth = maxBubbleWidth,
                     searchQuery = searchQuery,
                     isCurrentMatch = isCurrentMatch,
                     onOpenAttachment = onOpenAttachment,
@@ -139,7 +133,6 @@ fun ChatBubble(
             MessageRole.ASSISTANT -> {
                 AssistantBubble(
                     message = message,
-                    maxWidth = maxBubbleWidth,
                     isDarkTheme = isDarkTheme,
                     searchQuery = searchQuery,
                     isCurrentMatch = isCurrentMatch,
@@ -167,7 +160,6 @@ fun ChatBubble(
 @Composable
 private fun UserBubble(
     message: ChatMessage,
-    maxWidth: androidx.compose.ui.unit.Dp,
     searchQuery: String = "",
     isCurrentMatch: Boolean = false,
     onOpenAttachment: (Attachment) -> Unit = {},
@@ -237,7 +229,7 @@ private fun UserBubble(
             Surface(
                 modifier =
                     Modifier
-                        .widthIn(max = maxWidth)
+                        .bubbleMaxWidth()
                         .clip(
                             RoundedCornerShape(
                                 topStart = 16.dp,
@@ -331,7 +323,6 @@ private fun UserBubble(
 @Composable
 private fun AssistantBubble(
     message: ChatMessage,
-    maxWidth: androidx.compose.ui.unit.Dp,
     isDarkTheme: Boolean,
     searchQuery: String = "",
     isCurrentMatch: Boolean = false,
@@ -364,7 +355,7 @@ private fun AssistantBubble(
             Surface(
                 modifier =
                     Modifier
-                        .widthIn(max = maxWidth)
+                        .bubbleMaxWidth()
                         .animateContentSize()
                         .clip(
                             RoundedCornerShape(
