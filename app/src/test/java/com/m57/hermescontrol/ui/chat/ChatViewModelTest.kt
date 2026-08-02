@@ -41,8 +41,10 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -2673,5 +2675,122 @@ class ChatViewModelTest {
 
             assertNotNull(viewModel.uiState.value.openError)
             assertTrue(viewModel.uiState.value.openError!!.contains("missing.pdf"))
+        }
+
+    // ── session.create liveness ──────────────────────────────────────────
+    //
+    // session.create is fire-and-forget: HermesWsClient.send() queues the frame
+    // while the socket is down and drops it once credentials were cleared, and
+    // neither path reports back. Chat has already discarded the old session by
+    // then, so a lost create leaves it with no session at all — Send disabled,
+    // nothing in flight — until the user backs out of the screen and returns.
+
+    /** Retry delay injected so these tests opt into the liveness timer. */
+    private val createRetryDelayMs = 1_000L
+
+    /** Mirrors SESSION_CREATE_MAX_ATTEMPTS in the ViewModel. */
+    private val createMaxAttempts = 3
+
+    private fun createViewModelWithCreateRetry(): ChatViewModel =
+        ChatViewModel(app, false, fakeRepo, testDispatcher, createRetryDelayMs)
+
+    @Test
+    fun `session create is retried while the gateway never answers`() =
+        runTest {
+            val viewModel = createViewModelWithCreateRetry()
+            advanceUntilIdle()
+
+            mockConnectionStatus.value = ConnectionStatus.CONNECTED
+            mockEventsFlow.emit(WsEvent.GatewayReady(null))
+            runCurrent()
+
+            // The first attempt went out and nothing acknowledged it.
+            verify(exactly = 1) { HermesWsClient.send(WsMethods.SESSION_CREATE, any(), any()) }
+            assertFalse(viewModel.uiState.value.isSessionReady)
+
+            advanceTimeBy(createRetryDelayMs + 1)
+            runCurrent()
+
+            verify(exactly = 2) { HermesWsClient.send(WsMethods.SESSION_CREATE, any(), any()) }
+        }
+
+    @Test
+    fun `session create surfaces an error once its attempts are spent`() =
+        runTest {
+            every {
+                app.getString(R.string.chat_new_session_failed)
+            } returns "Couldn't start a new chat."
+
+            val viewModel = createViewModelWithCreateRetry()
+            advanceUntilIdle()
+
+            mockConnectionStatus.value = ConnectionStatus.CONNECTED
+            mockEventsFlow.emit(WsEvent.GatewayReady(null))
+            advanceUntilIdle()
+
+            verify(exactly = createMaxAttempts) {
+                HermesWsClient.send(WsMethods.SESSION_CREATE, any(), any())
+            }
+            assertFalse(viewModel.uiState.value.isLoading)
+            assertEquals("Couldn't start a new chat.", viewModel.uiState.value.errorMessage)
+        }
+
+    @Test
+    fun `an acknowledged session create stands its retry down`() =
+        runTest {
+            val viewModel = createViewModelWithCreateRetry()
+            advanceUntilIdle()
+
+            mockConnectionStatus.value = ConnectionStatus.CONNECTED
+            mockEventsFlow.emit(WsEvent.GatewayReady(null))
+            runCurrent()
+
+            // req-id-3: loadSessions and fetchCommandCatalog precede the create.
+            mockEventsFlow.emit(
+                WsEvent.RpcResult("req-id-3", mapOf("session_id" to "session-123")),
+            )
+            advanceUntilIdle()
+
+            assertTrue(viewModel.uiState.value.isSessionReady)
+            assertEquals("session-123", viewModel.uiState.value.currentSessionId)
+            verify(exactly = 1) { HermesWsClient.send(WsMethods.SESSION_CREATE, any(), any()) }
+            assertNull(viewModel.uiState.value.errorMessage)
+        }
+
+    @Test
+    fun `a superseded session create result cannot install itself`() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+
+            // Bind to the id the create actually used. A hard-coded position is
+            // wrong here: handleRpcResult(SESSION_CREATE) issues its own
+            // loadSessions, so the helper leaves the counter one ahead of what
+            // the request sequence looks like from the outside — and a result
+            // aimed at session.list is discarded by its own handler, passing
+            // this test without ever reaching the generation fence.
+            val createIds = mutableListOf<String>()
+            every { HermesWsClient.send(WsMethods.SESSION_CREATE, any(), any()) } answers {
+                reqCount++
+                val id = "req-id-$reqCount"
+                createIds += id
+                arg<((String) -> Unit)?>(2)?.invoke(id)
+                id
+            }
+
+            viewModel.createNewSession()
+            advanceUntilIdle()
+            val outstanding = createIds.single()
+
+            // The user opens a different conversation before the answer lands.
+            viewModel.switchSession("session-456")
+            advanceUntilIdle()
+            assertEquals("session-456", viewModel.uiState.value.currentSessionId)
+
+            mockEventsFlow.emit(
+                WsEvent.RpcResult(outstanding, mapOf("session_id" to "late-session")),
+            )
+            advanceUntilIdle()
+
+            assertEquals("session-456", viewModel.uiState.value.currentSessionId)
         }
 }

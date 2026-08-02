@@ -60,6 +60,19 @@ private const val TAG = "ChatViewModel"
 private const val MESSAGE_PAGE_SIZE = 150
 
 /**
+ * How long an unacknowledged `session.create` waits before it is retried.
+ *
+ * `session.create` is fire-and-forget: [HermesWsClient.send] can queue it for a
+ * later socket, or drop it outright once credentials were cleared. Chat cannot
+ * recover on its own from a dropped create — it has already discarded the old
+ * session id — so the request needs its own liveness deadline.
+ */
+private const val SESSION_CREATE_TIMEOUT_MS = 10_000L
+
+/** Total `session.create` attempts, including the first, before giving up. */
+private const val SESSION_CREATE_MAX_ATTEMPTS = 3
+
+/**
  * Gateway error code for "agent does not support active-turn redirect"
  * (hermes-agent `tui_gateway/server.py`, `session.redirect` handler).
  */
@@ -73,6 +86,8 @@ private data class PendingRpcRequest(
     /** Session/text captured for a session.redirect so a 4010 rejection can resend. */
     val redirectSessionId: String? = null,
     val redirectText: String? = null,
+    /** Attempt generation for a session.create, used to fence retried answers. */
+    val createGeneration: Long? = null,
 )
 
 data class ChatUiState(
@@ -206,6 +221,14 @@ class ChatViewModel(
             HermesDatabase.get(application).chatMessageDao(),
         ),
     searchDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
+    /**
+     * Retry delay for an unacknowledged `session.create`.
+     *
+     * `null` (production) means [SESSION_CREATE_TIMEOUT_MS], still subject to
+     * the historical unit-test skip. Tests inject a small value to opt into the
+     * retry path explicitly, so existing suites keep their previous timing.
+     */
+    private val sessionCreateRetryDelayMs: Long? = null,
 ) : AndroidViewModel(application) {
     constructor(application: Application) : this(application, startCleanup = true)
 
@@ -644,9 +667,20 @@ class ChatViewModel(
         val method = request.method
         when (method) {
             WsMethods.SESSION_CREATE -> {
+                // A retried create can be answered twice, and a create issued
+                // before a session switch can be answered after it. Only the
+                // newest attempt may install a session.
+                val generation = request.createGeneration
+                if (generation != null && generation != sessionCreateCounter) {
+                    Log.d(TAG, "Ignoring session.create result from a superseded attempt")
+                    return
+                }
                 val resultMap = result as? Map<String, Any?> ?: return
                 val runtimeId = resultMap["session_id"] as? String ?: return
                 val storageId = resultMap["stored_session_id"] as? String ?: runtimeId
+                // The request is answered — stand the retry deadline down.
+                sessionCreateJob?.cancel()
+                sessionCreateJob = null
                 runtimeSessionId = runtimeId
                 _uiState.update {
                     it.copy(
@@ -1340,7 +1374,30 @@ class ChatViewModel(
 
     private var sessionCreateCounter = 0L
 
+    /** Liveness timer for the newest unacknowledged `session.create`. */
+    private var sessionCreateJob: Job? = null
+
+    /**
+     * Ask the gateway for a fresh conversation.
+     *
+     * `session.create` is fire-and-forget over a socket that may be mid-drop.
+     * [HermesWsClient.send] queues the frame while the socket is down and drops
+     * it outright once credentials were cleared, and neither path reports back
+     * — so an unlucky tap could leave Chat with no session at all:
+     * `currentSessionId` and `runtimeSessionId` already discarded,
+     * `isSessionReady` false, Send disabled, and nothing in flight to recover
+     * it. That is the "leave the chat screen and come back a few times" state;
+     * re-entering only helped because a later `gateway.ready` happened to issue
+     * another create.
+     *
+     * The old code only cleared the spinner after ten seconds, which hid the
+     * symptom without producing a session. Retry the request on a deadline
+     * instead, and surface an actionable error once the attempts are spent.
+     */
     fun createNewSession(setLoading: Boolean = true) {
+        val generation = ++sessionCreateCounter
+        sessionCreateJob?.cancel()
+        sessionCreateJob = null
         runtimeSessionId = null
         ActiveSessionHolder.set(null)
         _uiState.update {
@@ -1359,25 +1416,54 @@ class ChatViewModel(
         }
         _streamingState.update { StreamingState() }
         streamingController.resetStreaming()
+        sendSessionCreate(generation = generation, attempt = 1)
+    }
+
+    /**
+     * Issue one `session.create` attempt and arm its liveness deadline.
+     *
+     * The deadline is fenced on [generation] so a superseded attempt can never
+     * retry on behalf of a newer one, and it stands down as soon as the session
+     * is ready — an ack, not a fixed sleep, ends the cycle.
+     */
+    private fun sendSessionCreate(
+        generation: Long,
+        attempt: Int,
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             wsClient.send(
                 WsMethods.SESSION_CREATE,
                 params = mapOf("source" to "desktop"),
-                onSent = { id -> trackRequest(id, WsMethods.SESSION_CREATE) },
+                onSent = { id -> trackCreateRequest(id, generation) },
             )
         }
-        // B7 safety timeout: clear loading state if RPC response never arrives
-        if (setLoading && !isTestEnvironment()) {
-            val generation = ++sessionCreateCounter
+
+        // Historical behavior: unit tests never armed the safety timer. Keep
+        // that unless a test opts into the retry path by injecting a delay.
+        val injectedDelay = sessionCreateRetryDelayMs
+        if (injectedDelay == null && isTestEnvironment()) return
+        val delayMs = injectedDelay ?: SESSION_CREATE_TIMEOUT_MS
+
+        sessionCreateJob =
             viewModelScope.launch {
-                delay(10_000L)
-                // Only clear if no newer session creation has started — prevents a
-                // stale timeout from wiping the loading flag of a subsequent request.
-                if (generation == sessionCreateCounter && _uiState.value.isLoading) {
-                    _uiState.update { it.copy(isLoading = false) }
+                delay(delayMs)
+                if (generation != sessionCreateCounter) return@launch
+                if (_uiState.value.isSessionReady) return@launch
+                if (attempt < SESSION_CREATE_MAX_ATTEMPTS) {
+                    Log.w(TAG, "session.create unacknowledged — retrying (attempt ${attempt + 1})")
+                    sendSessionCreate(generation = generation, attempt = attempt + 1)
+                } else {
+                    Log.w(TAG, "session.create gave up after $attempt attempts")
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage =
+                                getApplication<Application>()
+                                    .getString(R.string.chat_new_session_failed),
+                        )
+                    }
                 }
             }
-        }
     }
 
     fun loadSessions() {
@@ -1736,6 +1822,13 @@ class ChatViewModel(
 
     fun switchSession(sessionId: String) {
         if (sessionId == _uiState.value.currentSessionId) return
+
+        // A pending session.create belongs to the conversation the user just
+        // left. Retiring the generation makes any late answer inert, and the
+        // timer must go with it or it would retry a create into this session.
+        sessionCreateCounter++
+        sessionCreateJob?.cancel()
+        sessionCreateJob = null
 
         // Reset streaming and pagination state before resuming the Desktop session.
         runtimeSessionId = null
@@ -2845,6 +2938,22 @@ class ChatViewModel(
             PendingRpcRequest(
                 method = WsMethods.SESSION_RESUME,
                 resumeSessionId = sessionId,
+            )
+    }
+
+    /**
+     * Track a `session.create` alongside the attempt generation that issued it,
+     * so a late answer from a superseded attempt cannot install itself over a
+     * newer session, and so an answered attempt can stand its retry timer down.
+     */
+    private fun trackCreateRequest(
+        id: String,
+        generation: Long,
+    ) {
+        pendingRequests[id] =
+            PendingRpcRequest(
+                method = WsMethods.SESSION_CREATE,
+                createGeneration = generation,
             )
     }
 
