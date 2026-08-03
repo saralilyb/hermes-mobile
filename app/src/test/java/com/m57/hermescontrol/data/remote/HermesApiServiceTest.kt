@@ -61,6 +61,19 @@ class HermesApiServiceTest {
         }
 
     @Test
+    fun testRescanPlugins_requestsCorrectUrlAndMethod() =
+        runTest {
+            mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(""))
+
+            val response = apiService.rescanPlugins()
+            assertTrue(response.isSuccessful)
+
+            val recordedRequest = mockWebServer.takeRequest()
+            assertEquals("/api/dashboard/plugins/rescan", recordedRequest.path)
+            assertEquals("GET", recordedRequest.method)
+        }
+
+    @Test
     fun testToggleSkill_postsCorrectBody() =
         runTest {
             mockWebServer.enqueue(
