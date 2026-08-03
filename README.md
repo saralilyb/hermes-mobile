@@ -25,12 +25,12 @@
 
 **Hermes Mobile** is an unofficial native Android client for
 [Hermes Agent](https://hermes-agent.nousresearch.com). This security-focused
-fork is based on
-[Hy4ri/hermes-mobile](https://github.com/Hy4ri/hermes-mobile) and selectively
-incorporates upstream changes through `v1.18.4`. It retains downstream security,
-complete-history pagination, signing, and distribution changes. The
-public release uses generic Hermes branding; the optional `iris` flavor exists
-only to distinguish a side-by-side personal installation.
+fork is based on [Hy4ri/hermes-mobile](https://github.com/Hy4ri/hermes-mobile),
+with a selectively reconciled `v1.19.2` baseline and compatible later fixes
+through upstream commit `37900a9`. It retains downstream security,
+complete-history pagination, signing, and distribution changes. The public
+release uses generic Hermes branding; the optional `iris` flavor exists only to
+distinguish a side-by-side personal installation.
 
 ---
 

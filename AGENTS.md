@@ -22,9 +22,9 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
   cookies plus short-lived WebSocket tickets for gated mode
 - **Upstream base:** selectively reconciled through `Hy4ri/hermes-mobile`
   `v1.19.2` plus hosted MCP OAuth, CodeQL, and notification hardening through
-  `dc74eb4`; retain downstream HTTPS enforcement, profile-scoped credentials,
-  single-use ticket handling, complete-history pagination, signing, and release
-  automation.
+  `dc74eb4`, and plugin-rescan HTTP compatibility from `37900a9`; retain
+  downstream HTTPS enforcement, profile-scoped credentials, single-use ticket
+  handling, complete-history pagination, signing, and release automation.
   The gateway-file/media stack and Keys redesign have been integrated with
   downstream auth and sensitive-clipboard adaptations. The v1.19.2 diff,
   delegation, and self-improvement surfaces were ported directly; its ticket
@@ -42,6 +42,11 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
     Room, REST history, resume, and pagination, and flushes transition buffers
     only after session fencing. The upstream pre-fence flush lets a delayed
     event from a previous session mutate the active session's buffers.
+  - `3a96edd` (#760), the stale-reasoning reset patch, as a wholesale
+    cherry-pick. Downstream accepts reasoning deltas that arrive before
+    `message.start`; clearing shared reasoning at `message.start` or every
+    streaming-buffer reset discards that valid trace. Any stale-turn fix needs
+    an explicit turn boundary that preserves pre-start deltas.
   - `e39544e` (#740), the transient-ticket and rejected-send patch, as a
     wholesale cherry-pick. Downstream already distinguishes retryable ticket
     failures, serializes reconnects, fences stale sockets, retains rejected
