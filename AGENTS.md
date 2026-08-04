@@ -22,7 +22,8 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
   cookies plus short-lived WebSocket tickets for gated mode
 - **Upstream base:** selectively reconciled through `Hy4ri/hermes-mobile`
   `v1.19.2` plus hosted MCP OAuth, CodeQL, and notification hardening through
-  `dc74eb4`, and plugin-rescan HTTP compatibility from `37900a9`; retain
+  `dc74eb4`, plugin-rescan HTTP compatibility from `37900a9`, and server-side
+  log filtering from `00a0eed`; retain
   downstream HTTPS enforcement, profile-scoped credentials, single-use ticket
   handling, complete-history pagination, signing, and release automation.
   The gateway-file/media stack and Keys redesign have been integrated with
@@ -31,7 +32,9 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
   recovery and context-meter changes were already covered by stricter downstream
   implementations. Hosted MCP OAuth uses allowlisted HTTPS browser handoff and
   bounded status polling. CodeQL compiles both product flavors and pins every
-  third-party action by commit SHA.
+  third-party action by commit SHA. Log filters are ViewModel-owned and a filter
+  change cancels any older in-flight load before requesting the combined current
+  file, level, component, and line-count selection.
   Permanently exclude these upstream commits rather than reconsidering them on
   each reconciliation:
   - `7927944` (#698), the auth-expiry routing revert. Downstream intentionally
