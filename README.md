@@ -27,7 +27,8 @@
 [Hermes Agent](https://hermes-agent.nousresearch.com). This security-focused
 fork is based on [Hy4ri/hermes-mobile](https://github.com/Hy4ri/hermes-mobile),
 with a selectively reconciled `v1.19.2` baseline and compatible later fixes
-through upstream commit `37900a9`. It retains downstream security,
+selectively integrated through upstream commit `00a0eed`. It retains downstream
+security,
 complete-history pagination, signing, and distribution changes. The public
 release uses generic Hermes branding; the optional `iris` flavor exists only to
 distinguish a side-by-side personal installation.
@@ -40,8 +41,9 @@ distinguish a side-by-side personal installation.
   tool and approval cards, bottom-follow with unread counts, persisted reasoning
   cards and controls, and a two-row composer.
 - **System Config:** Manage active profiles, installed skills, plugins, and LLM model selections.
-- **Operations:** Stream and filter live logs, manage cron jobs, manage categorized
-  environment keys with warned sensitive copying, and test webhooks.
+- **Operations:** Stream and filter live logs by server file, level, component,
+  and line count; manage cron jobs and categorized environment keys with warned
+  sensitive copying; and test webhooks.
 - **Gateway Status:** Monitor WebSocket connection, MCP servers, and messaging channel status.
 - **Productivity:** View and manage tasks via integrated Kanban boards and track agent milestones.
 - **Modern UX:** Drawer-first Navigation3, dynamic Material You colors, theme
