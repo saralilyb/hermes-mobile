@@ -23,7 +23,8 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
 - **Upstream base:** selectively reconciled through `Hy4ri/hermes-mobile`
   `v1.19.2` plus hosted MCP OAuth, CodeQL, and notification hardening through
   `dc74eb4`, plugin-rescan HTTP compatibility from `37900a9`, and server-side
-  log filtering from `00a0eed`; retain
+  log filtering from `00a0eed`, plus bug-report gateway metadata from
+  `7d60057`; retain
   downstream HTTPS enforcement, profile-scoped credentials, single-use ticket
   handling, complete-history pagination, signing, and release automation.
   The gateway-file/media stack and Keys redesign have been integrated with
