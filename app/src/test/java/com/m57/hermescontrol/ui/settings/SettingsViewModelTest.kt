@@ -13,6 +13,7 @@ import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
 import io.mockk.verify
+import io.mockk.verifyOrder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -289,6 +290,96 @@ class SettingsViewModelTest {
         verify(exactly = 0) { disconnectWebSocket() }
         verify(exactly = 0) { connectWebSocket() }
         assertFalse(viewModel.uiState.value.navigateToLogin)
+    }
+
+    @Test
+    fun testSaveProfileFromDialog_clearActiveToken_disconnectsWebSocket() {
+        val urlProfiles =
+            listOf(
+                ConnectionProfile(
+                    id = "prof-1",
+                    name = "Work",
+                    host = "",
+                    port = 0,
+                    baseUrl = "https://10.0.0.1:9119/",
+                ),
+            )
+        every { AuthManager.getConnectionProfiles() } returns urlProfiles
+        every { AuthManager.getProfileToken("prof-1") } returns "old-token"
+        storedSelectedProfileId = "prof-1"
+
+        val viewModel = createViewModel()
+
+        viewModel.openEditProfile("prof-1")
+        viewModel.onDialogProfileTokenChange("")
+        viewModel.saveProfileFromDialog()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        verifyOrder {
+            disconnectWebSocket()
+            AuthManager.setProfileToken("prof-1", "")
+            connectWebSocket()
+        }
+    }
+
+    @Test
+    fun testSaveProfileFromDialog_replaceActiveToken_reconnectsInOrder() {
+        val urlProfiles =
+            listOf(
+                ConnectionProfile(
+                    id = "prof-1",
+                    name = "Work",
+                    host = "",
+                    port = 0,
+                    baseUrl = "https://10.0.0.1:9119/",
+                ),
+            )
+        every { AuthManager.getConnectionProfiles() } returns urlProfiles
+        every { AuthManager.getProfileToken("prof-1") } returns "old-token"
+        storedSelectedProfileId = "prof-1"
+
+        val viewModel = createViewModel()
+
+        viewModel.openEditProfile("prof-1")
+        viewModel.onDialogProfileTokenChange("new-token")
+        viewModel.saveProfileFromDialog()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        verifyOrder {
+            disconnectWebSocket()
+            AuthManager.setProfileToken("prof-1", "new-token")
+            connectWebSocket()
+        }
+    }
+
+    @Test
+    fun testSaveProfileFromDialog_changeActiveUrl_reconnects() {
+        val urlProfiles =
+            listOf(
+                ConnectionProfile(
+                    id = "prof-1",
+                    name = "Work",
+                    host = "",
+                    port = 0,
+                    baseUrl = "https://10.0.0.1:9119/",
+                ),
+            )
+        every { AuthManager.getConnectionProfiles() } returns urlProfiles
+        storedSelectedProfileId = "prof-1"
+
+        val viewModel = createViewModel()
+
+        viewModel.openEditProfile("prof-1")
+        viewModel.onDialogProfileBaseUrlChange("https://10.0.0.9:9443/")
+        viewModel.saveProfileFromDialog()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        verifyOrder {
+            disconnectWebSocket()
+            AuthManager.saveConnectionProfiles(any())
+            connectWebSocket()
+        }
+        verify(exactly = 0) { AuthManager.setProfileToken(any(), any()) }
     }
 
     @Test

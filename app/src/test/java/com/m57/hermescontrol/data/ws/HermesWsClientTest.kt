@@ -14,6 +14,7 @@ import io.mockk.mockkObject
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
 import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -31,8 +32,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class HermesWsClientTest {
     private lateinit var mockWebServer: MockWebServer
@@ -97,6 +102,43 @@ class HermesWsClientTest {
         field.isAccessible = true
         @Suppress("UNCHECKED_CAST")
         return field.get(HermesWsClient) as MutableMap<String, *>
+    }
+
+    private fun connectionGeneration(): Int {
+        val field = HermesWsClient::class.java.getDeclaredField("connectionGeneration")
+        field.isAccessible = true
+        return (field.get(HermesWsClient) as AtomicInteger).get()
+    }
+
+    private fun installActiveListener(socket: WebSocket): WebSocketListener {
+        val socketField = HermesWsClient::class.java.getDeclaredField("webSocket")
+        socketField.isAccessible = true
+        socketField.set(HermesWsClient, socket)
+
+        val connectedField = HermesWsClient::class.java.getDeclaredField("connected")
+        connectedField.isAccessible = true
+        (connectedField.get(HermesWsClient) as java.util.concurrent.atomic.AtomicBoolean).set(true)
+
+        val statusField = HermesWsClient::class.java.getDeclaredField("_connectionStatus")
+        statusField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val status = statusField.get(HermesWsClient) as MutableStateFlow<ConnectionStatus>
+        status.value = ConnectionStatus.CONNECTED
+
+        val listenerClass =
+            HermesWsClient::class.java.declaredClasses.first {
+                it.simpleName == "WsListenerImpl"
+            }
+        val constructor =
+            listenerClass.getDeclaredConstructor(
+                String::class.java,
+                Int::class.javaPrimitiveType,
+            )
+        constructor.isAccessible = true
+        return constructor.newInstance(
+            "profile-a",
+            connectionGeneration(),
+        ) as WebSocketListener
     }
 
     private fun awaitOutboundQueueEmpty(timeoutMs: Long = 1_000): Boolean {
@@ -291,6 +333,172 @@ class HermesWsClientTest {
             assertTrue(e.message?.contains("cancelled") == true)
         }
         assertEquals(0, pendingCalls().size)
+    }
+
+    @Test
+    fun testConcurrentRequestsAndRejectAllPendingNeverOrphanDeferreds() {
+        val start = CountDownLatch(1)
+        val keepRejecting = AtomicBoolean(true)
+        val deferreds =
+            Collections.synchronizedList(
+                mutableListOf<CompletableDeferred<Any?>>(),
+            )
+        val requesters = Executors.newFixedThreadPool(4)
+        repeat(4) {
+            requesters.execute {
+                start.await()
+                repeat(2_500) {
+                    deferreds +=
+                        HermesWsClient.request(
+                            method = "test.concurrent",
+                            timeoutMs = 60_000,
+                        )
+                }
+            }
+        }
+        val rejecter =
+            Thread {
+                start.await()
+                while (keepRejecting.get()) {
+                    HermesWsClient.rejectAllPending()
+                }
+            }
+
+        rejecter.start()
+        start.countDown()
+        requesters.shutdown()
+        assertTrue(requesters.awaitTermination(30, TimeUnit.SECONDS))
+        keepRejecting.set(false)
+        rejecter.join(5_000)
+        assertFalse("rejecter thread did not stop", rejecter.isAlive)
+
+        HermesWsClient.rejectAllPending()
+
+        val orphanCount = deferreds.count { !it.isCompleted }
+        assertEquals("Every deferred must complete after the final drain", 0, orphanCount)
+    }
+
+    @Test
+    fun testActiveSocketCloseRejectsPendingRpcCallsWithoutCollector() {
+        val socket = mockk<WebSocket>(relaxed = true)
+        every { socket.send(any<String>()) } returns true
+        val listener = installActiveListener(socket)
+        val deferred = HermesWsClient.request("test.close")
+
+        listener.onClosed(socket, 1000, "test close")
+
+        assertTrue(deferred.isCompleted)
+        try {
+            runBlocking { deferred.await() }
+            fail("Expected HermesRpcException")
+        } catch (e: HermesWsClient.HermesRpcException) {
+            assertTrue(e.message?.contains("cancelled") == true)
+        }
+    }
+
+    @Test
+    fun testActiveSocketFailureRejectsPendingRpcCallsWithoutCollector() {
+        val socket = mockk<WebSocket>(relaxed = true)
+        every { socket.send(any<String>()) } returns true
+        val listener = installActiveListener(socket)
+        val deferred = HermesWsClient.request("test.failure")
+
+        listener.onFailure(socket, java.io.IOException("test failure"), null)
+
+        assertTrue(deferred.isCompleted)
+        try {
+            runBlocking { deferred.await() }
+            fail("Expected HermesRpcException")
+        } catch (e: HermesWsClient.HermesRpcException) {
+            assertTrue(e.message?.contains("cancelled") == true)
+        }
+    }
+
+    @Test
+    fun testDisconnectInvalidatesSocketSetupAlreadyInFlight() {
+        val ticketServer = MockWebServer()
+        ticketServer.start()
+        val releaseOldSetup = CountDownLatch(1)
+        val oldSetupReachedUrlBuild = CountDownLatch(1)
+        val oldSocketAttempted = CountDownLatch(1)
+        val ticketCount = AtomicInteger(0)
+
+        try {
+            every { AuthManager.serverStore } returns
+                mockk<com.m57.hermescontrol.data.config.ServerStore>().also {
+                    every { it.getLatestState() } returns
+                        com.m57.hermescontrol.data.config.ServerStoreState(
+                            wsAuthParam = "ticket",
+                        )
+                }
+            every { AuthManager.endpointForBuild() } returns
+                ServerEndpoint.parse(
+                    ticketServer.url("/").toString(),
+                    CleartextPolicy.ALLOW_WITH_WARNING,
+                )
+            every { AuthManager.getSelectedProfileId() } returns "profile-a"
+            every { AuthManager.wsUrlWithCredential(any(), any()) } answers {
+                val ticket = firstArg<String>()
+                if (ticket == "old-ticket") {
+                    oldSetupReachedUrlBuild.countDown()
+                    releaseOldSetup.await(5, TimeUnit.SECONDS)
+                }
+                mockWebServer.url("/?ticket=$ticket").toString().replace("http://", "ws://")
+            }
+            ticketServer.dispatcher =
+                object : okhttp3.mockwebserver.Dispatcher() {
+                    override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                        val ticket =
+                            if (ticketCount.incrementAndGet() == 1) {
+                                "old-ticket"
+                            } else {
+                                "new-ticket"
+                            }
+                        return MockResponse()
+                            .setResponseCode(200)
+                            .setBody("""{"ticket":"$ticket"}""")
+                    }
+                }
+            mockWebServer.dispatcher =
+                object : okhttp3.mockwebserver.Dispatcher() {
+                    override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                        if (request.requestUrl?.queryParameter("ticket") == "old-ticket") {
+                            oldSocketAttempted.countDown()
+                        }
+                        return MockResponse().withWebSocketUpgrade(
+                            object : WebSocketListener() {},
+                        )
+                    }
+                }
+
+            val oldConnect = Thread { HermesWsClient.connect() }
+            oldConnect.start()
+            assertTrue(oldSetupReachedUrlBuild.await(5, TimeUnit.SECONDS))
+
+            HermesWsClient.disconnect(clearPendingMessages = true)
+            val replacementConnect = Thread { HermesWsClient.connect() }
+            replacementConnect.start()
+            replacementConnect.join(5_000)
+            assertFalse("replacement connect did not finish", replacementConnect.isAlive)
+            runBlocking {
+                withTimeout(5_000) {
+                    HermesWsClient.connectionStatus.first {
+                        it == ConnectionStatus.CONNECTED
+                    }
+                }
+            }
+
+            releaseOldSetup.countDown()
+            oldConnect.join(5_000)
+            assertFalse("old connect did not finish", oldConnect.isAlive)
+            assertFalse(
+                "Superseded setup opened a socket",
+                oldSocketAttempted.await(1, TimeUnit.SECONDS),
+            )
+        } finally {
+            releaseOldSetup.countDown()
+            ticketServer.shutdown()
+        }
     }
 
     @Test
@@ -584,9 +792,17 @@ class HermesWsClientTest {
             HermesWsClient::class.java.declaredClasses.first {
                 it.simpleName == "WsListenerImpl"
             }
-        val constructor = listenerClass.getDeclaredConstructor(String::class.java)
+        val constructor =
+            listenerClass.getDeclaredConstructor(
+                String::class.java,
+                Int::class.javaPrimitiveType,
+            )
         constructor.isAccessible = true
-        val staleListener = constructor.newInstance("profile-a") as WebSocketListener
+        val staleListener =
+            constructor.newInstance(
+                "profile-a",
+                connectionGeneration(),
+            ) as WebSocketListener
 
         staleListener.onClosed(staleSocket, 4401, "auth: ticket_invalid")
         staleListener.onFailure(staleSocket, java.io.IOException("late failure"), null)

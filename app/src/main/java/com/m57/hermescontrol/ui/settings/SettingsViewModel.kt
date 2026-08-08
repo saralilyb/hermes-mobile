@@ -240,10 +240,13 @@ class SettingsViewModel(
             val oldToken = AuthManager.getProfileToken(editingId)
             val oldBaseUrl = profiles[index].resolveBaseUrl(AuthManager.getBaseUrl())
             val newBaseUrl = endpoint.baseUrl.toString()
+            // Null and empty both mean "no token"; every other token change
+            // requires rebuilding the active connection before credentials
+            // are mutated.
+            val tokenChanged = token.orEmpty() != oldToken.orEmpty()
             // Tear down the active socket only when connection-relevant
             // fields change; a cosmetic rename must preserve queued prompts.
-            val connectionChanged =
-                (!token.isNullOrEmpty() && token != oldToken) || newBaseUrl != oldBaseUrl
+            val connectionChanged = tokenChanged || newBaseUrl != oldBaseUrl
             if (editingId == AuthManager.getSelectedProfileId() && connectionChanged) {
                 disconnectWebSocket()
                 reconnectWebSocket = true
@@ -256,7 +259,7 @@ class SettingsViewModel(
                     baseUrl = endpoint.baseUrl.toString(),
                 )
             AuthManager.saveConnectionProfiles(profiles)
-            if (token != oldToken) {
+            if (tokenChanged) {
                 AuthManager.setProfileToken(editingId, token)
             }
         } else {
