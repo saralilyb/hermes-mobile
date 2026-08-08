@@ -85,6 +85,7 @@ class AuthLoginViewModel(
     fun useExistingProfile(profileId: String) {
         if (AuthSessionState.signInRequired.value) return
 
+        HermesWsClient.disconnect(clearPendingMessages = true)
         AuthManager.setSelectedProfileId(profileId)
         ApiClient.rebuild()
         HermesWsClient.connect()
@@ -317,6 +318,9 @@ class AuthLoginViewModel(
                 }
 
             if (result != null) {
+                // The validated login may replace another profile or endpoint.
+                // Stop the old transport before mutating application auth state.
+                HermesWsClient.disconnect(clearPendingMessages = true)
                 AuthSessionState.markAuthenticated()
                 AuthManager.setBaseUrl(endpoint.baseUrl.toString())
                 if (state.authMode == DashboardAuthMode.TOKEN_ONLY) {
@@ -336,9 +340,6 @@ class AuthLoginViewModel(
                 ApiClient.rebuild()
                 // A previous failed session may have left the singleton in
                 // AUTH_EXPIRED, which connect() intentionally refuses to clear.
-                // Clear queued frames too: this login may target a different
-                // profile than the one the queue was composed against.
-                HermesWsClient.disconnect(clearPendingMessages = true)
                 HermesWsClient.connect()
                 _uiState.update { it.copy(isLoading = false, connectionSuccess = true) }
             }

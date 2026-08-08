@@ -24,7 +24,8 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
   `v1.19.2` plus hosted MCP OAuth, CodeQL, and notification hardening through
   `dc74eb4`, plugin-rescan HTTP compatibility from `37900a9`, and server-side
   log filtering from `00a0eed`, plus bug-report gateway metadata from
-  `7d60057`; retain
+  `7d60057` and private notification-entry hardening adapted from `3e9672f`;
+  retain
   downstream HTTPS enforcement, profile-scoped credentials, single-use ticket
   handling, complete-history pagination, signing, and release automation.
   The gateway-file/media stack and Keys redesign have been integrated with
@@ -349,6 +350,24 @@ gh pr create --title "fix(#N): description" --body "Closes #N"
 - **Release signing** uses a keystore with env-var credentials (`KEYSTORE_PATH`,
   `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`). Don't commit keystore files or
   hardcode passwords.
+- **Notification navigation:** exported `MainActivity` never consumes routing
+  extras. Immutable content PendingIntents target the non-exported, no-history
+  `NotificationEntryActivity`, which requires an application-ID-scoped action
+  and an exact active-profile match before queueing a session. Notification
+  provenance comes from the profile captured during WebSocket setup and carried
+  with each parsed event; never infer it from the selected profile when the
+  event is delivered. Selecting another profile or editing the active profile's
+  connection settings must disconnect the old WebSocket and clear queued frames
+  before credentials change, then rebuild clients before reconnecting. The
+  observable pending target retains both the session and source profile until
+  consumption, so a warm tap is consumed when Chat is already visible and a
+  profile change before reconnection invalidates it. Quick Reply is deliberately
+  disabled:
+  the profile-agnostic WebSocket singleton cannot atomically bind validation
+  and send, so a pre-send profile check has a check/use race. Do not restore the
+  action until the transport enforces profile identity inside the send operation.
+  A notification from another profile may open the app, but must never switch
+  profiles or route its session ID through the active profile.
 
 ## Things to Avoid
 

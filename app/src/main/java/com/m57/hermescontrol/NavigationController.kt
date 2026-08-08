@@ -1,8 +1,21 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.m57.hermescontrol.data.local.AuthSessionState
+
+data class PendingSessionTarget(
+    val sessionId: String,
+    val profileId: String,
+)
+
+internal fun PendingSessionTarget.idForProfile(activeProfileId: String?): String? =
+    sessionId.takeIf { profileId == activeProfileId }
 
 /**
  * Central navigation controller with deduplication guard.
@@ -17,7 +30,15 @@ import com.m57.hermescontrol.data.local.AuthSessionState
  */
 object NavigationController {
     var backStack: NavBackStack<NavKey>? = null
-    var pendingSessionId: String? = null
+    var pendingSessionTarget by mutableStateOf<PendingSessionTarget?>(null)
+
+    fun queuePendingSession(
+        sessionId: String,
+        profileId: String,
+    ) {
+        if (sessionId.isBlank() || profileId.isBlank()) return
+        pendingSessionTarget = PendingSessionTarget(sessionId, profileId)
+    }
 
     // Top-level primary screens (Chat, Skills, Cron, System, Settings)
     private val primaryScreens: MutableSet<NavKey> =

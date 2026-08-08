@@ -165,6 +165,7 @@ class HermesWsClientTest {
     fun testReceiveMessage() {
         var serverWebSocket: WebSocket? = null
         val serverLatch = CountDownLatch(1)
+        every { AuthManager.getSelectedProfileId() } returns "profile-a"
 
         mockWebServer.enqueue(
             MockResponse().withWebSocketUpgrade(
@@ -183,6 +184,7 @@ class HermesWsClientTest {
         HermesWsClient.connect()
         runBlocking { withTimeout(5000) { HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED } } }
         assertTrue(serverLatch.await(5, TimeUnit.SECONDS))
+        every { AuthManager.getSelectedProfileId() } returns "profile-b"
 
         // Server sends a message to client
         val jsonResponse =
@@ -198,12 +200,15 @@ class HermesWsClientTest {
             runBlocking {
                 withTimeout(5000) {
                     launch { serverWebSocket?.send(jsonResponse) }
-                    HermesWsClient.events.first { it is WsEvent.RpcResult }
+                    HermesWsClient.sourcedEvents.first {
+                        it.event is WsEvent.RpcResult
+                    }
                 }
             }
 
-        assertTrue(receivedEvent is WsEvent.RpcResult)
-        assertEquals("1", (receivedEvent as WsEvent.RpcResult).id)
+        assertEquals("profile-a", receivedEvent.profileId)
+        assertTrue(receivedEvent.event is WsEvent.RpcResult)
+        assertEquals("1", (receivedEvent.event as WsEvent.RpcResult).id)
     }
 
     @Test
@@ -535,9 +540,9 @@ class HermesWsClientTest {
             HermesWsClient::class.java.declaredClasses.first {
                 it.simpleName == "WsListenerImpl"
             }
-        val constructor = listenerClass.getDeclaredConstructor()
+        val constructor = listenerClass.getDeclaredConstructor(String::class.java)
         constructor.isAccessible = true
-        val staleListener = constructor.newInstance() as WebSocketListener
+        val staleListener = constructor.newInstance("profile-a") as WebSocketListener
 
         staleListener.onClosed(staleSocket, 4401, "auth: ticket_invalid")
         staleListener.onFailure(staleSocket, java.io.IOException("late failure"), null)

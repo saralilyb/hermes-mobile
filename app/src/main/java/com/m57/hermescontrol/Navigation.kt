@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol
 
 import androidx.compose.foundation.background
@@ -133,7 +135,7 @@ private fun appEntryProvider(
 }
 
 @Composable
-fun MainNavigation(sessionId: String? = null) {
+fun MainNavigation() {
     val signInRequired by AuthSessionState.signInRequired.collectAsState()
     LaunchedEffect(signInRequired) {
         if (signInRequired) {
@@ -272,7 +274,7 @@ fun MainNavigation(sessionId: String? = null) {
                     backStack = backStack,
                     onBack = { NavigationController.goBack() },
                     entryProvider =
-                        appEntryProvider(sessionId, openDrawer),
+                        appEntryProvider(null, openDrawer),
                     modifier =
                         Modifier
                             .padding(paddingValues)

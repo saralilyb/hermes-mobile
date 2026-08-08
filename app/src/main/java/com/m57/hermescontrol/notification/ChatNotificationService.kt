@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.notification
 
 import android.app.Notification
@@ -10,8 +12,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import androidx.core.app.RemoteInput
-import com.m57.hermescontrol.MainActivity
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.ws.HermesWsClient
@@ -79,8 +79,10 @@ class ChatNotificationService : Service() {
     private fun startEventCollection() {
         eventCollector =
             serviceScope.launch {
-                HermesWsClient.events.collect { event ->
+                HermesWsClient.sourcedEvents.collect { sourcedEvent ->
                     if (!isAppInForeground.get()) {
+                        val event = sourcedEvent.event
+                        val notificationProfileId = sourcedEvent.profileId
                         launch {
                             delay(500)
                             if (!isAppInForeground.get()) {
@@ -91,11 +93,19 @@ class ChatNotificationService : Service() {
                                                 .take(100)
                                                 .replace("\n", " ")
                                                 .ifBlank { getString(R.string.notif_new_message) }
-                                        showReplyNotification(preview, event.sessionId)
+                                        showReplyNotification(
+                                            preview,
+                                            event.sessionId,
+                                            notificationProfileId,
+                                        )
                                     }
 
                                     is WsEvent.ClarifyRequest -> {
-                                        showReplyNotification(getString(R.string.notif_clarification_needed), null)
+                                        showReplyNotification(
+                                            getString(R.string.notif_clarification_needed),
+                                            null,
+                                            notificationProfileId,
+                                        )
                                     }
 
                                     else -> {}
@@ -110,6 +120,7 @@ class ChatNotificationService : Service() {
     private fun showReplyNotification(
         text: String,
         sessionId: String?,
+        profileId: String?,
     ) {
         val builder =
             NotificationCompat
@@ -121,58 +132,29 @@ class ChatNotificationService : Service() {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setAutoCancel(true)
-                .setContentIntent(buildContentIntent(sessionId))
-
-        if (!sessionId.isNullOrBlank()) {
-            val replyLabel = getString(R.string.notif_reply_placeholder)
-            val remoteInput =
-                RemoteInput
-                    .Builder(NotificationReplyReceiver.KEY_TEXT_REPLY)
-                    .setLabel(replyLabel)
-                    .build()
-
-            val replyIntent =
-                Intent(this, NotificationReplyReceiver::class.java)
-                    .setPackage(packageName)
-                    .setAction("$packageName.ACTION_NOTIFICATION_REPLY")
-                    .putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
-
-            val replyPendingIntent =
-                PendingIntent.getBroadcast(
-                    this,
-                    sessionId.hashCode(),
-                    replyIntent,
-                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_ONE_SHOT,
-                )
-
-            val action =
-                NotificationCompat.Action
-                    .Builder(
-                        R.drawable.ic_notification,
-                        getString(R.string.action_reply),
-                        replyPendingIntent,
-                    ).addRemoteInput(remoteInput)
-                    .build()
-
-            builder.addAction(action)
-        }
+                .setContentIntent(buildContentIntent(sessionId, profileId))
 
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(PENDING_NOTIFICATION_ID, builder.build())
     }
 
-    private fun buildContentIntent(sessionId: String?): PendingIntent {
+    private fun buildContentIntent(
+        sessionId: String?,
+        profileId: String?,
+    ): PendingIntent {
         val intent =
-            Intent(this, MainActivity::class.java)
+            Intent(this, NotificationEntryActivity::class.java)
                 .setPackage(packageName)
-                .setAction("$packageName.ACTION_OPEN_CHAT_FROM_NOTIFICATION")
-                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .setAction(openChatAction(packageName))
         if (!sessionId.isNullOrBlank()) {
-            intent.putExtra(NotificationReplyReceiver.EXTRA_SESSION_ID, sessionId)
+            intent.putExtra(EXTRA_NOTIFICATION_SESSION_ID, sessionId)
+        }
+        if (!profileId.isNullOrBlank()) {
+            intent.putExtra(EXTRA_NOTIFICATION_PROFILE_ID, profileId)
         }
         return PendingIntent.getActivity(
             this,
-            sessionId?.hashCode() ?: 0,
+            31 * (profileId?.hashCode() ?: 0) + (sessionId?.hashCode() ?: 0),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_ONE_SHOT,
         )
