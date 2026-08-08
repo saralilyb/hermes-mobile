@@ -70,7 +70,7 @@ class SessionPinningTest {
 
     @Test
     fun `loading a missing pin preserves its durable identity`() =
-        runTest(dispatcher) {
+        runTest {
             // The default stub for getSessionLatestDescendant throws
             // IOException, which safeApiCall converts to a NetworkResult.
             // The test then calls getSession("root") directly.
@@ -85,7 +85,7 @@ class SessionPinningTest {
 
     @Test
     fun `loading a compressed pin resolves and hydrates its live tip`() =
-        runTest(dispatcher) {
+        runTest {
             coEvery { api.getSessionLatestDescendant("root") } returns
                 Response.success(SessionLatestDescendantResponse(session_id = "tip"))
             coEvery { api.getSession("tip") } returns
