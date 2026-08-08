@@ -87,12 +87,10 @@
     <string name="notif_waiting_replies">헤르메스 응답 대기 중</string>
     <string name="notif_new_message">새 메시지</string>
     <string name="notif_clarification_needed">헤르메스의 확인이 필요합니다</string>
-    <string name="notif_reply_placeholder">답변 입력…</string>
     <string name="notif_channel_service_name">헤르메스 백그라운드 서비스</string>
     <string name="notif_channel_service_desc">백그라운드에서 연결 유지</string>
     <string name="notif_channel_chat_name">헤르메스 채팅 응답</string>
     <string name="notif_channel_chat_desc">헤르메스의 새 응답 알림</string>
-    <string name="action_reply">답장</string>
 
     <!-- Chat Screen & Bubble -->
     <string name="chat_action_search">검색</string>
