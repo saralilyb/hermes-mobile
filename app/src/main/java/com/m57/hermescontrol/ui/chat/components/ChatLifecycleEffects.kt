@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.chat.components
 
 import android.Manifest
@@ -11,13 +13,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.m57.hermescontrol.NavigationController
+import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.ws.ConnectionStatus
+import com.m57.hermescontrol.idForProfile
 import com.m57.hermescontrol.notification.NotificationHelper
 import com.m57.hermescontrol.ui.chat.ChatMessage
 import com.m57.hermescontrol.ui.chat.ChatViewModel
@@ -47,6 +53,9 @@ fun ChatLifecycleEffects(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val serverState by AuthManager.serverStore.stateFlow.collectAsStateWithLifecycle()
+    val activeProfileId =
+        serverState.selectedProfileId ?: AuthManager.DEFAULT_PROFILE_ID
 
     // Publish the notification session ID to the ViewModel synchronously
     SideEffect {
@@ -54,13 +63,34 @@ fun ChatLifecycleEffects(
     }
 
     // Switch to session from notification/history
-    LaunchedEffect(sessionId, NavigationController.pendingSessionId, connectionStatus) {
+    val pendingSessionTarget = NavigationController.pendingSessionTarget
+    LaunchedEffect(
+        sessionId,
+        pendingSessionTarget,
+        connectionStatus,
+        activeProfileId,
+    ) {
+        val pendingSessionId =
+            pendingSessionTarget?.idForProfile(activeProfileId)
+        if (
+            pendingSessionTarget != null &&
+            pendingSessionId == null &&
+            pendingSessionTarget == NavigationController.pendingSessionTarget
+        ) {
+            NavigationController.pendingSessionTarget = null
+        }
+
         if (connectionStatus != ConnectionStatus.CONNECTED) return@LaunchedEffect
-        val target = if (!sessionId.isNullOrBlank()) sessionId else NavigationController.pendingSessionId
+
+        val target =
+            if (!sessionId.isNullOrBlank()) sessionId else pendingSessionId
         if (!target.isNullOrBlank()) {
             viewModel.switchSession(target)
-            if (target == NavigationController.pendingSessionId) {
-                NavigationController.pendingSessionId = null
+            if (
+                target == pendingSessionId &&
+                pendingSessionTarget == NavigationController.pendingSessionTarget
+            ) {
+                NavigationController.pendingSessionTarget = null
             }
         }
     }

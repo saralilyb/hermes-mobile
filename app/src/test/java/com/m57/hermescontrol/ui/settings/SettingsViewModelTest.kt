@@ -9,6 +9,7 @@ import com.m57.hermescontrol.data.remote.ServerEndpoint
 import com.m57.hermescontrol.theme.ThemePreference
 import com.m57.hermescontrol.theme.ThemePreset
 import io.mockk.every
+import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
 import io.mockk.verify
@@ -32,6 +33,8 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
+    private val disconnectWebSocket = mockk<() -> Unit>(relaxed = true)
+    private val connectWebSocket = mockk<() -> Unit>(relaxed = true)
 
     private var storedSelectedProfileId: String? = null
 
@@ -42,7 +45,12 @@ class SettingsViewModelTest {
         )
 
     private fun createViewModel(): SettingsViewModel {
-        val vm = SettingsViewModel(ioDispatcher = testDispatcher)
+        val vm =
+            SettingsViewModel(
+                ioDispatcher = testDispatcher,
+                disconnectWebSocket = disconnectWebSocket,
+                connectWebSocket = connectWebSocket,
+            )
         testDispatcher.scheduler.advanceUntilIdle()
         return vm
     }
@@ -68,6 +76,7 @@ class SettingsViewModelTest {
         every { AuthManager.getThemePreset() } returns ThemePreset.DEFAULT
         every { AuthManager.isTypingEffectEnabled() } returns true
         every { AuthManager.getTypingEffectDelayMs() } returns 30
+        every { AuthManager.getAppLanguage() } returns "system"
         every { AuthManager.getConnectionProfiles() } returns emptyList()
         every { AuthManager.getSelectedProfileId() } answers { storedSelectedProfileId }
         every { AuthManager.baseUrl() } returns "http://127.0.0.1:9119/"
@@ -81,10 +90,11 @@ class SettingsViewModelTest {
         every { AuthManager.setTypingEffectDelayMs(any()) } returns Unit
         every { AuthManager.setSelectedProfileId(any()) } answers {
             storedSelectedProfileId = firstArg()
-            Unit
         }
         every { AuthManager.saveConnectionProfiles(any()) } returns Unit
         every { AuthManager.setProfileToken(any(), any()) } returns Unit
+        every { AuthManager.clearPinnedSessionIds(any()) } returns Unit
+        every { AuthManager.ensureDefaultProfile() } returns Unit
 
         // Ensure ApiClient.rebuild() is stubbed (used by selectProfile)
         every { ApiClient.rebuild() } returns Unit
@@ -163,6 +173,8 @@ class SettingsViewModelTest {
 
         verify { AuthManager.setSelectedProfileId("prof-2") }
         verify { ApiClient.rebuild() }
+        verify { disconnectWebSocket() }
+        verify { connectWebSocket() }
         assertEquals("prof-2", viewModel.uiState.value.selectedProfileId)
         assertEquals("Home", viewModel.uiState.value.renameProfileName)
     }
@@ -195,6 +207,8 @@ class SettingsViewModelTest {
         verify { AuthManager.setProfileToken("prof-1", null) }
         verify { AuthManager.setSelectedProfileId(AuthManager.DEFAULT_PROFILE_ID) }
         verify { ApiClient.rebuild() }
+        verify { disconnectWebSocket() }
+        verify { connectWebSocket() }
     }
 
     @Test
@@ -211,6 +225,8 @@ class SettingsViewModelTest {
         // Selected profile (prof-1) was NOT deleted — should NOT change selection
         verify(exactly = 0) { AuthManager.setSelectedProfileId(any()) }
         verify { ApiClient.rebuild() }
+        verify(exactly = 0) { disconnectWebSocket() }
+        verify(exactly = 0) { connectWebSocket() }
     }
 
     @Test
@@ -227,6 +243,8 @@ class SettingsViewModelTest {
 
         verify { AuthManager.saveConnectionProfiles(any()) }
         verify { AuthManager.setSelectedProfileId(any()) }
+        verify { disconnectWebSocket() }
+        verify(exactly = 0) { connectWebSocket() }
         assertEquals(true, viewModel.uiState.value.navigateToLogin)
     }
 }

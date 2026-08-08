@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Modified from Hy4ri/hermes-mobile for this fork; see NOTICE. -->
 <resources>
 
     <style name="Theme.HermesControl" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.HermesControl.NotificationEntry" parent="@android:style/Theme.NoDisplay" />
 </resources>

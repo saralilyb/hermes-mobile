@@ -60,6 +60,12 @@ data class SettingsUiState(
 
 class SettingsViewModel(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val disconnectWebSocket: () -> Unit = {
+        HermesWsClient.disconnect(clearPendingMessages = true)
+    },
+    private val connectWebSocket: () -> Unit = {
+        HermesWsClient.connect()
+    },
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -108,19 +114,30 @@ class SettingsViewModel(
     }
 
     fun selectProfile(profileId: String?) {
+        val profileChanged = profileId != AuthManager.getSelectedProfileId()
+        if (profileChanged) {
+            disconnectWebSocket()
+        }
         AuthManager.setSelectedProfileId(profileId)
         viewModelScope.launch(ioDispatcher) { loadSettings() }
         ApiClient.rebuild()
+        if (profileChanged) {
+            connectWebSocket()
+        }
     }
 
     fun deleteProfile(profileId: String) {
+        val wasSelected = AuthManager.getSelectedProfileId() == profileId
+        if (wasSelected) {
+            disconnectWebSocket()
+        }
         val updatedProfiles = AuthManager.getConnectionProfiles().filter { it.id != profileId }
         AuthManager.saveConnectionProfiles(updatedProfiles)
         AuthManager.setProfileToken(profileId, null)
         AuthManager.clearPinnedSessionIds(profileId)
         // Never leave selection null (issue #478): if the deleted profile was selected,
         // fall back to the default profile instead of clearing selection.
-        if (AuthManager.getSelectedProfileId() == profileId) {
+        if (wasSelected) {
             if (updatedProfiles.none { it.id == AuthManager.DEFAULT_PROFILE_ID }) {
                 AuthManager.ensureDefaultProfile()
             }
@@ -128,6 +145,9 @@ class SettingsViewModel(
         }
         viewModelScope.launch(ioDispatcher) { loadSettings() }
         ApiClient.rebuild()
+        if (wasSelected) {
+            connectWebSocket()
+        }
     }
 
     // ── Profile add/edit dialog ──────────────────────────────────────────
@@ -211,11 +231,16 @@ class SettingsViewModel(
 
         val profiles = AuthManager.getConnectionProfiles().toMutableList()
         val editingId = state.editingProfileId
+        var reconnectWebSocket = false
 
         if (editingId != null) {
             // Update existing profile
             val index = profiles.indexOfFirst { it.id == editingId }
             if (index == -1) return
+            if (editingId == AuthManager.getSelectedProfileId()) {
+                disconnectWebSocket()
+                reconnectWebSocket = true
+            }
             val oldToken = AuthManager.getProfileToken(editingId)
             profiles[index] =
                 profiles[index].copy(
@@ -238,6 +263,7 @@ class SettingsViewModel(
             profiles.add(newProfile)
             AuthManager.saveConnectionProfiles(profiles)
             AuthManager.setProfileToken(newProfile.id, "")
+            disconnectWebSocket()
             AuthManager.setSelectedProfileId(newProfile.id)
             _uiState.update { it.copy(navigateToLogin = true) }
         }
@@ -245,6 +271,9 @@ class SettingsViewModel(
         closeProfileDialog()
         viewModelScope.launch(ioDispatcher) { loadSettings() }
         ApiClient.rebuild()
+        if (reconnectWebSocket) {
+            connectWebSocket()
+        }
     }
 
     // ── Delete confirmation ──────────────────────────────────────────────
@@ -365,7 +394,7 @@ class SettingsViewModel(
         // Clear queued frames: they were composed under the credentials being
         // discarded here, and would otherwise be flushed into whichever
         // profile's session connects next.
-        HermesWsClient.disconnect(clearPendingMessages = true)
+        disconnectWebSocket()
         // Don't rebuild ApiClient here — let the navigation complete first
     }
 

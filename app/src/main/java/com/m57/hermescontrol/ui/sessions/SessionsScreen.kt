@@ -1,3 +1,5 @@
+// Modified from Hy4ri/hermes-mobile for this fork; see NOTICE.
+
 package com.m57.hermescontrol.ui.sessions
 
 import androidx.compose.animation.AnimatedVisibility
@@ -580,7 +582,10 @@ fun SessionsScreen(
                                                         if (state.isSelecting) {
                                                             screenViewModel.toggleSessionSelection(session.id)
                                                         } else {
-                                                            NavigationController.pendingSessionId = session.id
+                                                            NavigationController.queuePendingSession(
+                                                                sessionId = session.id,
+                                                                profileId = activeProfileId,
+                                                            )
                                                             NavigationController.navigateTo(ChatScreen)
                                                         }
                                                     },
@@ -715,7 +720,10 @@ fun SessionsScreen(
                                         if (state.isSelecting) {
                                             screenViewModel.toggleSessionSelection(session.id)
                                         } else {
-                                            NavigationController.pendingSessionId = session.id
+                                            NavigationController.queuePendingSession(
+                                                sessionId = session.id,
+                                                profileId = activeProfileId,
+                                            )
                                             NavigationController.navigateTo(ChatScreen)
                                         }
                                     },

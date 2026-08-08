@@ -53,6 +53,11 @@ enum class ConnectionStatus {
     AUTH_EXPIRED,
 }
 
+internal data class SourcedWsEvent(
+    val event: WsEvent,
+    val profileId: String?,
+)
+
 /**
  * WebSocket client for the Hermes Dashboard JSON-RPC 2.0 interface.
  *
@@ -152,28 +157,42 @@ object HermesWsClient {
 
     // ── Public observable stream ─────────────────────────────────────────
 
+    private data class RawWsMessage(
+        val text: String,
+        val profileId: String?,
+    )
+
     private val rawMessages =
-        MutableSharedFlow<String>(
+        MutableSharedFlow<RawWsMessage>(
             extraBufferCapacity = 512,
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
 
-    /** Collect this from ViewModels to receive all parsed [WsEvent]s. */
-    val events: SharedFlow<WsEvent> =
+    internal val sourcedEvents: SharedFlow<SourcedWsEvent> =
         rawMessages
             .buffer(Channel.BUFFERED)
-            .map { text ->
-                try {
-                    val rpc = OkHttpProvider.json.decodeFromString<JsonRpcResponse>(text)
-                    EventParser.parse(rpc, text)
-                } catch (e: Exception) {
-                    Log.e(
-                        TAG,
-                        "Failed to parse WebSocket message (${e.javaClass.simpleName})",
-                    )
-                    WsEvent.Unknown(text)
-                }
+            .map { raw ->
+                val event =
+                    try {
+                        val rpc =
+                            OkHttpProvider.json
+                                .decodeFromString<JsonRpcResponse>(raw.text)
+                        EventParser.parse(rpc, raw.text)
+                    } catch (e: Exception) {
+                        Log.e(
+                            TAG,
+                            "Failed to parse WebSocket message (${e.javaClass.simpleName})",
+                        )
+                        WsEvent.Unknown(raw.text)
+                    }
+                SourcedWsEvent(event = event, profileId = raw.profileId)
             }.flowOn(Dispatchers.Default) // CPU-bound
+            .shareIn(wsScope, SharingStarted.Eagerly)
+
+    /** Collect this from ViewModels to receive all parsed [WsEvent]s. */
+    val events: SharedFlow<WsEvent> =
+        sourcedEvents
+            .map { sourced -> sourced.event }
             .shareIn(wsScope, SharingStarted.Eagerly)
 
     // ── Connection status flow ──────────────────────────────────────────
@@ -641,7 +660,12 @@ object HermesWsClient {
     // ── Internal ─────────────────────────────────────────────────────────
 
     private fun openSocket() {
+        val profileId = AuthManager.getSelectedProfileId()
         val ticketResult = refreshWsTicketIfNeeded()
+        if (profileId != AuthManager.getSelectedProfileId()) {
+            restartAfterProfileChange()
+            return
+        }
         when (ticketResult.status) {
             TicketRefreshStatus.READY -> Unit
 
@@ -668,10 +692,27 @@ object HermesWsClient {
                 _connectionStatus.value = ConnectionStatus.DISCONNECTED
                 return
             }
+        if (profileId != AuthManager.getSelectedProfileId()) {
+            restartAfterProfileChange()
+            return
+        }
         if (BuildConfig.DEBUG) Log.d(TAG, "Connecting to WebSocket endpoint")
 
         val request = Request.Builder().url(url).build()
-        webSocket = OkHttpProvider.websocket.newWebSocket(request, WsListenerImpl())
+        webSocket =
+            OkHttpProvider.websocket.newWebSocket(
+                request,
+                WsListenerImpl(profileId),
+            )
+    }
+
+    private fun restartAfterProfileChange() {
+        Log.d(TAG, "Connection profile changed during WebSocket setup; restarting")
+        val shouldReconnect = !intentionalClose.get()
+        disconnect(clearPendingMessages = true)
+        if (shouldReconnect) {
+            wsScope.launch { connect() }
+        }
     }
 
     private fun scheduleReconnect() {
@@ -732,7 +773,9 @@ object HermesWsClient {
 
     // ── Listener ─────────────────────────────────────────────────────────
 
-    private class WsListenerImpl : WebSocketListener() {
+    private class WsListenerImpl(
+        private val profileId: String?,
+    ) : WebSocketListener() {
         override fun onOpen(
             webSocket: WebSocket,
             response: Response,
@@ -784,7 +827,10 @@ object HermesWsClient {
                 is WsEvent.RpcError -> resolvePending(event.id, null, event.error)
                 else -> Unit
             }
-            val emitted = rawMessages.tryEmit(text)
+            val emitted =
+                rawMessages.tryEmit(
+                    RawWsMessage(text = text, profileId = profileId),
+                )
             if (!emitted && BuildConfig.DEBUG) {
                 Log.w(TAG, "WebSocket message dropped due to buffer overflow")
             }

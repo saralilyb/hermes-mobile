@@ -23,6 +23,13 @@
         android:usesCleartextTraffic="${usesCleartextTraffic}"
         android:theme="@style/Theme.HermesControl">
         <activity
+            android:name=".notification.NotificationEntryActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@style/Theme.HermesControl.NotificationEntry" />
+
+        <activity
             android:name=".MainActivity"
             android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTop"
@@ -36,10 +43,6 @@
         <service
             android:name=".notification.ChatNotificationService"
             android:foregroundServiceType="remoteMessaging"
-            android:exported="false" />
-
-        <receiver
-            android:name=".notification.NotificationReplyReceiver"
             android:exported="false" />
 
         <provider
