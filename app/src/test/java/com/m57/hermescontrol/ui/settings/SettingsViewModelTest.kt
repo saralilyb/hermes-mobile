@@ -22,6 +22,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 
@@ -80,6 +81,7 @@ class SettingsViewModelTest {
         every { AuthManager.getConnectionProfiles() } returns emptyList()
         every { AuthManager.getSelectedProfileId() } answers { storedSelectedProfileId }
         every { AuthManager.baseUrl() } returns "http://127.0.0.1:9119/"
+        every { AuthManager.getBaseUrl() } returns "http://127.0.0.1:9119/"
         every { AuthManager.setBaseUrl(any()) } returns Unit
         every { AuthManager.setToken(any()) } returns Unit
         every { AuthManager.setAutoReconnect(any()) } returns Unit
@@ -95,6 +97,9 @@ class SettingsViewModelTest {
         every { AuthManager.setProfileToken(any(), any()) } returns Unit
         every { AuthManager.clearPinnedSessionIds(any()) } returns Unit
         every { AuthManager.ensureDefaultProfile() } returns Unit
+        every { AuthManager.getProfileToken(any()) } returns null
+        every { AuthManager.setSessionCookie(any()) } returns Unit
+        every { AuthManager.setWsAuthParam(any()) } returns Unit
 
         // Ensure ApiClient.rebuild() is stubbed (used by selectProfile)
         every { ApiClient.rebuild() } returns Unit
@@ -246,5 +251,55 @@ class SettingsViewModelTest {
         verify { disconnectWebSocket() }
         verify(exactly = 0) { connectWebSocket() }
         assertEquals(true, viewModel.uiState.value.navigateToLogin)
+    }
+
+    @Test
+    fun testSaveProfileFromDialog_renameOnly_doesNotDisconnectWebSocket() {
+        val urlProfiles =
+            listOf(
+                ConnectionProfile(
+                    id = "prof-1",
+                    name = "Work",
+                    host = "",
+                    port = 0,
+                    baseUrl = "https://10.0.0.1:9119/",
+                ),
+                ConnectionProfile(
+                    id = "prof-2",
+                    name = "Home",
+                    host = "",
+                    port = 0,
+                    baseUrl = "https://10.0.0.2:9220/",
+                ),
+            )
+        every { AuthManager.getConnectionProfiles() } returns urlProfiles
+        storedSelectedProfileId = "prof-1"
+
+        val viewModel = createViewModel()
+
+        viewModel.openEditProfile("prof-1")
+        viewModel.onDialogProfileNameChange("Work Renamed")
+        // openEditProfile seeds dialogProfileBaseUrl from the profile, so this
+        // save is a pure rename — URL and token unchanged. The canonicalized
+        // URL matches the stored profile's resolved base URL, so no disconnect.
+        viewModel.saveProfileFromDialog()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        verify { AuthManager.saveConnectionProfiles(any()) }
+        verify(exactly = 0) { disconnectWebSocket() }
+        verify(exactly = 0) { connectWebSocket() }
+        assertFalse(viewModel.uiState.value.navigateToLogin)
+    }
+
+    @Test
+    fun testLogout_disconnectsBeforeClearingCredentials() {
+        val viewModel = createViewModel()
+
+        viewModel.logout()
+
+        verify { disconnectWebSocket() }
+        verify { AuthManager.setToken(null) }
+        verify { AuthManager.setSessionCookie(null) }
+        verify { AuthManager.setWsAuthParam("token") }
     }
 }
