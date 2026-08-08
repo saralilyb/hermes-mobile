@@ -71,6 +71,9 @@ class SessionPinningTest {
     @Test
     fun `loading a missing pin preserves its durable identity`() =
         runTest {
+            // The default stub for getSessionLatestDescendant throws
+            // IOException, which safeApiCall converts to a NetworkResult.
+            // The test then calls getSession("root") directly.
             val pinnedTip = SessionInfo(id = "tip", title = "Pinned")
             coEvery { api.getSession("root") } returns Response.success(pinnedTip)
 

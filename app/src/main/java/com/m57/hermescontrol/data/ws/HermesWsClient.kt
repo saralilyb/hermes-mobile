@@ -411,6 +411,9 @@ object HermesWsClient {
             outboundDrainJob?.cancel()
             outboundDrainJob = null
             stopHealthTracking()
+            // Fail in-flight RPC callers now; otherwise they hang until the
+            // 120 s per-request timeout after a profile transition.
+            rejectAllPending()
             webSocket?.close(1000, "Client closed")
             webSocket = null
             connected.set(false)

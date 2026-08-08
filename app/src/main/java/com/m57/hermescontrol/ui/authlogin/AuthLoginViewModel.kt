@@ -85,10 +85,15 @@ class AuthLoginViewModel(
     fun useExistingProfile(profileId: String) {
         if (AuthSessionState.signInRequired.value) return
 
-        HermesWsClient.disconnect(clearPendingMessages = true)
+        val profileChanged = profileId != AuthManager.getSelectedProfileId()
+        if (profileChanged) {
+            HermesWsClient.disconnect(clearPendingMessages = true)
+        }
         AuthManager.setSelectedProfileId(profileId)
         ApiClient.rebuild()
-        HermesWsClient.connect()
+        if (profileChanged) {
+            HermesWsClient.connect()
+        }
         _uiState.update { it.copy(connectionSuccess = true) }
     }
 
