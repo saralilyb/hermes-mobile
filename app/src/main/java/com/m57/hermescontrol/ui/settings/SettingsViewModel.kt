@@ -237,11 +237,17 @@ class SettingsViewModel(
             // Update existing profile
             val index = profiles.indexOfFirst { it.id == editingId }
             if (index == -1) return
-            if (editingId == AuthManager.getSelectedProfileId()) {
+            val oldToken = AuthManager.getProfileToken(editingId)
+            val oldBaseUrl = profiles[index].resolveBaseUrl(AuthManager.getBaseUrl())
+            val newBaseUrl = endpoint.baseUrl.toString()
+            // Tear down the active socket only when connection-relevant
+            // fields change; a cosmetic rename must preserve queued prompts.
+            val connectionChanged =
+                (!token.isNullOrEmpty() && token != oldToken) || newBaseUrl != oldBaseUrl
+            if (editingId == AuthManager.getSelectedProfileId() && connectionChanged) {
                 disconnectWebSocket()
                 reconnectWebSocket = true
             }
-            val oldToken = AuthManager.getProfileToken(editingId)
             profiles[index] =
                 profiles[index].copy(
                     name = name,
@@ -388,13 +394,12 @@ class SettingsViewModel(
 
     /** Clear all auth credentials — logs out and returns to landing screen. */
     fun logout() {
+        // Tear down the authenticated socket before discarding credentials;
+        // a live socket must never outlive the identity it was opened with.
+        disconnectWebSocket()
         AuthManager.setToken(null)
         AuthManager.setSessionCookie(null)
         AuthManager.setWsAuthParam("token")
-        // Clear queued frames: they were composed under the credentials being
-        // discarded here, and would otherwise be flushed into whichever
-        // profile's session connects next.
-        disconnectWebSocket()
         // Don't rebuild ApiClient here — let the navigation complete first
     }
 

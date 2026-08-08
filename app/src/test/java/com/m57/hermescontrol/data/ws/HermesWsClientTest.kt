@@ -28,6 +28,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
@@ -89,6 +90,13 @@ class HermesWsClientTest {
         val queueField = HermesWsClient::class.java.getDeclaredField("messageQueue")
         queueField.isAccessible = true
         return queueField.get(HermesWsClient) as java.util.Queue<*>
+    }
+
+    private fun pendingCalls(): MutableMap<String, *> {
+        val field = HermesWsClient::class.java.getDeclaredField("pendingCalls")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        return field.get(HermesWsClient) as MutableMap<String, *>
     }
 
     private fun awaitOutboundQueueEmpty(timeoutMs: Long = 1_000): Boolean {
@@ -247,6 +255,42 @@ class HermesWsClientTest {
 
         // Verify server received close frame
         assertTrue(closedLatch.await(5, TimeUnit.SECONDS))
+    }
+
+    @Test
+    fun testDisconnectRejectsPendingRpcCalls() {
+        val serverLatch = CountDownLatch(1)
+
+        mockWebServer.enqueue(
+            MockResponse().withWebSocketUpgrade(
+                object : WebSocketListener() {
+                    override fun onOpen(
+                        webSocket: WebSocket,
+                        response: okhttp3.Response,
+                    ) {
+                        serverLatch.countDown()
+                    }
+                },
+            ),
+        )
+
+        HermesWsClient.connect()
+        runBlocking { withTimeout(5000) { HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED } } }
+        assertTrue(serverLatch.await(5, TimeUnit.SECONDS))
+
+        val deferred = HermesWsClient.request("test.method")
+        assertEquals(1, pendingCalls().size)
+
+        HermesWsClient.disconnect(clearPendingMessages = true)
+
+        assertTrue(deferred.isCompleted)
+        try {
+            runBlocking { deferred.await() }
+            fail("Expected HermesRpcException")
+        } catch (e: HermesWsClient.HermesRpcException) {
+            assertTrue(e.message?.contains("cancelled") == true)
+        }
+        assertEquals(0, pendingCalls().size)
     }
 
     @Test
