@@ -26,9 +26,9 @@
 **Hermes Mobile** is an unofficial native Android client for
 [Hermes Agent](https://hermes-agent.nousresearch.com). This security-focused
 fork is based on [Hy4ri/hermes-mobile](https://github.com/Hy4ri/hermes-mobile),
-with a selectively reconciled `v1.19.2` baseline and compatible later fixes
-selectively integrated through upstream commit `00a0eed`. It retains downstream
-security,
+with a selectively reconciled `v1.19.2` baseline and compatible later fixes,
+most recently clarification cleanup from upstream commit `0db741e`. It retains
+downstream security,
 complete-history pagination, signing, and distribution changes. The public
 release uses generic Hermes branding; the optional `iris` flavor exists only to
 distinguish a side-by-side personal installation.
@@ -38,8 +38,8 @@ distinguish a side-by-side personal installation.
 ## Features
 
 - **Real-Time Chat:** Room-backed history, profile-scoped pinned sessions, rich
-  tool and approval cards, bottom-follow with unread counts, persisted reasoning
-  cards and controls, and a two-row composer.
+  tool, approval, and clarification cards, bottom-follow with unread counts,
+  persisted reasoning cards and controls, and a two-row composer.
 - **System Config:** Manage active profiles, installed skills, plugins, and LLM model selections.
 - **Operations:** Stream and filter live logs by server file, level, component,
   and line count; manage cron jobs and categorized environment keys with warned
