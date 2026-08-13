@@ -40,6 +40,9 @@ object CookieManager {
 
     fun isInitialized(): Boolean = jar != null
 
+    /** Current scope when initialized; null during startup or test teardown. */
+    fun currentServerOrNull(): String? = jar?.currentServer()
+
     fun initialize(
         context: Context,
         initialServerId: String = PersistentCookieJar.DEFAULT_SERVER_ID,

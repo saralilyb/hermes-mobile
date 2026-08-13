@@ -367,9 +367,9 @@ object AuthManager {
         profileId?.takeIf { it.isNotBlank() } ?: DEFAULT_PROFILE_ID
 
     private fun syncCookieStoreForProfile(profileId: String?) {
-        if (!CookieManager.isInitialized()) return
         val normalizedId = normalizedProfileId(profileId)
-        if (CookieManager.cookieJar.currentServer() != normalizedId) {
+        val currentId = CookieManager.currentServerOrNull() ?: return
+        if (currentId != normalizedId) {
             CookieManager.useStore(normalizedId)
         }
     }
