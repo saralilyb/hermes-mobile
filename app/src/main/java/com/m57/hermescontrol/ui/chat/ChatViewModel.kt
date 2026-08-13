@@ -45,6 +45,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -217,6 +219,7 @@ data class ModelSwitchConfirmation(
     val sessionId: String,
 )
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ChatViewModel(
     application: Application,
     private val startCleanup: Boolean,
@@ -234,6 +237,10 @@ class ChatViewModel(
      * retry path explicitly, so existing suites keep their previous timing.
      */
     private val sessionCreateRetryDelayMs: Long? = null,
+    private val selectedProfileId: () -> String = {
+        AuthManager.getSelectedProfileId() ?: AuthManager.DEFAULT_PROFILE_ID
+    },
+    selectedProfileIds: kotlinx.coroutines.flow.Flow<String> = AuthManager.selectedProfileIdFlow,
 ) : AndroidViewModel(application) {
     constructor(application: Application) : this(application, startCleanup = true)
 
@@ -259,7 +266,7 @@ class ChatViewModel(
     // ── Session persistence ──────────────────────────────────────────────
     private val repo: ChatPersistenceRepository = repo
     private val slashUsageStore: SlashUsageStore = slashUsageStore
-    private val slashUsageProfileId = AuthManager.getSelectedProfileId() ?: AuthManager.DEFAULT_PROFILE_ID
+    private val slashUsageProfileIds = selectedProfileIds.distinctUntilChanged()
     private val slashDispatcher = SlashCommandDispatcher()
     private val searchDelegate =
         ChatSearchDelegate(
@@ -317,7 +324,7 @@ class ChatViewModel(
         refreshSettings()
 
         viewModelScope.launch {
-            slashUsageStore.counts(slashUsageProfileId).collect { counts ->
+            slashUsageProfileIds.flatMapLatest(slashUsageStore::counts).collect { counts ->
                 _uiState.update { it.copy(slashUsageCounts = counts) }
             }
         }
@@ -1846,7 +1853,7 @@ class ChatViewModel(
     private fun recordAcceptedSlash(command: String) {
         val commandName = command.split(" ", limit = 2)[0].lowercase()
         viewModelScope.launch {
-            slashUsageStore.recordUse(slashUsageProfileId, commandName)
+            slashUsageStore.recordUse(selectedProfileId(), commandName)
         }
     }
 

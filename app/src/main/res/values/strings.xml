@@ -1,6 +1,7 @@
 <!-- Modified from Hy4ri/hermes-mobile for this fork; see NOTICE. -->
 
 <resources>
+    <string name="chat_terminal_backend_content_description">Terminal backend: %1$s</string>
     <string name="app_name">Hermes Mobile</string>
 
     <!-- Chat -->

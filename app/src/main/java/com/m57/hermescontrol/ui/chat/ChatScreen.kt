@@ -66,6 +66,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -417,7 +419,16 @@ fun ChatScreen(
                     ) {
                         Text(
                             text = terminalBackend,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                            modifier =
+                                Modifier
+                                    .padding(horizontal = 6.dp, vertical = 1.dp)
+                                    .semantics {
+                                        contentDescription =
+                                            context.getString(
+                                                R.string.chat_terminal_backend_content_description,
+                                                terminalBackend,
+                                            )
+                                    },
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
                         )

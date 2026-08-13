@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_terminal_backend_content_description">터미널 백엔드: %1$s</string>
     <string name="app_name">헤르메스</string>
 
     <!-- Chat -->

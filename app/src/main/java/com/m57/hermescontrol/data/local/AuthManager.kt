@@ -74,6 +74,9 @@ object AuthManager {
     private val _tokenFlow = MutableStateFlow<String?>(null)
     val tokenFlow: StateFlow<String?> = _tokenFlow.asStateFlow()
 
+    private val _selectedProfileIdFlow = MutableStateFlow(DEFAULT_PROFILE_ID)
+    val selectedProfileIdFlow: StateFlow<String> = _selectedProfileIdFlow.asStateFlow()
+
     /**
      * Initialise the encrypted preferences.
      * Call this once from Application.onCreate() or MainActivity.onCreate().
@@ -124,10 +127,13 @@ object AuthManager {
             // The Deferred is created above, before this call.
             val initialProfileId =
                 store.getLatestState().selectedProfileId?.takeIf { it.isNotBlank() } ?: DEFAULT_PROFILE_ID
+            _selectedProfileIdFlow.value = initialProfileId
             CookieManager.initialize(context, prefsDeferred, initialProfileId)
 
             scope.launch {
                 store.stateFlow.collect { state ->
+                    _selectedProfileIdFlow.value =
+                        state.selectedProfileId?.takeIf(String::isNotBlank) ?: DEFAULT_PROFILE_ID
                     _themePreferenceFlow.value = state.themePreference
                     _useDynamicColorsFlow.value = state.useDynamicColors
                     _themePresetFlow.value = state.themePreset

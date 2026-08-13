@@ -333,6 +333,41 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun slashUsage_followsProfileSwitchWhileViewModelLives() =
+        runTest {
+            val selectedProfile = MutableStateFlow("profile-a")
+            every { AuthManager.getSelectedProfileId() } answers { selectedProfile.value }
+            val viewModel =
+                ChatViewModel(
+                    app,
+                    false,
+                    fakeRepo,
+                    fakeSlashUsageStore,
+                    testDispatcher,
+                    selectedProfileId = { selectedProfile.value },
+                    selectedProfileIds = selectedProfile,
+                )
+            fakeSlashUsageStore.recordUse("profile-a", "/help")
+            fakeSlashUsageStore.recordUse("profile-b", "/resume")
+            advanceUntilIdle()
+            assertEquals(mapOf("/help" to 1), viewModel.uiState.value.slashUsageCounts)
+
+            selectedProfile.value = "profile-b"
+            advanceUntilIdle()
+            assertEquals(mapOf("/resume" to 1), viewModel.uiState.value.slashUsageCounts)
+
+            val recordAcceptedSlash =
+                ChatViewModel::class.java.getDeclaredMethod("recordAcceptedSlash", String::class.java).apply {
+                    isAccessible = true
+                }
+            recordAcceptedSlash.invoke(viewModel, "/help")
+            advanceUntilIdle()
+            assertEquals(1, fakeSlashUsageStore.countsNow("profile-b")["/help"])
+            assertEquals(1, fakeSlashUsageStore.countsNow("profile-b")["/resume"])
+            assertEquals(1, fakeSlashUsageStore.countsNow("profile-a")["/help"])
+        }
+
+    @Test
     fun slashUsage_doesNotCountRejectedOrBlockedCommands() =
         runTest {
             val (viewModel, _) = createViewModelWithSession()
