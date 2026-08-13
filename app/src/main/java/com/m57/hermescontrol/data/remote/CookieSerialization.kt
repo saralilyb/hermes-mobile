@@ -55,10 +55,11 @@ fun CookieHolder.toCookie(): Cookie? =
 
 /**
  * Wrap a raw `hermes_session_at` value (the pre-#470 single-string session
- * cookie) as a permissive session cookie. Host/path are left empty so it
- * matches any request the jar sends — matching the previous behaviour where
- * the value was injected as a bare `Cookie: hermes_session_at=<value>` header
- * on every REST call.
+ * cookie) as a migration-only session cookie. OkHttp forbids constructing a
+ * domainless cookie, so [LEGACY_WILDCARD_DOMAIN] marks the old unscoped value;
+ * [PersistentCookieJar] recognizes that sentinel only within the active
+ * default server scope. This matches the previous bare `Cookie` header
+ * behavior for the one-release migration window.
  */
 fun wrapSessionCookie(rawValue: String): Cookie? {
     val value = rawValue.trim()
@@ -71,11 +72,14 @@ fun wrapSessionCookie(rawValue: String): Cookie? {
             // Far-future expiry (10 years) — session lifetime is owned by the
             // dashboard, not by client-side cookie expiry.
             .expiresAt(System.currentTimeMillis() + 10L * 365 * 24 * 60 * 60 * 1000)
+            .hostOnlyDomain(LEGACY_WILDCARD_DOMAIN)
             .path("/")
             .httpOnly()
             .build()
     }.getOrNull()
 }
+
+const val LEGACY_WILDCARD_DOMAIN = "legacy-cookie.invalid"
 
 const val SESSION_COOKIE_NAME = "hermes_session_at"
 

@@ -315,6 +315,73 @@ class PersistentCookieJarTest {
         }
 
     @Test
+    fun sameNameAndPathCookiesRetainDistinctDomainScopes() =
+        runTest {
+            val store = FakeEncryptedCookieStore()
+            val jar =
+                PersistentCookieJar(
+                    store = store,
+                    storeScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+                )
+            val origin = "https://auth.example.com/".toHttpUrl()
+            jar.useStore("server-a")
+            val hostOnly =
+                Cookie
+                    .Builder()
+                    .name(SESSION_COOKIE_NAME)
+                    .value("host-only")
+                    .hostOnlyDomain("auth.example.com")
+                    .path("/")
+                    .build()
+            val parentDomain =
+                Cookie
+                    .Builder()
+                    .name(SESSION_COOKIE_NAME)
+                    .value("parent-domain")
+                    .domain("example.com")
+                    .path("/")
+                    .build()
+
+            jar.saveFromResponse(origin, listOf(hostOnly, parentDomain))
+
+            assertEquals(
+                setOf("host-only", "parent-domain"),
+                jar.loadForRequest(origin).map { it.value }.toSet(),
+            )
+            assertEquals(
+                listOf("parent-domain"),
+                jar.loadForRequest("https://other.example.com/".toHttpUrl()).map { it.value },
+            )
+
+            val reloaded =
+                PersistentCookieJar(
+                    store = store,
+                    storeScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+                )
+            reloaded.useStore("server-a")
+            assertEquals(
+                setOf("host-only", "parent-domain"),
+                reloaded.loadForRequest(origin).map { it.value }.toSet(),
+            )
+        }
+
+    @Test
+    fun legacyDomainlessSessionCookieMatchesActiveServerRequests() =
+        runTest {
+            val jar = makeJar()
+            val legacy = requireNotNull(wrapSessionCookie("legacy-value"))
+            val origin = "https://dashboard.example.com/".toHttpUrl()
+            jar.useStore(PersistentCookieJar.DEFAULT_SERVER_ID)
+
+            jar.saveFromResponse(origin, listOf(legacy))
+
+            assertEquals(
+                listOf("legacy-value"),
+                jar.loadForRequest(origin).map { it.value },
+            )
+        }
+
+    @Test
     fun staleHttpResponseCannotRestoreCookieAfterClear() {
         val server = MockWebServer()
         val responseStarted = CompletableDeferred<Unit>()
