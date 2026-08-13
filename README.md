@@ -66,7 +66,10 @@ https://github.com/saralilyb/hermes-mobile
 
 Obtainium installs the signed generic `Hermes Mobile` APK published with each
 GitHub Release. The `Iris Mobile` flavor is a separate personal build, not the
-public update channel.
+public update channel. Obtainium is the sole supported binary update channel:
+the app deliberately has no in-app release checker, APK downloader, package
+installer permission, or self-update feature, and this fork is not distributed
+through F-Droid. Manual source builds remain supported below.
 
 ### Build from source
 

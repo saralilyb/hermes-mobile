@@ -71,7 +71,7 @@ The release workflow:
 3. grants repository write permission only to the isolated draft-publish job;
 4. decodes the signing keystore under `$RUNNER_TEMP` with mode `0600` or
    stricter and deletes it in an always-running cleanup step;
-5. builds only `assembleIrisRelease` for distribution;
+5. builds only `assembleHermesRelease` for public distribution;
 6. verifies the APK with `apksigner --verbose --print-certs`;
 7. publishes a SHA-256 checksum, commit identifier, version name, and monotonic
    semantic-version-derived version code;
