@@ -52,8 +52,9 @@ never after corruption. The deprecated `EncryptedSharedPreferences` and
 and keysets are not removed by migration, and fresh installs never create them.
 
 The local Room database remains encrypted with SQLCipher. Application backup is
-disabled, and the blob directory, migration metadata, legacy encrypted stores,
-and databases also have explicit cloud-backup and device-transfer exclusions.
+disabled. Secure blobs live under Android's non-backup directory; migration
+metadata, legacy encrypted stores, and databases also have explicit
+cloud-backup and device-transfer exclusions.
 
 The app does not persist the user's dashboard password after login. A successful
 basic-authentication login stores the resulting session cookie and short-lived
