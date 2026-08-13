@@ -24,15 +24,17 @@ object OkHttpProvider {
      */
     private fun resolveCookieJar(): PersistentCookieJar = CookieManager.cookieJar
 
-    // Base client: connection pool + sensible defaults.
-    // Lazily built so the shared CookieJar is only resolved at first use
-    // (after CookieManager.initialize), not during object construction.
-    // Note: retryOnConnectionFailure(true) lets OkHttp recover from low-level
-    // connection/route failures (route timeouts, IPv4/IPv6 fallback), separate
-    // from safeApiCall's app-level retries (backoff + 5xx/429/timeouts).
-    val base: OkHttpClient by lazy {
+    private fun commonBuilder(): OkHttpClient.Builder =
         OkHttpClient
             .Builder()
+            .connectionPool(connectionPool)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+
+    private fun authenticatedBuilder(): OkHttpClient.Builder =
+        commonBuilder()
             .cookieJar(resolveCookieJar())
             .addInterceptor { chain ->
                 val boundary = resolveCookieJar().captureCredentialBoundary()
@@ -57,12 +59,13 @@ object OkHttpProvider {
                 // this generation check, reopening a check/use race.
                 response.newBuilder().removeHeader("Set-Cookie").build()
             }
-            .connectionPool(connectionPool)
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true)
-            .build()
+
+    // Base authenticated client: shared pool plus credential-bound cookies.
+    // Built lazily so CookieManager is initialized before the jar is resolved.
+    // Low-level connection retries are separate from safeApiCall's app-level
+    // backoff for 5xx, 429, and timeout responses.
+    val base: OkHttpClient by lazy {
+        authenticatedBuilder().build()
     }
 
     /**
@@ -71,8 +74,7 @@ object OkHttpProvider {
      * this client deliberately carries no dashboard cookies.
      */
     val publicMedia: OkHttpClient by lazy {
-        base
-            .newBuilder()
+        commonBuilder()
             .cookieJar(CookieJar.NO_COOKIES)
             .build()
     }
