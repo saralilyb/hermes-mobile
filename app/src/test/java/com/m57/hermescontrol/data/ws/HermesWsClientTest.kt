@@ -146,6 +146,34 @@ class HermesWsClientTest {
     }
 
     @Test
+    fun testCredentialClearingDisconnectCancelsIdleRecoveryGeneration() {
+        mockWebServer.enqueue(
+            MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}),
+        )
+        HermesWsClient.connect()
+        runBlocking {
+            withTimeout(5000) {
+                HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED }
+            }
+        }
+        HermesWsClient.setAppForeground(false)
+        runBlocking {
+            withTimeout(5000) {
+                HermesWsClient.connectionStatus.first { it == ConnectionStatus.DISCONNECTED }
+            }
+        }
+
+        HermesWsClient.sendMessage("runtime-session", "background prompt")
+        HermesWsClient.disconnect(clearPendingMessages = true)
+        Thread.sleep(300)
+
+        assertFalse(HermesWsClient.isConnected)
+        assertEquals(ConnectionStatus.DISCONNECTED, HermesWsClient.connectionStatus.value)
+        assertTrue(outboundQueue().isEmpty())
+        assertTrue(pendingPromptSessions().isEmpty())
+    }
+
+    @Test
     fun testBackgroundPendingPromptStaysConnectedUntilCompletionWithProvenance() {
         lateinit var serverSocket: WebSocket
         val connectedLatch = CountDownLatch(1)

@@ -567,7 +567,6 @@ object HermesWsClient {
         val request = JsonRpcRequest(id = id, method = method, params = params.mapValues { it.value.toJsonElement() })
         val json = OkHttpProvider.json.encodeToString(request)
         var accepted = false
-        var reconnectAfterIdleClose = false
         synchronized(connectionLock) {
             if (method == WsMethods.PROMPT_SUBMIT) {
                 pendingPromptSessions[id] = params["session_id"] as? String ?: ""
@@ -607,10 +606,28 @@ object HermesWsClient {
                 pendingPromptSessions.remove(id)
                 pendingReply = pendingPromptSessions.isNotEmpty()
             }
-            reconnectAfterIdleClose = accepted && backgroundIdleClosed.compareAndSet(true, false)
+            if (accepted && backgroundIdleClosed.compareAndSet(true, false)) {
+                startConnectionLocked()
+            }
         }
-        if (reconnectAfterIdleClose) connect()
         return id
+    }
+
+    /** Start an idle-close recovery without reopening a credential boundary. */
+    private fun startConnectionLocked() {
+        if (intentionalClose.get() || !acceptQueuedMessages.get() || connected.get()) return
+        if (_connectionStatus.value == ConnectionStatus.CONNECTING ||
+            _connectionStatus.value == ConnectionStatus.RECONNECTING ||
+            _connectionStatus.value == ConnectionStatus.AUTH_EXPIRED
+        ) {
+            return
+        }
+        ticketAuthRetryUsed.set(false)
+        currentBackoff = INITIAL_BACKOFF_MS
+        _connectionStatus.value = ConnectionStatus.CONNECTING
+        val generation = connectionGeneration.incrementAndGet()
+        reconnectJob?.cancel()
+        reconnectJob = wsScope.launch { openSocket(generation) }
     }
 
     /**

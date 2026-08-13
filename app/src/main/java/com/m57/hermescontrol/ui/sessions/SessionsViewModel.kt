@@ -67,6 +67,8 @@ class SessionsViewModel(
     val uiState: StateFlow<SessionsUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
+    private var loadMoreJob: Job? = null
+    private var loadGeneration = 0
     private var statsJob: Job? = null
     private var hydratePinsJob: Job? = null
 
@@ -78,6 +80,10 @@ class SessionsViewModel(
 
     /** Load (or reload) sessions from page 0. Used by pull-to-refresh and initial load. */
     fun loadSessions() {
+        loadGeneration += 1
+        loadMoreJob?.cancel()
+        loadMoreJob = null
+        _uiState.update { it.copy(isLoadingMore = false) }
         loadJob =
             safeLaunchLoad(
                 currentJob = loadJob,
@@ -128,44 +134,48 @@ class SessionsViewModel(
     fun loadMore() {
         val state = _uiState.value
         if (state.isLoadingMore || !state.hasMore) return
+        val generation = loadGeneration
 
         _uiState.update { it.copy(isLoadingMore = true) }
-        viewModelScope.launch {
-            val result =
-                safeApiCall {
-                    ApiClient.hermesApi.getSessions(
-                        limit = PAGE_SIZE,
-                        offset = state.serverOffset,
-                        order = "recent",
-                    )
-                }
-            when (result) {
-                is NetworkResult.Success -> {
-                    val data = result.data
-                    _uiState.update {
-                        it.copy(
-                            isLoadingMore = false,
-                            sessions = mergeSessionRows(it.sessions, data.sessions),
-                            loadedSessionIds =
-                                it.loadedSessionIds + data.sessions.map { session -> session.id },
-                            serverOffset = it.serverOffset + data.sessions.size,
-                            paginationExhausted = data.sessions.isEmpty(),
-                            total = data.total,
+        loadMoreJob =
+            viewModelScope.launch {
+                val result =
+                    safeApiCall {
+                        ApiClient.hermesApi.getSessions(
+                            limit = PAGE_SIZE,
+                            offset = state.serverOffset,
+                            order = "recent",
                         )
                     }
-                    hydrateMissingPinnedSessions()
-                }
+                when (result) {
+                    is NetworkResult.Success -> {
+                        val data = result.data
+                        _uiState.update {
+                            if (generation != loadGeneration) return@update it
+                            it.copy(
+                                isLoadingMore = false,
+                                sessions = mergeSessionRows(it.sessions, data.sessions),
+                                loadedSessionIds =
+                                    it.loadedSessionIds + data.sessions.map { session -> session.id },
+                                serverOffset = it.serverOffset + data.sessions.size,
+                                paginationExhausted = data.sessions.isEmpty(),
+                                total = data.total,
+                            )
+                        }
+                        if (generation == loadGeneration) hydrateMissingPinnedSessions()
+                    }
 
-                is NetworkResult.Failure -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoadingMore = false,
-                            errorMessage = "Failed to load more: ${result.error.message}",
-                        )
+                    is NetworkResult.Failure -> {
+                        _uiState.update {
+                            if (generation != loadGeneration) return@update it
+                            it.copy(
+                                isLoadingMore = false,
+                                errorMessage = "Failed to load more: ${result.error.message}",
+                            )
+                        }
                     }
                 }
             }
-        }
     }
 
     // ── Pinned sessions ──────────────────────────────────────────────────

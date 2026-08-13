@@ -11,6 +11,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -166,6 +167,48 @@ class SessionsViewModelTest {
 
         coVerify { mockApi.getSessions(50, 2, "recent") }
         coVerify { mockApi.getSessions(50, 4, "recent") }
+    }
+
+    @Test
+    fun `refresh cancels stale load more before it can mutate refreshed state`() {
+        val vm = SessionsViewModel(FakeSessionPinStore(emptyList()))
+        val stalePage = CompletableDeferred<Response<SessionListResponse>>()
+        coEvery { mockApi.getSessions(50, 0, "recent") } returnsMany
+            listOf(
+                Response.success(
+                    SessionListResponse(
+                        sessions = listOf(SessionInfo("old-1"), SessionInfo("old-2")),
+                        total = 4,
+                    ),
+                ),
+                Response.success(
+                    SessionListResponse(
+                        sessions = listOf(SessionInfo("fresh-1"), SessionInfo("fresh-2")),
+                        total = 2,
+                    ),
+                ),
+            )
+        coEvery { mockApi.getSessions(50, 2, "recent") } coAnswers { stalePage.await() }
+
+        vm.loadSessions()
+        awaitState { vm.uiState.value.sessions.map { it.id } == listOf("old-1", "old-2") }
+        vm.loadMore()
+        testDispatcher.scheduler.runCurrent()
+        vm.loadSessions()
+        awaitState { vm.uiState.value.sessions.map { it.id } == listOf("fresh-1", "fresh-2") }
+        stalePage.complete(
+            Response.success(
+                SessionListResponse(
+                    sessions = listOf(SessionInfo("stale-3"), SessionInfo("stale-4")),
+                    total = 4,
+                ),
+            ),
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf("fresh-1", "fresh-2"), vm.uiState.value.sessions.map { it.id })
+        assertEquals(2, vm.uiState.value.serverOffset)
+        assertFalse(vm.uiState.value.isLoadingMore)
     }
 
     private fun awaitState(predicate: () -> Boolean) {
