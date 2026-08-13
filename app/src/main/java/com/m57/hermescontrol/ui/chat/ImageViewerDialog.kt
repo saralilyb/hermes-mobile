@@ -246,7 +246,7 @@ fun ImageViewerDialog(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.image_viewer_close),
-                            tint = MaterialTheme.colorScheme.onPrimary,
+                            tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                     Row {
@@ -254,7 +254,7 @@ fun ImageViewerDialog(
                             CircularProgressIndicator(
                                 modifier = Modifier.size(24.dp).padding(horizontal = 8.dp),
                                 strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary,
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                         } else {
                             IconButton(
@@ -264,7 +264,7 @@ fun ImageViewerDialog(
                                 Icon(
                                     imageVector = Icons.Filled.Download,
                                     contentDescription = stringResource(R.string.image_viewer_save),
-                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    tint = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
                             IconButton(
@@ -274,7 +274,7 @@ fun ImageViewerDialog(
                                 Icon(
                                     imageVector = Icons.Filled.Share,
                                     contentDescription = stringResource(R.string.image_viewer_share),
-                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    tint = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
                         }

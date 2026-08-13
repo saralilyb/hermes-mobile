@@ -66,7 +66,10 @@ https://github.com/saralilyb/hermes-mobile
 
 Obtainium installs the signed generic `Hermes Mobile` APK published with each
 GitHub Release. The `Iris Mobile` flavor is a separate personal build, not the
-public update channel.
+public update channel. Obtainium is the sole supported binary update channel:
+the app deliberately has no in-app release checker, APK downloader, package
+installer permission, or self-update feature, and this fork is not distributed
+through F-Droid. Manual source builds remain supported below.
 
 ### Build from source
 
@@ -126,7 +129,7 @@ trying to connect to your gateway, such as Telegram or Discord sessions.
 
 ```
 app/src/main/java/com/m57/hermescontrol/
-├── data/          # Local (Room, EncryptedSharedPreferences) & Remote (Retrofit, OkHttp WS)
+├── data/          # Local (Room, Keystore-backed atomic blobs) & Remote (Retrofit, OkHttp WS)
 ├── notification/  # Foreground service for message notifications
 ├── theme/         # Material You design system, status colors, spacing, and typography
 └── ui/            # Compose screens (Chat, Settings, Profiles, Kanban, etc.) + Navigation
@@ -141,7 +144,8 @@ app/src/main/java/com/m57/hermescontrol/
 - **Navigation:** Navigation3 (Compose-first Routing)
 - **Networking:** Retrofit 3.0.0, OkHttp 5.4.0, kotlinx-serialization
 - **Database:** Room 2.7.1 with SQLCipher encryption
-- **Security:** `EncryptedSharedPreferences` (AES256-GCM)
+- **Security:** app-owned atomic AES-256-GCM blobs backed by Android Keystore;
+  `EncryptedSharedPreferences` retained only for one-release migration compatibility
 - **Formatting:** `ktlint` style rules (checked automatically in CI)
 
 ---

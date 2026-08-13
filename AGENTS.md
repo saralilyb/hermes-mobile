@@ -24,7 +24,9 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
   `v1.19.2` plus hosted MCP OAuth, CodeQL, and notification hardening through
   `dc74eb4`, plugin-rescan HTTP compatibility from `37900a9`, and server-side
   log filtering from `00a0eed`, plus bug-report gateway metadata from
-  `7d60057` and private notification-entry hardening adapted from `3e9672f`;
+  `7d60057` and private notification-entry hardening adapted from `3e9672f`.
+  Upstream changes have been reviewed through `daf33dcb`; compatible changes
+  through `d4008b7` and selected later fixes are integrated downstream-natively;
   retain
   downstream HTTPS enforcement, profile-scoped credentials, single-use ticket
   handling, complete-history pagination, signing, and release automation.
@@ -67,6 +69,19 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
     arbitrary video origins, bypassing endpoint-scoped cookie and auth-mode
     handling. Any future port needs typed media sources and authenticated
     gateway fetching that preserves the existing media security boundaries.
+  - `f931565` and all subsequent in-app updater work, including `ff8370b`
+    (#889) and `daf33dc` (#891). Distribution is the signed generic
+    `sh.slb.hermesmobile` APK published by this fork's GitHub Releases and
+    consumed through Obtainium. The app must not request
+    `REQUEST_INSTALL_PACKAGES`, check releases, download or install APKs,
+    notify about available app versions, or expose updater UI. Manual source
+    builds remain supported.
+  - `758de04` / upstream PR #880 wholesale. This fork does not use F-Droid and
+    must not create an alternate repository-controlled signing lineage. Never
+    import upstream package or repository identity, its F-Droid metadata, or
+    the unexplained opaque `kls_database.db` artifact. The Obtainium link must
+    continue to identify `saralilyb/hermes-mobile` and its fork-signed generic
+    Hermes APK.
 
 ## Build & Test Commands
 

@@ -22,7 +22,7 @@ object OkHttpProvider {
      * [OkHttpProvider] object-init time, which would otherwise throw for unit
      * tests / early access before the app context exists.
      */
-    private fun resolveCookieJar(): okhttp3.CookieJar = CookieManager.cookieJar
+    private fun resolveCookieJar(): PersistentCookieJar = CookieManager.cookieJar
 
     // Base client: connection pool + sensible defaults.
     // Lazily built so the shared CookieJar is only resolved at first use
@@ -34,6 +34,29 @@ object OkHttpProvider {
         OkHttpClient
             .Builder()
             .cookieJar(resolveCookieJar())
+            .addInterceptor { chain ->
+                val boundary = resolveCookieJar().captureCredentialBoundary()
+                val request =
+                    chain
+                        .request()
+                        .newBuilder()
+                        .tag(CookieCredentialBoundary::class.java, boundary)
+                        .build()
+                chain.proceed(request)
+            }.addNetworkInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                val boundary = chain.request().tag(CookieCredentialBoundary::class.java)
+                if (boundary != null) {
+                    resolveCookieJar().saveFromResponse(
+                        boundary = boundary,
+                        url = chain.request().url,
+                        cookies = okhttp3.Cookie.parseAll(chain.request().url, response.headers),
+                    )
+                }
+                // BridgeInterceptor would otherwise persist Set-Cookie after
+                // this generation check, reopening a check/use race.
+                response.newBuilder().removeHeader("Set-Cookie").build()
+            }
             .connectionPool(connectionPool)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)

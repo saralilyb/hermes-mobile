@@ -3,9 +3,6 @@
 package com.m57.hermescontrol.data.local
 
 import android.content.Context
-import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
 import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.config.ServerStore
 import com.m57.hermescontrol.data.config.ServerStoreMigration
@@ -18,18 +15,17 @@ import com.m57.hermescontrol.data.model.PinnedModel
 import com.m57.hermescontrol.data.remote.CleartextPolicy
 import com.m57.hermescontrol.data.remote.CookieManager
 import com.m57.hermescontrol.data.remote.ServerEndpoint
+import com.m57.hermescontrol.data.security.SecretStore
+import com.m57.hermescontrol.data.security.SecureStorage
 import com.m57.hermescontrol.theme.ThemePreference
 import com.m57.hermescontrol.theme.ThemePreset
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 /**
  * Singleton that manages encrypted storage of the Hermes dashboard token
@@ -38,17 +34,20 @@ import kotlinx.coroutines.runBlocking
  * Must call [init] with a Context before any other method.
  */
 object AuthManager {
-    private const val PREFS_FILE = "hermes_secure_prefs"
-
     const val DEFAULT_PROFILE_ID = "default"
     const val DEFAULT_PROFILE_NAME = "Default"
     private const val KEY_SELECTED_PROFILE_ID = "selected_profile_id"
     private const val KEY_SESSION_COOKIE = "session_cookie"
     private const val KEY_LEGACY_TOKEN = "auth_token"
     private const val KEY_LEGACY_DEFAULT_MIGRATED = "legacy_default_migrated"
+    private const val DATABASE_PASSWORD_BYTES = 32
+    private val databasePasswordLock = Any()
 
     @Volatile
-    private var prefsDeferred: Deferred<SharedPreferences>? = null
+    private var secureStorage: SecretStore? = null
+
+    @Volatile
+    internal var secureStorageFactory: (Context) -> SecretStore = ::SecureStorage
 
     @Volatile
     private var _serverStore: ServerStore? = null
@@ -74,10 +73,10 @@ object AuthManager {
     private val _tokenFlow = MutableStateFlow<String?>(null)
     val tokenFlow: StateFlow<String?> = _tokenFlow.asStateFlow()
 
-    /**
-     * Initialise the encrypted preferences.
-     * Call this once from Application.onCreate() or MainActivity.onCreate().
-     */
+    private val _selectedProfileIdFlow = MutableStateFlow(DEFAULT_PROFILE_ID)
+    val selectedProfileIdFlow: StateFlow<String> = _selectedProfileIdFlow.asStateFlow()
+
+    /** Initialise Keystore-backed secure storage and app settings. */
     fun init(context: Context) {
         if (_serverStore != null) return
         synchronized(this) {
@@ -100,34 +99,21 @@ object AuthManager {
             val store = ServerStore(dataStore, scope)
             _serverStore = store
 
-            if (prefsDeferred == null) {
-                prefsDeferred =
-                    CoroutineScope(Dispatchers.IO).async {
-                        val masterKey = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
-                        val p =
-                            EncryptedSharedPreferences.create(
-                                PREFS_FILE,
-                                masterKey,
-                                context.applicationContext,
-                                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-                            )
-                        migrateLegacyDefaultIfNeeded(p)
-                        _tokenFlow.value = getTokenInternal(p)
-                        p
-                    }
-            }
+            val storage = secureStorageFactory(context)
+            secureStorage = storage
+            migrateLegacyDefaultIfNeeded(storage)
+            _tokenFlow.value = getTokenInternal(storage)
 
-            // Initialize the encrypted cookie store (issue #470). The legacy
-            // session-cookie prefs are passed as a Deferred so existing gated
-            // sessions can be migrated on first load WITHOUT blocking startup.
-            // The Deferred is created above, before this call.
+            // Initialize the encrypted cookie store. Its initial scope loads on IO.
             val initialProfileId =
                 store.getLatestState().selectedProfileId?.takeIf { it.isNotBlank() } ?: DEFAULT_PROFILE_ID
-            CookieManager.initialize(context, prefsDeferred, initialProfileId)
+            _selectedProfileIdFlow.value = initialProfileId
+            CookieManager.initialize(context, initialServerId = initialProfileId)
 
             scope.launch {
                 store.stateFlow.collect { state ->
+                    _selectedProfileIdFlow.value =
+                        state.selectedProfileId?.takeIf(String::isNotBlank) ?: DEFAULT_PROFILE_ID
                     _themePreferenceFlow.value = state.themePreference
                     _useDynamicColorsFlow.value = state.useDynamicColors
                     _themePresetFlow.value = state.themePreset
@@ -138,25 +124,9 @@ object AuthManager {
         }
     }
 
-    /**
-     * Retrieves the initialized [SharedPreferences] instance.
-     *
-     * WARNING: This method is synchronous and will block the caller thread (using [runBlocking])
-     * if the asynchronous initialization is still in progress. Callers should avoid invoking this
-     * on the main thread during early startup to prevent frame drops or potential ANRs.
-     *
-     * Times out and throws [IllegalStateException] if initialization takes longer than 2 seconds.
-     */
-    private fun requirePrefs(): SharedPreferences =
-        runBlocking {
-            val deferred =
-                prefsDeferred ?: throw IllegalStateException(
-                    "AuthManager not initialized. Call init(context) first.",
-                )
-            kotlinx.coroutines.withTimeoutOrNull(2000) {
-                deferred.await()
-            } ?: throw IllegalStateException("AuthManager initialization timed out after 2 seconds.")
-        }
+    /** Retrieves initialized secure storage or fails closed. */
+    private fun requireSecureStorage(): SecretStore =
+        secureStorage ?: throw IllegalStateException("AuthManager not initialized. Call init(context) first.")
 
     fun setWsAuthParam(param: String) {
         val selectedId = getSelectedProfileId()
@@ -222,18 +192,28 @@ object AuthManager {
 
     // ── Database Master Password ─────────────────────────────────────────
 
-    fun getDatabasePassword(): ByteArray {
-        val prefs = requirePrefs()
-        var dbPasswordBase64 = prefs.getString("db_password", null)
-        if (dbPasswordBase64 == null) {
-            val random = java.security.SecureRandom()
-            val newPassword = ByteArray(32)
-            random.nextBytes(newPassword)
-            dbPasswordBase64 = android.util.Base64.encodeToString(newPassword, android.util.Base64.NO_WRAP)
-            prefs.edit().putString("db_password", dbPasswordBase64).apply()
+    fun getDatabasePassword(): ByteArray =
+        synchronized(databasePasswordLock) {
+            val storage = requireSecureStorage()
+            var dbPasswordBase64 = storage.getString(SecureStorage.authKey("db_password"))
+            if (dbPasswordBase64 == null) {
+                val random = java.security.SecureRandom()
+                val newPassword = ByteArray(32)
+                random.nextBytes(newPassword)
+                dbPasswordBase64 = android.util.Base64.encodeToString(newPassword, android.util.Base64.NO_WRAP)
+                storage.putString(SecureStorage.authKey("db_password"), dbPasswordBase64)
+            }
+            val decoded =
+                try {
+                    android.util.Base64.decode(dbPasswordBase64, android.util.Base64.NO_WRAP)
+                } catch (error: IllegalArgumentException) {
+                    throw com.m57.hermescontrol.data.security.SecureBlobException(error)
+                }
+            if (decoded.size != DATABASE_PASSWORD_BYTES) {
+                throw com.m57.hermescontrol.data.security.SecureBlobException()
+            }
+            decoded
         }
-        return android.util.Base64.decode(dbPasswordBase64, android.util.Base64.NO_WRAP)
-    }
 
     // ── Connection Profiles ──────────────────────────────────────────────
 
@@ -298,19 +278,17 @@ object AuthManager {
      * new default [ConnectionProfile]. Runs once per install, guarded by
      * [KEY_LEGACY_DEFAULT_MIGRATED].
      */
-    private fun migrateLegacyDefaultIfNeeded(p: SharedPreferences) {
-        if (p.getBoolean(KEY_LEGACY_DEFAULT_MIGRATED, false)) return
-        val legacyToken = p.getString(KEY_LEGACY_TOKEN, null)
+    private fun migrateLegacyDefaultIfNeeded(storage: SecretStore) {
+        if (storage.getString(SecureStorage.authKey(KEY_LEGACY_DEFAULT_MIGRATED)) == "true") return
+        val legacyToken = storage.getString(SecureStorage.authKey(KEY_LEGACY_TOKEN))
         ensureDefaultProfile()
-        p
-            .edit()
-            .apply {
-                if (!legacyToken.isNullOrBlank()) {
-                    putString("token_$DEFAULT_PROFILE_ID", legacyToken)
-                }
-                remove(KEY_LEGACY_TOKEN)
-                putBoolean(KEY_LEGACY_DEFAULT_MIGRATED, true)
-            }.apply()
+        if (!legacyToken.isNullOrBlank()) {
+            storage.putString(
+                SecureStorage.authKey("token_$DEFAULT_PROFILE_ID"),
+                legacyToken,
+            )
+        }
+        storage.putString(SecureStorage.authKey(KEY_LEGACY_DEFAULT_MIGRATED), "true")
     }
 
     // ── Pinned Models ────────────────────────────────────────────────────
@@ -351,13 +329,14 @@ object AuthManager {
         }
     }
 
-    fun getProfileToken(profileId: String): String? = requirePrefs().getString("token_$profileId", null)
+    fun getProfileToken(profileId: String): String? =
+        requireSecureStorage().getString(SecureStorage.authKey("token_$profileId"))
 
     fun setProfileToken(
         profileId: String,
         token: String?,
     ) {
-        requirePrefs().edit().putString("token_$profileId", token).apply()
+        requireSecureStorage().putString(SecureStorage.authKey("token_$profileId"), token)
         if (getSelectedProfileId() == profileId) {
             // B7 (Jul 08 2026, kanban t_470): sync in-memory cachedToken
             // to prevent stale tokens during ticket refresh
@@ -388,9 +367,9 @@ object AuthManager {
         profileId?.takeIf { it.isNotBlank() } ?: DEFAULT_PROFILE_ID
 
     private fun syncCookieStoreForProfile(profileId: String?) {
-        if (!CookieManager.isInitialized()) return
         val normalizedId = normalizedProfileId(profileId)
-        if (CookieManager.cookieJar.currentServer() != normalizedId) {
+        val currentId = CookieManager.currentServerOrNull() ?: return
+        if (currentId != normalizedId) {
             CookieManager.useStore(normalizedId)
         }
     }
@@ -417,7 +396,7 @@ object AuthManager {
             cachedToken = null
             tokenInitialized = false
             _serverStore = null
-            prefsDeferred = null
+            secureStorage = null
             appScope?.let {
                 try {
                     it.cancel()
@@ -440,10 +419,10 @@ object AuthManager {
         }
     }
 
-    private fun getTokenInternal(p: SharedPreferences): String? {
+    private fun getTokenInternal(storage: SecretStore): String? {
         val selectedId = serverStore.getLatestState().selectedProfileId?.takeIf { it.isNotBlank() }
         return if (selectedId != null) {
-            p.getString("token_$selectedId", null)
+            storage.getString(SecureStorage.authKey("token_$selectedId"))
         } else {
             null
         }

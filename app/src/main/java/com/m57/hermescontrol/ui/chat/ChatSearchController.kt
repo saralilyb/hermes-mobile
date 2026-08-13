@@ -7,16 +7,24 @@ package com.m57.hermescontrol.ui.chat
  */
 class ChatSearchController {
     /**
-     * Find all message indices where [query] appears in the content.
+     * Find visible user/assistant prose occurrences. Tool payloads, system
+     * events, and reasoning are intentionally outside the searchable surface.
      */
     fun findMatches(
         messages: List<ChatMessage>,
         query: String,
     ): List<Int> {
         if (query.isBlank()) return emptyList()
-        return messages.indices.filter { idx ->
-            messages[idx].content.contains(query, ignoreCase = true)
-        }
+        return messages
+            .asSequence()
+            .withIndex()
+            .filter { (_, message) ->
+                (message.role == MessageRole.USER || message.role == MessageRole.ASSISTANT) &&
+                    message.content.contains(query, ignoreCase = true)
+            }
+            .map { it.index }
+            .take(MAX_SEARCH_MATCHES)
+            .toList()
     }
 
     /**
@@ -33,5 +41,9 @@ class ChatSearchController {
             -1 -> if (currentIndex <= 0) matchCount - 1 else currentIndex - 1
             else -> currentIndex
         }
+    }
+
+    companion object {
+        const val MAX_SEARCH_MATCHES = 500
     }
 }

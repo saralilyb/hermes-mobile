@@ -49,4 +49,9 @@ object ChatInputPolicy {
      * selection.
      */
     fun commandFieldValue(command: String): TextFieldValue = TextFieldValue(command, TextRange(command.length))
+
+    fun sortSlashSuggestions(
+        commands: List<String>,
+        usageCounts: Map<String, Int>,
+    ): List<String> = commands.sortedByDescending { usageCounts[it.lowercase()] ?: 0 }
 }

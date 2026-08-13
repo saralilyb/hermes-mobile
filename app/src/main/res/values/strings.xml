@@ -1,6 +1,7 @@
 <!-- Modified from Hy4ri/hermes-mobile for this fork; see NOTICE. -->
 
 <resources>
+    <string name="chat_terminal_backend_content_description">Terminal backend: %1$s</string>
     <string name="app_name">Hermes Mobile</string>
 
     <!-- Chat -->
@@ -503,7 +504,7 @@
     <string name="sessions_search_match_label">Match</string>
     <string name="sessions_search_model_label">Model</string>
     <string name="sessions_stat_total">Total</string>
-    <string name="sessions_stat_active">Active</string>
+    <string name="sessions_stat_messages">Messages</string>
     <string name="sessions_action_prune">Prune</string>
     <string name="sessions_prune_title">Prune Old Sessions</string>
     <string name="sessions_prune_desc">Delete sessions older than the specified number of days.</string>
@@ -729,6 +730,8 @@
     <string name="cron_empty_desc">Scheduled tasks from Hermes will appear here.</string>
     <string name="cron_status_active">Active</string>
     <string name="cron_status_paused">Paused</string>
+    <string name="cron_status_blocked_config">Blocked (config)</string>
+    <string name="cron_status_no_change">No change</string>
     <string name="cron_action_pause">Pause</string>
     <string name="cron_action_resume">Resume</string>
     <string name="cron_action_run">Run</string>
@@ -747,10 +750,19 @@
     <string name="cron_edit_field_script">Script</string>
     <string name="cron_edit_field_workdir">Work Directory</string>
     <string name="cron_edit_field_no_agent">No agent (script-only)</string>
+    <string name="cron_edit_monitor_mode">Monitor mode</string>
+    <string name="cron_edit_monitor_off">Off</string>
+    <string name="cron_edit_monitor_script">Script</string>
+    <string name="cron_edit_monitor_url">URL</string>
+    <string name="cron_edit_monitor_script_field">Monitor script</string>
+    <string name="cron_edit_monitor_url_field">Monitor URL</string>
+    <string name="cron_edit_monitor_hint">The agent runs only when the authenticated server detects a source change</string>
     <string name="cron_edit_hint_schedule">e.g. 0 9 * * * or every 2h</string>
     <string name="cron_edit_hint_deliver">e.g. origin, local, all, or telegram:chat_id</string>
     <string name="cron_edit_hint_skills">One per line</string>
     <string name="cron_edit_action_save">Save</string>
+    <string name="cron_delete_title">Delete job?</string>
+    <string name="cron_delete_message">Delete "%1$s"? This can\'t be undone.</string>
     <string name="cron_discard_title">Discard changes?</string>
     <string name="cron_discard_message">You have unsaved changes. Discard them?</string>
 

@@ -1,8 +1,12 @@
 package com.m57.hermescontrol.data.remote
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -173,6 +177,201 @@ class PersistentCookieJarTest {
 
             assertTrue(jar.loadForRequest("http://c.local/".toHttpUrl()).isEmpty())
         }
+
+    @Test
+    fun clearActiveCannotBeOvertakenByEarlierSave() =
+        runTest {
+            val saveStarted = CompletableDeferred<Unit>()
+            val releaseSave = CompletableDeferred<Unit>()
+            val clearFinished = CompletableDeferred<Unit>()
+            val store =
+                object : CookieStore {
+                    val values = mutableMapOf<String, List<Cookie>>()
+
+                    override suspend fun save(
+                        serverId: String,
+                        cookies: List<Cookie>,
+                    ) {
+                        saveStarted.complete(Unit)
+                        releaseSave.await()
+                        values[serverId] = cookies
+                    }
+
+                    override suspend fun load(serverId: String): List<Cookie> = values[serverId].orEmpty()
+
+                    override suspend fun clear(serverId: String) {
+                        values.remove(serverId)
+                        clearFinished.complete(Unit)
+                    }
+
+                    override suspend fun clearAll() {
+                        values.clear()
+                    }
+                }
+            val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
+            val jar = PersistentCookieJar(store = store, storeScope = scope)
+            jar.useStore("ordered-scope")
+            jar.saveFromResponse(
+                "http://ordered.local/".toHttpUrl(),
+                listOf(sessionCookie("ordered.local", "old")),
+            )
+            saveStarted.await()
+
+            jar.clearActive()
+            releaseSave.complete(Unit)
+            clearFinished.await()
+
+            assertTrue(store.values.isEmpty())
+        }
+
+    @Test
+    fun clearActiveCannotReloadPersistedCookieBeforeAsyncDelete() =
+        runTest {
+            val clearStarted = CompletableDeferred<Unit>()
+            val releaseClear = CompletableDeferred<Unit>()
+            val persisted = sessionCookie("clear.local", "old")
+            val store =
+                object : CookieStore {
+                    override suspend fun save(
+                        serverId: String,
+                        cookies: List<Cookie>,
+                    ) = Unit
+
+                    override suspend fun load(serverId: String): List<Cookie> = listOf(persisted)
+
+                    override suspend fun clear(serverId: String) {
+                        clearStarted.complete(Unit)
+                        releaseClear.await()
+                    }
+
+                    override suspend fun clearAll() = Unit
+                }
+            val jar =
+                PersistentCookieJar(
+                    store = store,
+                    storeScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default),
+                )
+            jar.useStore("clear-scope")
+            assertEquals("old", jar.getSessionCookieValue())
+
+            jar.clearActive()
+            clearStarted.await()
+
+            assertNull(jar.getSessionCookieValue())
+            assertTrue(jar.loadForRequest("http://clear.local/".toHttpUrl()).isEmpty())
+            releaseClear.complete(Unit)
+        }
+
+    @Test
+    fun credentialBoundaryRejectsResponseCapturedBeforeClear() =
+        runTest {
+            val jar = makeJar()
+            jar.useStore("clear-scope")
+            val staleBoundary = jar.captureCredentialBoundary()
+
+            jar.clearActive()
+
+            assertTrue(!jar.acceptsCredentialBoundary(staleBoundary))
+            assertTrue(!jar.captureCredentialBoundary().acceptsCookies)
+        }
+
+    @Test
+    fun explicitAuthenticationCreatesFreshAcceptedBoundary() =
+        runTest {
+            val jar = makeJar()
+            jar.useStore("clear-scope")
+            val oldBoundary = jar.captureCredentialBoundary()
+            jar.clearActive()
+
+            jar.beginAuthentication()
+            val loginBoundary = jar.captureCredentialBoundary()
+
+            assertTrue(!jar.acceptsCredentialBoundary(oldBoundary))
+            assertTrue(jar.acceptsCredentialBoundary(loginBoundary))
+            assertTrue(loginBoundary.generation > oldBoundary.generation)
+        }
+
+    @Test
+    fun expiredSessionCookieDeletesStoredCredential() =
+        runTest {
+            val jar = makeJar()
+            val url = "https://dashboard.local/".toHttpUrl()
+            jar.useStore("server-a")
+            jar.saveFromResponse(url, listOf(sessionCookie("dashboard.local", "active")))
+            val deletion =
+                Cookie
+                    .Builder()
+                    .name(SESSION_COOKIE_NAME)
+                    .value("")
+                    .expiresAt(0)
+                    .hostOnlyDomain("dashboard.local")
+                    .path("/")
+                    .build()
+
+            jar.saveFromResponse(url, listOf(deletion))
+
+            assertNull(jar.getSessionCookieValue())
+            assertTrue(jar.loadForRequest(url).isEmpty())
+        }
+
+    @Test
+    fun staleHttpResponseCannotRestoreCookieAfterClear() {
+        val server = MockWebServer()
+        val responseStarted = CompletableDeferred<Unit>()
+        val releaseResponse = CompletableDeferred<Unit>()
+        val store = FakeEncryptedCookieStore()
+        val jar =
+            PersistentCookieJar(
+                store = store,
+                storeScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+            )
+        CookieManager.setJarForTest(jar)
+        val client =
+            okhttp3.OkHttpClient
+                .Builder()
+                .cookieJar(jar)
+                .addInterceptor { chain ->
+                    val boundary = jar.captureCredentialBoundary()
+                    val request =
+                        chain.request().newBuilder().tag(CookieCredentialBoundary::class.java, boundary).build()
+                    chain.proceed(request)
+                }.addNetworkInterceptor { chain ->
+                    responseStarted.complete(Unit)
+                    kotlinx.coroutines.runBlocking { releaseResponse.await() }
+                    val response = chain.proceed(chain.request())
+                    val boundary = chain.request().tag(CookieCredentialBoundary::class.java)
+                    if (boundary != null) {
+                        jar.saveFromResponse(
+                            boundary,
+                            chain.request().url,
+                            okhttp3.Cookie.parseAll(chain.request().url, response.headers),
+                        )
+                    }
+                    response.newBuilder().removeHeader("Set-Cookie").build()
+                }.build()
+        server.enqueue(
+            MockResponse()
+                .setHeader("Set-Cookie", "hermes_session_at=stale; Path=/; HttpOnly")
+                .setBody("ok"),
+        )
+        server.start()
+        val call =
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                client.newCall(okhttp3.Request.Builder().url(server.url("/")).build()).execute().use { response ->
+                    response.body.string()
+                }
+            }
+        kotlinx.coroutines.runBlocking {
+            responseStarted.await()
+            jar.clearActive()
+            jar.beginAuthentication()
+            releaseResponse.complete(Unit)
+            call.join()
+        }
+
+        assertNull(jar.getSessionCookieValue())
+        server.shutdown()
+    }
 
     @Test
     fun getSessionCookieValue_acceptsServerCookieNameVariants() =

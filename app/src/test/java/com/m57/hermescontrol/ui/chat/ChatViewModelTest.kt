@@ -24,6 +24,7 @@ import com.m57.hermescontrol.data.ws.JsonRpcError
 import com.m57.hermescontrol.data.ws.WsEvent
 import com.m57.hermescontrol.data.ws.WsMethods
 import com.m57.hermescontrol.ui.chat.fakes.FakeChatPersistenceRepository
+import com.m57.hermescontrol.ui.chat.fakes.FakeSlashUsageStore
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -63,6 +64,7 @@ class ChatViewModelTest {
     private val mockConnectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     private lateinit var app: Application
     private lateinit var fakeRepo: FakeChatPersistenceRepository
+    private lateinit var fakeSlashUsageStore: FakeSlashUsageStore
     private lateinit var mockApi: com.m57.hermescontrol.data.remote.HermesApiService
 
     /** Counter used to generate unique WS request IDs. */
@@ -96,6 +98,8 @@ class ChatViewModelTest {
             "Failed to switch model: ${formatArgs.first()}"
         }
         fakeRepo = FakeChatPersistenceRepository()
+        fakeSlashUsageStore = FakeSlashUsageStore()
+        every { AuthManager.getSelectedProfileId() } returns "profile-a"
 
         mockConnectionStatus.value = ConnectionStatus.DISCONNECTED
 
@@ -175,7 +179,7 @@ class ChatViewModelTest {
 
     /** Create a ViewModel with the fake repo injected directly. */
     private fun createViewModel(startCleanup: Boolean = false): ChatViewModel =
-        ChatViewModel(app, startCleanup, fakeRepo, testDispatcher)
+        ChatViewModel(app, startCleanup, fakeRepo, fakeSlashUsageStore, testDispatcher)
 
     /**
      * Create ViewModel, simulate GatewayReady, feed SESSION_CREATE result,
@@ -315,6 +319,89 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun slashUsage_countsOnlySuccessfulDispatchForSelectedProfile() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            every { HermesWsClient.request(WsMethods.COMMAND_DISPATCH, any(), any()) } returns
+                CompletableDeferred<Any?>(mapOf("type" to "exec", "output" to "ok"))
+
+            viewModel.sendMessage("/help")
+            advanceUntilIdle()
+
+            assertEquals(1, fakeSlashUsageStore.countsNow("profile-a")["/help"])
+            assertTrue(fakeSlashUsageStore.countsNow("profile-b").isEmpty())
+        }
+
+    @Test
+    fun slashUsage_followsProfileSwitchWhileViewModelLives() =
+        runTest {
+            val selectedProfile = MutableStateFlow("profile-a")
+            every { AuthManager.getSelectedProfileId() } answers { selectedProfile.value }
+            val viewModel =
+                ChatViewModel(
+                    app,
+                    false,
+                    fakeRepo,
+                    fakeSlashUsageStore,
+                    testDispatcher,
+                    selectedProfileId = { selectedProfile.value },
+                    selectedProfileIds = selectedProfile,
+                )
+            fakeSlashUsageStore.recordUse("profile-a", "/help")
+            fakeSlashUsageStore.recordUse("profile-b", "/resume")
+            advanceUntilIdle()
+            assertEquals(mapOf("/help" to 1), viewModel.uiState.value.slashUsageCounts)
+
+            selectedProfile.value = "profile-b"
+            advanceUntilIdle()
+            assertEquals(mapOf("/resume" to 1), viewModel.uiState.value.slashUsageCounts)
+
+            val recordAcceptedSlash =
+                ChatViewModel::class.java.getDeclaredMethod("recordAcceptedSlash", String::class.java).apply {
+                    isAccessible = true
+                }
+            recordAcceptedSlash.invoke(viewModel, "/help")
+            advanceUntilIdle()
+            assertEquals(1, fakeSlashUsageStore.countsNow("profile-b")["/help"])
+            assertEquals(1, fakeSlashUsageStore.countsNow("profile-b")["/resume"])
+            assertEquals(1, fakeSlashUsageStore.countsNow("profile-a")["/help"])
+        }
+
+    @Test
+    fun slashUsage_doesNotCountRejectedOrBlockedCommands() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            every { HermesWsClient.request(WsMethods.COMMAND_DISPATCH, any(), any()) } returns
+                CompletableDeferred<Any?>().also {
+                    it.completeExceptionally(HermesWsClient.HermesRpcException("invalid"))
+                }
+
+            viewModel.sendMessage("/invalid")
+            viewModel.sendMessage("/clear")
+            advanceUntilIdle()
+
+            assertTrue(fakeSlashUsageStore.countsNow("profile-a").isEmpty())
+        }
+
+    @Test
+    fun resumeAndHistoryRequestPickerWithoutBackendDispatch() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+
+            viewModel.sendMessage("/resume")
+            advanceUntilIdle()
+
+            assertTrue(viewModel.uiState.value.openHistoryRequested)
+            assertEquals(1, fakeSlashUsageStore.countsNow("profile-a")["/resume"])
+            verify(exactly = 0) { HermesWsClient.request(WsMethods.COMMAND_DISPATCH, any(), any()) }
+            verify(exactly = 0) { HermesWsClient.request(WsMethods.SLASH_EXEC, any(), any()) }
+
+            viewModel.consumeOpenHistoryRequest()
+            advanceUntilIdle()
+            assertFalse(viewModel.uiState.value.openHistoryRequested)
+        }
+
+    @Test
     fun testSlashCommand_unknown_showsErrorMessage() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
@@ -394,6 +481,7 @@ class ChatViewModelTest {
                     .isNotEmpty(),
             )
             verify(exactly = 0) { HermesWsClient.send(WsMethods.COMMAND_DISPATCH, any(), any()) }
+            assertTrue(fakeSlashUsageStore.countsNow("profile-a").isEmpty())
         }
 
     @Test
@@ -433,6 +521,7 @@ class ChatViewModelTest {
             assertNotNull("selection must route through config.set key=model", call)
             assertEquals("gpt-4o --provider openai --session", call!!.second)
             assertEquals(sessionId, call.third)
+            assertTrue(fakeSlashUsageStore.countsNow("profile-a").isEmpty())
         }
 
     @Test
@@ -442,7 +531,12 @@ class ChatViewModelTest {
 
             mockEventsFlow.emit(
                 WsEvent.SessionInfo(
-                    data = mapOf("provider" to "openai-codex", "model" to "gpt-5.6-sol"),
+                    data =
+                        mapOf(
+                            "provider" to "openai-codex",
+                            "model" to "gpt-5.6-sol",
+                            "terminal_backend" to "ssh",
+                        ),
                     sessionId = sessionId,
                 ),
             )
@@ -451,6 +545,7 @@ class ChatViewModelTest {
                 "openai-codex/gpt-5.6-sol",
                 viewModel.uiState.value.currentSessionModel,
             )
+            assertEquals("ssh", viewModel.uiState.value.terminalBackend)
 
             mockEventsFlow.emit(
                 WsEvent.SessionInfo(
@@ -2692,7 +2787,14 @@ class ChatViewModelTest {
     private val createMaxAttempts = 3
 
     private fun createViewModelWithCreateRetry(): ChatViewModel =
-        ChatViewModel(app, false, fakeRepo, testDispatcher, createRetryDelayMs)
+        ChatViewModel(
+            app,
+            false,
+            fakeRepo,
+            fakeSlashUsageStore,
+            testDispatcher,
+            createRetryDelayMs,
+        )
 
     @Test
     fun `session create is retried while the gateway never answers`() =

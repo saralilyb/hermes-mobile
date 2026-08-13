@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 
 data class SessionStats(
     val total: Int = 0,
-    val active: Int = 0,
+    val messages: Int = 0,
 )
 
 data class SessionsUiState(
@@ -30,6 +30,8 @@ data class SessionsUiState(
     val isLoadingMore: Boolean = false,
     val sessions: List<SessionInfo> = emptyList(),
     val loadedSessionIds: Set<String> = emptySet(),
+    val serverOffset: Int = 0,
+    val paginationExhausted: Boolean = false,
     val pinnedSessionIds: List<String> = emptyList(),
     val total: Int = 0,
     val errorMessage: String? = null,
@@ -51,7 +53,7 @@ data class SessionsUiState(
     val searchResults: List<SessionSearchResult> = emptyList(),
     val searchError: String? = null,
 ) {
-    val hasMore: Boolean get() = total > loadedSessionIds.size
+    val hasMore: Boolean get() = !paginationExhausted && total > serverOffset
     val isSearchMode: Boolean get() = searchQuery.isNotBlank()
 }
 
@@ -65,17 +67,23 @@ class SessionsViewModel(
     val uiState: StateFlow<SessionsUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
+    private var loadMoreJob: Job? = null
+    private var loadGeneration = 0
     private var statsJob: Job? = null
     private var hydratePinsJob: Job? = null
 
-    /** Page size sent to the server — matches the default the gateway uses. */
+    /** Page size matches the desktop sidebar while staying below the server cap. */
     private companion object {
-        const val PAGE_SIZE = 20
+        const val PAGE_SIZE = 50
         const val SEARCH_DEBOUNCE_MS = 300L
     }
 
     /** Load (or reload) sessions from page 0. Used by pull-to-refresh and initial load. */
     fun loadSessions() {
+        loadGeneration += 1
+        loadMoreJob?.cancel()
+        loadMoreJob = null
+        _uiState.update { it.copy(isLoadingMore = false) }
         loadJob =
             safeLaunchLoad(
                 currentJob = loadJob,
@@ -102,6 +110,8 @@ class SessionsViewModel(
                                     pinnedSessionIds = it.pinnedSessionIds,
                                 ),
                             loadedSessionIds = incoming.mapTo(mutableSetOf()) { it.id },
+                            serverOffset = incoming.size,
+                            paginationExhausted = incoming.isEmpty(),
                             total = data.total,
                             selectedIds = emptySet(),
                         )
@@ -124,42 +134,48 @@ class SessionsViewModel(
     fun loadMore() {
         val state = _uiState.value
         if (state.isLoadingMore || !state.hasMore) return
+        val generation = loadGeneration
 
         _uiState.update { it.copy(isLoadingMore = true) }
-        viewModelScope.launch {
-            val result =
-                safeApiCall {
-                    ApiClient.hermesApi.getSessions(
-                        limit = PAGE_SIZE,
-                        offset = state.loadedSessionIds.size,
-                        order = "recent",
-                    )
-                }
-            when (result) {
-                is NetworkResult.Success -> {
-                    val data = result.data
-                    _uiState.update {
-                        it.copy(
-                            isLoadingMore = false,
-                            sessions = mergeSessionRows(it.sessions, data.sessions),
-                            loadedSessionIds =
-                                it.loadedSessionIds + data.sessions.map { session -> session.id },
-                            total = data.total,
+        loadMoreJob =
+            viewModelScope.launch {
+                val result =
+                    safeApiCall {
+                        ApiClient.hermesApi.getSessions(
+                            limit = PAGE_SIZE,
+                            offset = state.serverOffset,
+                            order = "recent",
                         )
                     }
-                    hydrateMissingPinnedSessions()
-                }
+                when (result) {
+                    is NetworkResult.Success -> {
+                        val data = result.data
+                        _uiState.update {
+                            if (generation != loadGeneration) return@update it
+                            it.copy(
+                                isLoadingMore = false,
+                                sessions = mergeSessionRows(it.sessions, data.sessions),
+                                loadedSessionIds =
+                                    it.loadedSessionIds + data.sessions.map { session -> session.id },
+                                serverOffset = it.serverOffset + data.sessions.size,
+                                paginationExhausted = data.sessions.isEmpty(),
+                                total = data.total,
+                            )
+                        }
+                        if (generation == loadGeneration) hydrateMissingPinnedSessions()
+                    }
 
-                is NetworkResult.Failure -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoadingMore = false,
-                            errorMessage = "Failed to load more: ${result.error.message}",
-                        )
+                    is NetworkResult.Failure -> {
+                        _uiState.update {
+                            if (generation != loadGeneration) return@update it
+                            it.copy(
+                                isLoadingMore = false,
+                                errorMessage = "Failed to load more: ${result.error.message}",
+                            )
+                        }
                     }
                 }
             }
-        }
     }
 
     // ── Pinned sessions ──────────────────────────────────────────────────
@@ -272,7 +288,7 @@ class SessionsViewModel(
                         it.copy(
                             isLoadingStats = false,
                             stats =
-                                SessionStats(total = data.total, active = data.active),
+                                SessionStats(total = data.total, messages = data.messages),
                         )
                     }
                 },

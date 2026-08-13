@@ -5,11 +5,10 @@ package com.m57.hermescontrol.data.config
 import android.content.Context
 import android.util.Log
 import androidx.datastore.core.DataMigration
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
 import com.m57.hermescontrol.data.model.PinnedModel
 import com.m57.hermescontrol.data.remote.OkHttpProvider
 import com.m57.hermescontrol.data.remote.ServerEndpoint
+import com.m57.hermescontrol.data.security.LegacySecurePreferences
 import com.m57.hermescontrol.theme.ThemePreference
 import com.m57.hermescontrol.theme.ThemePreset
 import kotlinx.serialization.decodeFromString
@@ -18,7 +17,6 @@ class ServerStoreMigration(
     private val context: Context,
 ) : DataMigration<ServerStoreState> {
     companion object {
-        private const val PREFS_FILE = "hermes_secure_prefs"
         private const val KEY_MIGRATED = "migrated_to_datastore"
         private val LEGACY_KEYS =
             setOf(
@@ -127,17 +125,5 @@ class ServerStoreMigration(
         Log.d("ServerStoreMigration", "Migration cleanup complete.")
     }
 
-    private fun getPrefs(): android.content.SharedPreferences? =
-        try {
-            val masterKey = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
-            EncryptedSharedPreferences.create(
-                PREFS_FILE,
-                masterKey,
-                context.applicationContext,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-            )
-        } catch (e: Exception) {
-            null
-        }
+    private fun getPrefs(): android.content.SharedPreferences? = LegacySecurePreferences(context).auth()
 }

@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -56,7 +57,11 @@ class ChatSearchDelegate(
             it.copy(searchQuery = query)
         }
 
-        searchJob = scope.launch(dispatcher) { runSearch(query) }
+        searchJob =
+            scope.launch(dispatcher) {
+                delay(SEARCH_DEBOUNCE_MS)
+                runSearch(query)
+            }
     }
 
     private fun runSearch(query: String) {
@@ -91,6 +96,7 @@ class ChatSearchDelegate(
     }
 
     fun clearSearch() {
+        searchJob?.cancel()
         uiState.update {
             it.copy(
                 isSearchActive = false,
@@ -99,5 +105,9 @@ class ChatSearchDelegate(
                 currentSearchMatchIndex = -1,
             )
         }
+    }
+
+    private companion object {
+        const val SEARCH_DEBOUNCE_MS = 150L
     }
 }

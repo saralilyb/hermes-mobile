@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -65,6 +66,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -72,6 +75,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.m57.hermescontrol.HistoryScreen
 import com.m57.hermescontrol.NavigationController
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.ws.ConnectionStatus
@@ -228,6 +232,13 @@ fun ChatScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val isDark = isSystemInDarkTheme()
     val context = LocalContext.current
+
+    LaunchedEffect(state.openHistoryRequested) {
+        if (state.openHistoryRequested) {
+            NavigationController.navigateTo(HistoryScreen)
+            viewModel.consumeOpenHistoryRequest()
+        }
+    }
 
     val micListeningPrompt = stringResource(R.string.chat_mic_listening)
     val sttNotAvailableMsg = stringResource(R.string.stt_not_available)
@@ -397,6 +408,32 @@ fun ChatScreen(
                                 .clip(CircleShape)
                                 .background(LocalHermesStatusColors.current.error),
                     )
+                }
+                val terminalBackend = state.terminalBackend
+                if (!terminalBackend.isNullOrBlank() && !terminalBackend.equals("local", ignoreCase = true)) {
+                    val terminalBackendDescription =
+                        stringResource(
+                            R.string.chat_terminal_backend_content_description,
+                            terminalBackend,
+                        )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ) {
+                        Text(
+                            text = terminalBackend,
+                            modifier =
+                                Modifier
+                                    .padding(horizontal = 6.dp, vertical = 1.dp)
+                                    .semantics {
+                                        contentDescription = terminalBackendDescription
+                                    },
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
         },
@@ -598,6 +635,7 @@ fun ChatScreen(
                 isConnected = state.isConnected,
                 isSessionReady = state.isSessionReady,
                 commandCatalog = state.commandCatalog,
+                slashUsageCounts = state.slashUsageCounts,
                 pendingAttachments = state.pendingAttachments,
                 onCameraTap = {
                     try {

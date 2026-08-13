@@ -18,6 +18,8 @@ data class CreateCronJobRequest(
     val workdir: String? = null,
     val no_agent: Boolean = false,
     val repeat: Int? = null,
+    val monitor_script: String? = null,
+    val monitor_url: String? = null,
 )
 
 @Serializable

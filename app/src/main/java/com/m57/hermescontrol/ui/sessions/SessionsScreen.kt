@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -62,6 +63,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -115,6 +117,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import kotlin.math.abs
+
+private const val AUTO_LOAD_THRESHOLD = 6
 
 /**
  * Maps a session source string to a Material icon for visual identification.
@@ -653,8 +657,8 @@ fun SessionsScreen(
                                     modifier = Modifier.weight(1f).fillMaxHeight(),
                                 )
                                 StatCard(
-                                    label = stringResource(R.string.sessions_stat_active),
-                                    value = if (state.isLoadingStats) "…" else state.stats.active.toString(),
+                                    label = stringResource(R.string.sessions_stat_messages),
+                                    value = if (state.isLoadingStats) "…" else state.stats.messages.toString(),
                                     icon = Icons.Filled.CheckCircle,
                                     accentColor = statusColors.success,
                                     modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -702,6 +706,25 @@ fun SessionsScreen(
                             }
 
                             // ── Session list ────────────────────────────────────
+                            val listState = rememberLazyListState()
+                            val nearListEnd by remember {
+                                derivedStateOf {
+                                    val layout = listState.layoutInfo
+                                    val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+                                    lastVisible >= 0 &&
+                                        lastVisible >= layout.totalItemsCount - AUTO_LOAD_THRESHOLD
+                                }
+                            }
+                            LaunchedEffect(
+                                nearListEnd,
+                                state.isLoadingMore,
+                                state.hasMore,
+                                state.isSearchMode,
+                            ) {
+                                if (nearListEnd && !state.isLoadingMore && state.hasMore && !state.isSearchMode) {
+                                    screenViewModel.loadMore()
+                                }
+                            }
                             val sessionRow: @Composable (SessionTreeItem) -> Unit = { item ->
                                 val session = item.session
                                 SessionCard(
@@ -741,6 +764,7 @@ fun SessionsScreen(
                                 )
                             }
                             LazyColumn(
+                                state = listState,
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = listPadding,
                                 verticalArrangement = listItemSpacing,

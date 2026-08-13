@@ -61,6 +61,12 @@ class SlashCommandDispatcherTest {
     }
 
     @Test
+    fun `resume and history route to client history navigation`() {
+        assertEquals(SlashResult.OpenHistory, dispatcher.dispatch("/resume"))
+        assertEquals(SlashResult.OpenHistory, dispatcher.dispatch("/HISTORY"))
+    }
+
+    @Test
     fun `command with args forwards to RpcDispatch`() {
         // Anything not /stop, /interrupt, /new goes to the backend.
         assertEquals(SlashResult.RpcDispatch, dispatcher.dispatch("/foo bar"))

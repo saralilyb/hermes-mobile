@@ -2,6 +2,7 @@ package com.m57.hermescontrol.data.remote
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -10,7 +11,12 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicReference
+
+internal data class CookieCredentialBoundary(
+    val serverId: String,
+    val generation: Long,
+    val acceptsCookies: Boolean,
+)
 
 /**
  * OkHttp [CookieJar] backed by an in-memory [ConcurrentHashMap] cache plus
@@ -38,21 +44,64 @@ class PersistentCookieJar(
     // serverId -> (host -> cookies)
     private val cache = ConcurrentHashMap<String, MutableMap<String, MutableList<Cookie>>>()
     private val loadedScopes = ConcurrentHashMap.newKeySet<String>()
+    private val clearedScopes = ConcurrentHashMap.newKeySet<String>()
 
-    @Volatile private var currentServerId = AtomicReference(initialServerId)
+    @Volatile
+    private var allScopesCleared = false
+
+    @Volatile
+    private var credentialBoundary =
+        CookieCredentialBoundary(
+            serverId = initialServerId,
+            generation = 0,
+            acceptsCookies = true,
+        )
 
     private val scopeMutex = Mutex()
+    private val credentialLock = Any()
+    private val persistenceLock = Any()
+
+    @Volatile
+    private var persistenceTail: Job? = null
 
     /** Atomically switch the active server scope and ensure its cookies are loaded. */
     suspend fun useStore(serverId: String) {
         scopeMutex.withLock {
-            currentServerId.set(serverId)
+            synchronized(credentialLock) {
+                if (credentialBoundary.serverId != serverId) {
+                    credentialBoundary =
+                        CookieCredentialBoundary(
+                            serverId = serverId,
+                            generation = credentialBoundary.generation + 1,
+                            acceptsCookies = cookieWritesEnabled(serverId),
+                        )
+                }
+            }
             ensureLoaded(serverId)
         }
     }
 
     /** Current active server scope id. */
-    fun currentServer(): String = currentServerId.get()
+    fun currentServer(): String = credentialBoundary.serverId
+
+    internal fun captureCredentialBoundary(): CookieCredentialBoundary = credentialBoundary
+
+    internal fun acceptsCredentialBoundary(boundary: CookieCredentialBoundary): Boolean =
+        boundary.acceptsCookies && boundary == credentialBoundary
+
+    /** Begin a new explicit authentication attempt after a credential clear. */
+    fun beginAuthentication() {
+        synchronized(credentialLock) {
+            val current = credentialBoundary
+            allScopesCleared = false
+            clearedScopes.remove(current.serverId)
+            credentialBoundary =
+                current.copy(
+                    generation = current.generation + 1,
+                    acceptsCookies = true,
+                )
+        }
+    }
 
     /**
      * Return the live [Cookie] with [name] from the active server scope, or
@@ -60,7 +109,7 @@ class PersistentCookieJar(
      * host-scoped to the dashboard host.
      */
     fun getCookie(name: String): Cookie? {
-        val serverId = currentServerId.get()
+        val serverId = credentialBoundary.serverId
         if (!loadedScopes.contains(serverId)) {
             kotlinx.coroutines.runBlocking { ensureLoaded(serverId) }
         }
@@ -86,26 +135,41 @@ class PersistentCookieJar(
     override fun saveFromResponse(
         url: HttpUrl,
         cookies: List<Cookie>,
+    ) = saveFromResponse(credentialBoundary, url, cookies)
+
+    internal fun saveFromResponse(
+        boundary: CookieCredentialBoundary,
+        url: HttpUrl,
+        cookies: List<Cookie>,
     ) {
         if (cookies.isEmpty()) return
-        val serverId = currentServerId.get()
-        val hostKey = url.host
-        val bucket =
-            cache
-                .getOrPut(serverId) { ConcurrentHashMap() }
-                .getOrPut(hostKey) { mutableListOf() }
-        synchronized(bucket) {
-            for (cookie in cookies) {
-                val idx = bucket.indexOfFirst { it.name == cookie.name && it.path == cookie.path }
-                if (idx >= 0) bucket[idx] = cookie else bucket.add(cookie)
+        synchronized(credentialLock) {
+            if (!acceptsCredentialBoundary(boundary)) return
+            val serverId = boundary.serverId
+            val hostKey = url.host
+            val bucket =
+                cache
+                    .getOrPut(serverId) { ConcurrentHashMap() }
+                    .getOrPut(hostKey) { mutableListOf() }
+            synchronized(bucket) {
+                for (cookie in cookies) {
+                    val idx = bucket.indexOfFirst { it.name == cookie.name && it.path == cookie.path }
+                    if (cookie.expiresAt <= System.currentTimeMillis()) {
+                        if (idx >= 0) bucket.removeAt(idx)
+                    } else if (idx >= 0) {
+                        bucket[idx] = cookie
+                    } else {
+                        bucket.add(cookie)
+                    }
+                }
             }
+            // Persist the whole server scope asynchronously.
+            persist(serverId)
         }
-        // Persist the whole server scope asynchronously.
-        persist(serverId)
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        val serverId = currentServerId.get()
+        val serverId = credentialBoundary.serverId
         // Best-effort synchronous load on first touch (tests/first call).
         if (!loadedScopes.contains(serverId)) {
             kotlinx.coroutines.runBlocking { ensureLoaded(serverId) }
@@ -117,7 +181,7 @@ class PersistentCookieJar(
         synchronized(buckets) {
             return buckets.flatMap { bucket ->
                 synchronized(bucket) {
-                    bucket.filter { it.matches(url) && (it.expiresAt > now || isSessionCookie(it)) }
+                    bucket.filter { it.matches(url) && it.expiresAt > now }
                 }
             }
         }
@@ -125,6 +189,12 @@ class PersistentCookieJar(
 
     private suspend fun ensureLoaded(serverId: String) {
         if (loadedScopes.contains(serverId)) return
+        if (allScopesCleared || clearedScopes.contains(serverId)) {
+            cache.remove(serverId)
+            loadedScopes.add(serverId)
+            return
+        }
+        val boundary = credentialBoundary
         val persisted = store.load(serverId)
         val byHost = ConcurrentHashMap<String, MutableList<Cookie>>()
         for (cookie in persisted) {
@@ -133,29 +203,50 @@ class PersistentCookieJar(
             val host = cookie.domain.removePrefix(".").ifBlank { WILDCARD_HOST }
             byHost.getOrPut(host) { mutableListOf() }.add(cookie)
         }
-        cache[serverId] = byHost
-        loadedScopes.add(serverId)
+        synchronized(credentialLock) {
+            if (boundary != credentialBoundary ||
+                allScopesCleared ||
+                clearedScopes.contains(serverId)
+            ) {
+                return
+            }
+            cache[serverId] = byHost
+            loadedScopes.add(serverId)
+        }
     }
 
     private fun persist(serverId: String) {
         val snapshot =
             cache[serverId]?.values?.flatten()?.toList() ?: return
-        storeScope.launch { store.save(serverId, snapshot) }
+        enqueuePersistence { store.save(serverId, snapshot) }
+    }
+
+    /** Preserve save/clear call order even when [storeScope] is multi-threaded. */
+    private fun enqueuePersistence(operation: suspend () -> Unit) {
+        synchronized(persistenceLock) {
+            val previous = persistenceTail
+            persistenceTail =
+                storeScope.launch {
+                    previous?.join()
+                    operation()
+                }
+        }
     }
 
     /**
      * Evict expired cookies for the active (or all) server scopes to prevent
-     * unbounded growth. Session cookies are preserved.
+     * unbounded growth. OkHttp represents cookies without an explicit expiry
+     * with a future sentinel, so no session-cookie exception is needed.
      */
     fun pruneServerCache(allScopes: Boolean = false) {
         val now = System.currentTimeMillis()
         val scopeKeys =
-            if (allScopes) cache.keys.toList() else listOf(currentServerId.get())
+            if (allScopes) cache.keys.toList() else listOf(credentialBoundary.serverId)
         for (scope in scopeKeys) {
             val hosts = cache[scope] ?: continue
             for ((host, bucket) in hosts) {
                 synchronized(bucket) {
-                    bucket.removeAll { it.expiresAt <= now && !isSessionCookie(it) }
+                    bucket.removeAll { it.expiresAt <= now }
                 }
                 if (bucket.isEmpty()) hosts.remove(host)
             }
@@ -165,18 +256,37 @@ class PersistentCookieJar(
 
     /** Clear the active server scope's in-memory + persisted cookies. */
     fun clearActive() {
-        val scope = currentServerId.get()
-        cache.remove(scope)
-        loadedScopes.remove(scope)
-        storeScope.launch { store.clear(scope) }
+        synchronized(credentialLock) {
+            val scope = credentialBoundary.serverId
+            credentialBoundary =
+                credentialBoundary.copy(
+                    generation = credentialBoundary.generation + 1,
+                    acceptsCookies = false,
+                )
+            cache.remove(scope)
+            clearedScopes.add(scope)
+            loadedScopes.add(scope)
+            enqueuePersistence { store.clear(scope) }
+        }
     }
 
     /** Clear every server scope (logout / full reset). */
     fun clearAll() {
-        cache.clear()
-        loadedScopes.clear()
-        storeScope.launch { store.clearAll() }
+        synchronized(credentialLock) {
+            cache.clear()
+            loadedScopes.clear()
+            clearedScopes.clear()
+            allScopesCleared = true
+            credentialBoundary =
+                credentialBoundary.copy(
+                    generation = credentialBoundary.generation + 1,
+                    acceptsCookies = false,
+                )
+            enqueuePersistence { store.clearAll() }
+        }
     }
+
+    private fun cookieWritesEnabled(serverId: String): Boolean = !allScopesCleared && !clearedScopes.contains(serverId)
 
     companion object {
         const val DEFAULT_SERVER_ID = "default"
