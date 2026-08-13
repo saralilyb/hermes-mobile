@@ -99,7 +99,10 @@ object HermesWsClient {
     private val ticketAuthRetryUsed = AtomicBoolean(false)
     private val appInForeground = AtomicBoolean(true)
     private val messageQueue = ConcurrentLinkedQueue<String>()
-    private val pendingPromptSubmits = ConcurrentHashMap.newKeySet<String>()
+
+    /** Prompt request id to session id, guarded by [connectionLock]. */
+    private val pendingPromptSessions = linkedMapOf<String, String>()
+    private val backgroundIdleClosed = AtomicBoolean(false)
 
     @Volatile
     var pendingReply: Boolean = false
@@ -257,9 +260,29 @@ object HermesWsClient {
                 pendingCalls.isEmpty() &&
                 messageQueue.isEmpty()
             ) {
-                disconnect()
+                closeIdleBackgroundSocket()
             }
         }
+    }
+
+    /**
+     * Close an idle background socket without disabling future authenticated
+     * connections. Unlike [disconnect], this is a lifecycle optimization, not
+     * a user-requested stop or credential boundary.
+     */
+    private fun closeIdleBackgroundSocket() {
+        connectionGeneration.incrementAndGet()
+        backgroundIdleClosed.set(true)
+        reconnectJob?.cancel()
+        reconnectJob = null
+        outboundDrainJob?.cancel()
+        outboundDrainJob = null
+        stopHealthTracking()
+        rejectAllPending()
+        webSocket?.close(1000, "Background idle")
+        webSocket = null
+        connected.set(false)
+        _connectionStatus.value = ConnectionStatus.DISCONNECTED
     }
 
     /** Open a WebSocket connection using settings from [AuthManager]. */
@@ -287,6 +310,7 @@ object HermesWsClient {
                     return
                 }
                 intentionalClose.set(false)
+                backgroundIdleClosed.set(false)
                 ticketAuthRetryUsed.set(false)
                 acceptQueuedMessages.set(true)
                 currentBackoff = INITIAL_BACKOFF_MS
@@ -409,6 +433,7 @@ object HermesWsClient {
         synchronized(connectionLock) {
             connectionGeneration.incrementAndGet()
             intentionalClose.set(true)
+            backgroundIdleClosed.set(false)
             ticketAuthRetryUsed.set(false)
             acceptQueuedMessages.set(!clearPendingMessages)
             reconnectJob?.cancel()
@@ -424,7 +449,7 @@ object HermesWsClient {
             connected.set(false)
             if (clearPendingMessages) {
                 messageQueue.clear()
-                pendingPromptSubmits.clear()
+                pendingPromptSessions.clear()
                 pendingReply = false
             }
             _connectionStatus.value = ConnectionStatus.DISCONNECTED
@@ -542,9 +567,10 @@ object HermesWsClient {
         val request = JsonRpcRequest(id = id, method = method, params = params.mapValues { it.value.toJsonElement() })
         val json = OkHttpProvider.json.encodeToString(request)
         var accepted = false
+        var reconnectAfterIdleClose = false
         synchronized(connectionLock) {
             if (method == WsMethods.PROMPT_SUBMIT) {
-                pendingPromptSubmits.add(id)
+                pendingPromptSessions[id] = params["session_id"] as? String ?: ""
                 pendingReply = true
             }
             val ws = webSocket
@@ -578,10 +604,12 @@ object HermesWsClient {
                 Log.w(TAG, "WS credentials cleared — dropping outgoing message")
             }
             if (!accepted && method == WsMethods.PROMPT_SUBMIT) {
-                pendingPromptSubmits.remove(id)
-                if (pendingPromptSubmits.isEmpty()) pendingReply = false
+                pendingPromptSessions.remove(id)
+                pendingReply = pendingPromptSessions.isNotEmpty()
             }
+            reconnectAfterIdleClose = accepted && backgroundIdleClosed.compareAndSet(true, false)
         }
+        if (reconnectAfterIdleClose) connect()
         return id
     }
 
@@ -920,16 +948,21 @@ object HermesWsClient {
                 }
                 when (event) {
                     is WsEvent.RpcResult -> {
-                        pendingPromptSubmits.remove(event.id)
                         resolvePending(event.id, event.result, null)
                     }
                     is WsEvent.RpcError -> {
-                        if (pendingPromptSubmits.remove(event.id) && pendingPromptSubmits.isEmpty()) {
-                            pendingReply = false
-                        }
+                        pendingPromptSessions.remove(event.id)
+                        pendingReply = pendingPromptSessions.isNotEmpty()
                         resolvePending(event.id, null, event.error)
                     }
-                    is WsEvent.MessageComplete -> pendingReply = false
+                    is WsEvent.MessageComplete -> {
+                        val completed =
+                            pendingPromptSessions.entries.firstOrNull {
+                                it.value == event.sessionId
+                            }
+                        if (completed != null) pendingPromptSessions.remove(completed.key)
+                        pendingReply = pendingPromptSessions.isNotEmpty()
+                    }
                     else -> Unit
                 }
                 val emitted =

@@ -30,6 +30,8 @@ data class SessionsUiState(
     val isLoadingMore: Boolean = false,
     val sessions: List<SessionInfo> = emptyList(),
     val loadedSessionIds: Set<String> = emptySet(),
+    val serverOffset: Int = 0,
+    val paginationExhausted: Boolean = false,
     val pinnedSessionIds: List<String> = emptyList(),
     val total: Int = 0,
     val errorMessage: String? = null,
@@ -51,7 +53,7 @@ data class SessionsUiState(
     val searchResults: List<SessionSearchResult> = emptyList(),
     val searchError: String? = null,
 ) {
-    val hasMore: Boolean get() = total > loadedSessionIds.size
+    val hasMore: Boolean get() = !paginationExhausted && total > serverOffset
     val isSearchMode: Boolean get() = searchQuery.isNotBlank()
 }
 
@@ -102,6 +104,8 @@ class SessionsViewModel(
                                     pinnedSessionIds = it.pinnedSessionIds,
                                 ),
                             loadedSessionIds = incoming.mapTo(mutableSetOf()) { it.id },
+                            serverOffset = incoming.size,
+                            paginationExhausted = incoming.isEmpty(),
                             total = data.total,
                             selectedIds = emptySet(),
                         )
@@ -131,7 +135,7 @@ class SessionsViewModel(
                 safeApiCall {
                     ApiClient.hermesApi.getSessions(
                         limit = PAGE_SIZE,
-                        offset = state.loadedSessionIds.size,
+                        offset = state.serverOffset,
                         order = "recent",
                     )
                 }
@@ -144,6 +148,8 @@ class SessionsViewModel(
                             sessions = mergeSessionRows(it.sessions, data.sessions),
                             loadedSessionIds =
                                 it.loadedSessionIds + data.sessions.map { session -> session.id },
+                            serverOffset = it.serverOffset + data.sessions.size,
+                            paginationExhausted = data.sessions.isEmpty(),
                             total = data.total,
                         )
                     }

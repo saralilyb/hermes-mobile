@@ -88,7 +88,7 @@ class HermesWsClientTest {
         // so clear it explicitly or a frame queued by one test leaks into the
         // next one's connection.
         outboundQueue().clear()
-        pendingPromptSubmits().clear()
+        pendingPromptSessions().clear()
         val pendingReplyField = HermesWsClient::class.java.getDeclaredField("pendingReply")
         pendingReplyField.isAccessible = true
         pendingReplyField.setBoolean(HermesWsClient, false)
@@ -100,7 +100,9 @@ class HermesWsClientTest {
 
     @Test
     fun testBackgroundWithoutPendingWorkDisconnects() {
-        mockWebServer.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}))
+        mockWebServer.enqueue(
+            MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}),
+        )
         HermesWsClient.connect()
         runBlocking { withTimeout(5000) { HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED } } }
 
@@ -108,6 +110,39 @@ class HermesWsClientTest {
 
         assertFalse(HermesWsClient.isConnected)
         assertEquals(ConnectionStatus.DISCONNECTED, HermesWsClient.connectionStatus.value)
+    }
+
+    @Test
+    fun testPromptAfterBackgroundIdleCloseReconnectsAndFlushes() {
+        mockWebServer.enqueue(
+            MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}),
+        )
+        HermesWsClient.connect()
+        runBlocking { withTimeout(5000) { HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED } } }
+        HermesWsClient.setAppForeground(false)
+        runBlocking {
+            withTimeout(5000) {
+                HermesWsClient.connectionStatus.first { it == ConnectionStatus.DISCONNECTED }
+            }
+        }
+
+        val received = CountDownLatch(1)
+        mockWebServer.enqueue(
+            MockResponse().withWebSocketUpgrade(
+                object : WebSocketListener() {
+                    override fun onMessage(
+                        webSocket: WebSocket,
+                        text: String,
+                    ) {
+                        if (text.contains(WsMethods.PROMPT_SUBMIT)) received.countDown()
+                    }
+                },
+            ),
+        )
+
+        HermesWsClient.sendMessage("runtime-session", "background prompt")
+
+        assertTrue("Background prompt did not reconnect and flush", received.await(5, TimeUnit.SECONDS))
     }
 
     @Test
@@ -130,6 +165,11 @@ class HermesWsClientTest {
         )
         HermesWsClient.connect()
         assertTrue(connectedLatch.await(5, TimeUnit.SECONDS))
+        runBlocking {
+            withTimeout(5000) {
+                HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED }
+            }
+        }
         ActiveSessionHolder.set("runtime-session", "stored-session")
         HermesWsClient.sendMessage("runtime-session", "hello")
         HermesWsClient.setAppForeground(false)
@@ -160,6 +200,27 @@ class HermesWsClientTest {
         assertEquals(connectionGeneration() - 1, completion.connectionGeneration)
     }
 
+    @Test
+    fun testCompletionKeepsSocketOpenWhileAnotherSessionPromptIsPending() {
+        val socket = mockk<WebSocket>(relaxed = true)
+        every { socket.send(any<String>()) } returns true
+        val listener = installActiveListener(socket)
+        HermesWsClient.sendMessage("session-a", "first")
+        HermesWsClient.sendMessage("session-b", "second")
+        HermesWsClient.setAppForeground(false)
+
+        listener.onMessage(
+            socket,
+            """
+            {"jsonrpc":"2.0","method":"event","params":{"type":"message.complete",
+            "payload":{"text":"done","session_id":"session-a"}}}
+            """.trimIndent(),
+        )
+
+        assertTrue(HermesWsClient.pendingReply)
+        assertTrue(HermesWsClient.isConnected)
+    }
+
     private fun outboundQueue(): java.util.Queue<*> {
         val queueField = HermesWsClient::class.java.getDeclaredField("messageQueue")
         queueField.isAccessible = true
@@ -173,10 +234,10 @@ class HermesWsClientTest {
         return field.get(HermesWsClient) as MutableMap<String, *>
     }
 
-    private fun pendingPromptSubmits(): MutableSet<*> {
-        val field = HermesWsClient::class.java.getDeclaredField("pendingPromptSubmits")
+    private fun pendingPromptSessions(): MutableMap<*, *> {
+        val field = HermesWsClient::class.java.getDeclaredField("pendingPromptSessions")
         field.isAccessible = true
-        return field.get(HermesWsClient) as MutableSet<*>
+        return field.get(HermesWsClient) as MutableMap<*, *>
     }
 
     private fun connectionGeneration(): Int {

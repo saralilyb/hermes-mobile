@@ -20,17 +20,20 @@ class ChatSearchControllerTest {
                 ),
             )
 
-        assertEquals(listOf(0, 0), controller.findMatches(messages, "deploy"))
+        assertEquals(listOf(0), controller.findMatches(messages, "deploy"))
         assertEquals(listOf(3), controller.findMatches(messages, "done"))
     }
 
     @Test
-    fun `search caps degenerate occurrence lists`() {
-        val message = ChatMessage(role = MessageRole.USER, content = "a ".repeat(2_000))
+    fun `search caps degenerate message lists`() {
+        val messages =
+            List(2_000) {
+                ChatMessage(role = MessageRole.USER, content = "a")
+            }
 
         assertEquals(
             ChatSearchController.MAX_SEARCH_MATCHES,
-            controller.findMatches(listOf(message), "a").size,
+            controller.findMatches(messages, "a").size,
         )
     }
 }

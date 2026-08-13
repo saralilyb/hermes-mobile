@@ -137,6 +137,37 @@ class SessionsViewModelTest {
         assertFalse(vm.uiState.value.hasMore)
     }
 
+    @Test
+    fun `load more advances server offset across duplicate-only page`() {
+        val vm = SessionsViewModel(FakeSessionPinStore(emptyList()))
+        coEvery { mockApi.getSessions(50, 0, "recent") } returns
+            Response.success(
+                SessionListResponse(
+                    sessions = listOf(SessionInfo("recent-1"), SessionInfo("recent-2")),
+                    total = 5,
+                ),
+            )
+        coEvery { mockApi.getSessions(50, 2, "recent") } returns
+            Response.success(
+                SessionListResponse(
+                    sessions = listOf(SessionInfo("recent-1"), SessionInfo("recent-2")),
+                    total = 5,
+                ),
+            )
+        coEvery { mockApi.getSessions(50, 4, "recent") } returns
+            Response.success(SessionListResponse(sessions = emptyList(), total = 4))
+
+        vm.loadSessions()
+        awaitState { !vm.uiState.value.isLoading }
+        vm.loadMore()
+        awaitState { !vm.uiState.value.isLoadingMore && vm.uiState.value.serverOffset == 4 }
+        vm.loadMore()
+        awaitState { !vm.uiState.value.isLoadingMore && !vm.uiState.value.hasMore }
+
+        coVerify { mockApi.getSessions(50, 2, "recent") }
+        coVerify { mockApi.getSessions(50, 4, "recent") }
+    }
+
     private fun awaitState(predicate: () -> Boolean) {
         repeat(250) {
             testDispatcher.scheduler.advanceUntilIdle()

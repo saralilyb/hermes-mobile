@@ -15,19 +15,16 @@ class ChatSearchController {
         query: String,
     ): List<Int> {
         if (query.isBlank()) return emptyList()
-        val matches = mutableListOf<Int>()
-        for ((index, message) in messages.withIndex()) {
-            if (message.role != MessageRole.USER && message.role != MessageRole.ASSISTANT) continue
-            var from = 0
-            while (matches.size < MAX_SEARCH_MATCHES) {
-                val hit = message.content.indexOf(query, from, ignoreCase = true)
-                if (hit < 0) break
-                matches.add(index)
-                from = hit + query.length
+        return messages
+            .asSequence()
+            .withIndex()
+            .filter { (_, message) ->
+                (message.role == MessageRole.USER || message.role == MessageRole.ASSISTANT) &&
+                    message.content.contains(query, ignoreCase = true)
             }
-            if (matches.size == MAX_SEARCH_MATCHES) break
-        }
-        return matches
+            .map { it.index }
+            .take(MAX_SEARCH_MATCHES)
+            .toList()
     }
 
     /**
