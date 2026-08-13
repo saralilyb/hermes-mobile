@@ -79,6 +79,7 @@ fun ChatInputBar(
     isConnected: Boolean,
     isSessionReady: Boolean,
     commandCatalog: CommandCatalog,
+    slashUsageCounts: Map<String, Int> = emptyMap(),
     pendingAttachments: List<Attachment> = emptyList(),
     onCameraTap: () -> Unit = {},
     onImageTap: () -> Unit = {},
@@ -143,7 +144,10 @@ fun ChatInputBar(
                     exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(),
                 ) {
                     val filteredCommands =
-                        commandNames.filter { it.startsWith(inputFieldValue.text, ignoreCase = true) }
+                        ChatInputPolicy.sortSlashSuggestions(
+                            commandNames.filter { it.startsWith(inputFieldValue.text, ignoreCase = true) },
+                            slashUsageCounts,
+                        )
                     if (filteredCommands.isNotEmpty()) {
                         androidx.compose.material3.Surface(
                             modifier =

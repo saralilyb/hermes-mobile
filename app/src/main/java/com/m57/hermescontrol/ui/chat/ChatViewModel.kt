@@ -13,6 +13,7 @@ import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.local.AuthSessionState
 import com.m57.hermescontrol.data.local.HermesDatabase
+import com.m57.hermescontrol.data.local.SlashUsageStore
 import com.m57.hermescontrol.data.model.Attachment
 import com.m57.hermescontrol.data.model.AttachmentSource
 import com.m57.hermescontrol.data.model.ModelProvider
@@ -125,6 +126,8 @@ data class ChatUiState(
     val typingEffectDelayMs: Int = 30,
     // Commands catalog
     val commandCatalog: CommandCatalog = CommandCatalog(),
+    val slashUsageCounts: Map<String, Int> = emptyMap(),
+    val openHistoryRequested: Boolean = false,
     // In-session model picker (issue #589) — surfaced when the user types /model
     // or taps the composer model chip. Mirror of the global model screen's
     // picker, but the selection hot-swaps the CURRENT session via config.set.
@@ -139,6 +142,7 @@ data class ChatUiState(
     val modelSwitchConfirmation: ModelSwitchConfirmation? = null,
     // Reasoning effort level for the current session
     val reasoningLevel: String? = null,
+    val terminalBackend: String? = null,
     // Attachment state
     val pendingAttachments: List<Attachment> = emptyList(),
     // Reaction animation — set when a reaction WS event arrives, auto-clears
@@ -220,6 +224,7 @@ class ChatViewModel(
         ChatPersistenceRepository(
             HermesDatabase.get(application).chatMessageDao(),
         ),
+    slashUsageStore: SlashUsageStore = SlashUsageStore(application.applicationContext),
     searchDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
     /**
      * Retry delay for an unacknowledged `session.create`.
@@ -253,6 +258,8 @@ class ChatViewModel(
 
     // ── Session persistence ──────────────────────────────────────────────
     private val repo: ChatPersistenceRepository = repo
+    private val slashUsageStore: SlashUsageStore = slashUsageStore
+    private val slashUsageProfileId = AuthManager.getSelectedProfileId() ?: AuthManager.DEFAULT_PROFILE_ID
     private val slashDispatcher = SlashCommandDispatcher()
     private val searchDelegate =
         ChatSearchDelegate(
@@ -308,6 +315,12 @@ class ChatViewModel(
 
     init {
         refreshSettings()
+
+        viewModelScope.launch {
+            slashUsageStore.counts(slashUsageProfileId).collect { counts ->
+                _uiState.update { it.copy(slashUsageCounts = counts) }
+            }
+        }
 
         connectWebSocket(setLoading = false)
         viewModelScope.launch {
@@ -523,6 +536,7 @@ class ChatViewModel(
                     val model = (info?.get("model") as? String)?.trim().orEmpty()
                     val provider = (info?.get("provider") as? String)?.trim().orEmpty()
                     val reasoningEffort = (info?.get("reasoning_effort") as? String)?.trim()
+                    val terminalBackend = (info?.get("terminal_backend") as? String)?.trim()
                     _uiState.update { state ->
                         state.copy(
                             currentSessionModel =
@@ -536,6 +550,7 @@ class ChatViewModel(
                                     state.currentSessionModel
                                 },
                             reasoningLevel = reasoningEffort?.takeIf { it.isNotEmpty() },
+                            terminalBackend = terminalBackend?.takeIf { it.isNotEmpty() } ?: state.terminalBackend,
                             contextUsage = parseContextUsage(usage, state.contextUsage),
                         )
                     }
@@ -692,6 +707,7 @@ class ChatViewModel(
                         todos = emptyList(),
                         chatTitle = "Hermes",
                         currentSessionModel = null,
+                        terminalBackend = null,
                         modelSwitchConfirmation = null,
                     )
                 }
@@ -714,6 +730,7 @@ class ChatViewModel(
                 val model = (info?.get("model") as? String)?.trim().orEmpty()
                 val provider = (info?.get("provider") as? String)?.trim().orEmpty()
                 val reasoningEffort = (info?.get("reasoning_effort") as? String)?.trim()
+                val terminalBackend = (info?.get("terminal_backend") as? String)?.trim()
                 runtimeSessionId = newId
                 _uiState.update {
                     it.copy(
@@ -733,6 +750,7 @@ class ChatViewModel(
                                 }
                             },
                         reasoningLevel = reasoningEffort?.takeIf { it.isNotEmpty() },
+                        terminalBackend = terminalBackend?.takeIf { it.isNotEmpty() },
                         // Never use the parent snapshot as the previous value:
                         // the branch response carries child-scoped info.
                         contextUsage = parseContextUsage(usage, previous = null),
@@ -786,6 +804,7 @@ class ChatViewModel(
                 val model = infoMap?.get("model") as? String
                 val provider = infoMap?.get("provider") as? String
                 val reasoningEffort = infoMap?.get("reasoning_effort") as? String
+                val terminalBackend = infoMap?.get("terminal_backend") as? String
                 val usage = infoMap?.get("usage") as? Map<*, *>
 
                 // B8 (Jun 20 2026, kanban t_session_resume): do NOT reload
@@ -810,6 +829,7 @@ class ChatViewModel(
                             } else {
                                 reasoningEffort
                             },
+                        terminalBackend = terminalBackend?.trim()?.takeIf { it.isNotEmpty() },
                         // `switchSession()` cleared the previous session's
                         // reading. Hydrate only from this resume response.
                         contextUsage = parseContextUsage(usage, previous = null),
@@ -1193,19 +1213,24 @@ class ChatViewModel(
 
         when (val result = slashDispatcher.dispatch(command)) {
             is SlashResult.Interrupt -> {
-                interruptSession()
+                interruptSession { recordAcceptedSlash(command) }
             }
 
             is SlashResult.NewSession -> {
-                createNewSession()
+                createNewSession(onDispatched = { recordAcceptedSlash(command) })
             }
 
             is SlashResult.SessionBranch -> {
-                branchSession(command)
+                branchSession(command) { recordAcceptedSlash(command) }
             }
 
             is SlashResult.ModelSwitch -> {
-                handleModelSwitch(command)
+                handleModelSwitch(command, recordUsage = true)
+            }
+
+            is SlashResult.OpenHistory -> {
+                _uiState.update { it.copy(openHistoryRequested = true) }
+                recordAcceptedSlash(command)
             }
 
             is SlashResult.RpcDispatch -> {
@@ -1220,7 +1245,10 @@ class ChatViewModel(
      * no client surface, so `/fork` fell through to command.dispatch and 4018'd.
      * The optional arg becomes the new branch's title.
      */
-    private fun branchSession(command: String) {
+    private fun branchSession(
+        command: String,
+        onDispatched: (() -> Unit)? = null,
+    ) {
         val sessionId = runtimeSessionId
         if (sessionId == null) {
             addAssistantMessage("No active session. Use `/new` to create one.")
@@ -1233,7 +1261,10 @@ class ChatViewModel(
             wsClient.send(
                 WsMethods.SESSION_BRANCH,
                 params,
-                onSent = { id -> trackBranchRequest(id, sessionId) },
+                onSent = { id ->
+                    trackBranchRequest(id, sessionId)
+                    onDispatched?.invoke()
+                },
             )
         }
     }
@@ -1261,6 +1292,7 @@ class ChatViewModel(
                             WsMethods.COMMAND_DISPATCH,
                             mapOf("name" to name, "arg" to arg, "session_id" to sessionId),
                         ).await()
+                recordAcceptedSlash(command)
                 handleDispatchResult(result)
             } catch (e: HermesWsClient.HermesRpcException) {
                 val msg = e.message.orEmpty()
@@ -1281,6 +1313,7 @@ class ChatViewModel(
                                         "session_id" to sessionId,
                                     ),
                                 ).await()
+                        recordAcceptedSlash(command)
                         val output = (result as? Map<*, *>)?.get("output") as? String
                         if (!output.isNullOrBlank()) addAssistantMessage(output)
                     } catch (e2: HermesWsClient.HermesRpcException) {
@@ -1313,7 +1346,10 @@ class ChatViewModel(
      *   `<model> --provider <slug> --session`
      * (matching the TUI client's `modelValueForConfigSet`).
      */
-    private fun handleModelSwitch(command: String) {
+    private fun handleModelSwitch(
+        command: String,
+        recordUsage: Boolean,
+    ) {
         // Strip a leading "/model" (and any following whitespace) — config.set
         // key=model expects the bare spec, not a slash command. Match the
         // dispatcher's case-insensitive "/model" detection so a typed "/MODEL"
@@ -1325,7 +1361,7 @@ class ChatViewModel(
             } else {
                 command.trim()
             }
-        applySessionModel(spec)
+        applySessionModel(spec, recordUsage = recordUsage)
     }
 
     /**
@@ -1361,13 +1397,16 @@ class ChatViewModel(
 
     // ── Session management ───────────────────────────────────────────────
 
-    fun interruptSession() {
+    fun interruptSession(onDispatched: (() -> Unit)? = null) {
         val sessionId = runtimeSessionId ?: return
         viewModelScope.launch(Dispatchers.IO) {
             wsClient.send(
                 WsMethods.SESSION_INTERRUPT,
                 mapOf("session_id" to sessionId),
-                onSent = { id -> trackRequest(id, WsMethods.SESSION_INTERRUPT) },
+                onSent = { id ->
+                    trackRequest(id, WsMethods.SESSION_INTERRUPT)
+                    onDispatched?.invoke()
+                },
             )
         }
     }
@@ -1394,7 +1433,10 @@ class ChatViewModel(
      * symptom without producing a session. Retry the request on a deadline
      * instead, and surface an actionable error once the attempts are spent.
      */
-    fun createNewSession(setLoading: Boolean = true) {
+    fun createNewSession(
+        setLoading: Boolean = true,
+        onDispatched: (() -> Unit)? = null,
+    ) {
         val generation = ++sessionCreateCounter
         sessionCreateJob?.cancel()
         sessionCreateJob = null
@@ -1410,13 +1452,14 @@ class ChatViewModel(
                 todos = emptyList(),
                 chatTitle = "Hermes",
                 currentSessionModel = null,
+                terminalBackend = null,
                 contextUsage = null,
                 showContextDetail = false,
             )
         }
         _streamingState.update { StreamingState() }
         streamingController.resetStreaming()
-        sendSessionCreate(generation = generation, attempt = 1)
+        sendSessionCreate(generation = generation, attempt = 1, onDispatched = onDispatched)
     }
 
     /**
@@ -1429,12 +1472,16 @@ class ChatViewModel(
     private fun sendSessionCreate(
         generation: Long,
         attempt: Int,
+        onDispatched: (() -> Unit)? = null,
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             wsClient.send(
                 WsMethods.SESSION_CREATE,
                 params = mapOf("source" to "desktop"),
-                onSent = { id -> trackCreateRequest(id, generation) },
+                onSent = { id ->
+                    trackCreateRequest(id, generation)
+                    onDispatched?.invoke()
+                },
             )
         }
 
@@ -1713,6 +1760,7 @@ class ChatViewModel(
         spec: String,
         displayLabel: String? = null,
         confirmExpensive: Boolean = false,
+        recordUsage: Boolean = false,
     ) {
         val sessionId = runtimeSessionId
         if (sessionId == null) {
@@ -1778,6 +1826,7 @@ class ChatViewModel(
                         modelSwitchConfirmation = null,
                     )
                 }
+                if (recordUsage) recordAcceptedSlash("/model")
             } catch (e: HermesWsClient.HermesRpcException) {
                 _uiState.update {
                     if (runtimeSessionId != sessionId) return@update it
@@ -1792,6 +1841,17 @@ class ChatViewModel(
                 }
             }
         }
+    }
+
+    private fun recordAcceptedSlash(command: String) {
+        val commandName = command.split(" ", limit = 2)[0].lowercase()
+        viewModelScope.launch {
+            slashUsageStore.recordUse(slashUsageProfileId, commandName)
+        }
+    }
+
+    fun consumeOpenHistoryRequest() {
+        _uiState.update { it.copy(openHistoryRequested = false) }
     }
 
     /**
@@ -1849,6 +1909,7 @@ class ChatViewModel(
                 showSessionPicker = false,
                 isAgentTyping = false,
                 currentSessionModel = null,
+                terminalBackend = null,
                 modelSwitchConfirmation = null,
                 // The gauge is per-session occupancy; carrying the previous
                 // session's fill into a new one would misreport it until the

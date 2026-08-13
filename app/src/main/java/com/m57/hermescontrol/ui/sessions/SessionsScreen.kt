@@ -653,8 +653,8 @@ fun SessionsScreen(
                                     modifier = Modifier.weight(1f).fillMaxHeight(),
                                 )
                                 StatCard(
-                                    label = stringResource(R.string.sessions_stat_active),
-                                    value = if (state.isLoadingStats) "…" else state.stats.active.toString(),
+                                    label = stringResource(R.string.sessions_stat_messages),
+                                    value = if (state.isLoadingStats) "…" else state.stats.messages.toString(),
                                     icon = Icons.Filled.CheckCircle,
                                     accentColor = statusColors.success,
                                     modifier = Modifier.weight(1f).fillMaxHeight(),

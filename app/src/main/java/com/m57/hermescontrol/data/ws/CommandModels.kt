@@ -43,7 +43,6 @@ object CommandBlocklist {
         setOf(
             "/clear",
             "/redraw",
-            "/history",
             "/save",
             "/prompt",
             "/snapshot",

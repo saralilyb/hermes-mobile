@@ -26,6 +26,7 @@ class SlashCommandDispatcher {
             "/new" -> SlashResult.NewSession
             "/fork", "/branch" -> SlashResult.SessionBranch
             "/model" -> SlashResult.ModelSwitch
+            "/resume", "/history" -> SlashResult.OpenHistory
             else -> SlashResult.RpcDispatch
         }
     }
@@ -55,4 +56,6 @@ sealed class SlashResult {
      * `/model <model> --provider <slug> --session`.
      */
     data object ModelSwitch : SlashResult()
+
+    data object OpenHistory : SlashResult()
 }

@@ -150,4 +150,15 @@ class ChatInputPolicyTest {
         val value = ChatInputPolicy.commandFieldValue("/help")
         assertTrue("cursor must be past the shared /h prefix", value.selection.start > 2)
     }
+
+    @Test
+    fun sortSlashSuggestions_ranksByUsageAndKeepsCatalogOrderForTies() {
+        assertEquals(
+            listOf("/stop", "/model", "/help", "/new"),
+            ChatInputPolicy.sortSlashSuggestions(
+                listOf("/help", "/model", "/new", "/stop"),
+                mapOf("/stop" to 5, "/model" to 2),
+            ),
+        )
+    }
 }

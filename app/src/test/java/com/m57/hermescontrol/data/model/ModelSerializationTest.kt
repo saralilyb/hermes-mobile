@@ -13,6 +13,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ModelSerializationTest {
+    @Test
+    fun sessionStats_decodesServerMessageCount() {
+        val stats = json.decodeFromString<SessionStatsResponse>("""{"total":12,"messages":345}""")
+
+        assertEquals(12, stats.total)
+        assertEquals(345, stats.messages)
+    }
+
+    @Test
+    fun sessionInfo_decodesTerminalBackend() {
+        val session =
+            json.decodeFromString<SessionInfo>(
+                """{"id":"session-1","terminal_backend":"ssh"}""",
+            )
+
+        assertEquals("ssh", session.terminal_backend)
+    }
+
     private val json = OkHttpProvider.json
 
     @Test
