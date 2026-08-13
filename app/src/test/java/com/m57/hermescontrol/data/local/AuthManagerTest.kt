@@ -4,9 +4,9 @@ package com.m57.hermescontrol.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
 import com.m57.hermescontrol.data.config.ConnectionProfile
+import com.m57.hermescontrol.data.remote.CookieManager
+import com.m57.hermescontrol.data.security.SecretStore
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
@@ -15,6 +15,7 @@ import io.mockk.verify
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -32,6 +33,7 @@ class AuthManagerTest {
     private lateinit var mockEditor: SharedPreferences.Editor
     private lateinit var mockContext: Context
     private lateinit var testContext: Context
+    private lateinit var testSecretStore: SecretStore
 
     @Before
     fun setUp() {
@@ -52,6 +54,13 @@ class AuthManagerTest {
         every { android.util.Log.e(any(), any(), any()) } returns 0
         every { android.util.Log.w(any(), any<String>()) } returns 0
         every { android.util.Log.i(any(), any()) } returns 0
+        mockkStatic(android.util.Base64::class)
+        every { android.util.Base64.encodeToString(any(), android.util.Base64.NO_WRAP) } answers {
+            java.util.Base64.getEncoder().withoutPadding().encodeToString(firstArg())
+        }
+        every { android.util.Base64.decode(any<String>(), android.util.Base64.NO_WRAP) } answers {
+            java.util.Base64.getDecoder().decode(firstArg<String>())
+        }
 
         // Mock filesDir to point to temporary directory for DataStore
         val tempDir = java.io.File(System.getProperty("java.io.tmpdir") ?: "/tmp")
@@ -62,40 +71,33 @@ class AuthManagerTest {
             tempFile.delete()
         }
 
-        // Mock EncryptedSharedPreferences static methods
-        mockkStatic(EncryptedSharedPreferences::class)
-        every {
-            EncryptedSharedPreferences.create(
-                any<String>(),
-                any<String>(),
-                any<Context>(),
-                any<EncryptedSharedPreferences.PrefKeyEncryptionScheme>(),
-                any<EncryptedSharedPreferences.PrefValueEncryptionScheme>(),
-            )
-        } returns mockPrefs
-
-        mockkStatic(MasterKeys::class)
-        every { MasterKeys.getOrCreate(any()) } returns "mockMasterKey"
-
-        // Reset prefs singleton instance using reflection
-        val field = AuthManager::class.java.getDeclaredField("prefsDeferred")
-        field.isAccessible = true
-        field.set(AuthManager, null)
-
-        val storeField = AuthManager::class.java.getDeclaredField("_serverStore")
-        storeField.isAccessible = true
-        storeField.set(AuthManager, null)
-
         AuthManager.resetAuthStateForTest()
+        testSecretStore =
+            object : SecretStore {
+                override fun getString(logicalKey: String): String? =
+                    if (logicalKey.startsWith("auth/")) {
+                        mockPrefs.getString(logicalKey.removePrefix("auth/"), null)
+                    } else {
+                        null
+                    }
+
+                override fun putString(
+                    logicalKey: String,
+                    value: String?,
+                ) {
+                    if (!logicalKey.startsWith("auth/")) return
+                    val key = logicalKey.removePrefix("auth/")
+                    mockPrefs.edit().apply { if (value == null) remove(key) else putString(key, value) }.apply()
+                }
+
+                override fun deletePrefix(prefix: String) = Unit
+            }
+        AuthManager.secureStorageFactory = { testSecretStore }
+        CookieManager.resetForTest()
+        CookieManager.secureStorageFactory = { testSecretStore }
 
         // Initialise AuthManager
         AuthManager.init(testContext)
-
-        // Wait for async initialization to complete to prevent coroutine leaks
-        kotlinx.coroutines.runBlocking {
-            val deferred = field.get(AuthManager) as? kotlinx.coroutines.Deferred<*>
-            deferred?.await()
-        }
 
         // Wait for ServerStore initialization to complete
         AuthManager.serverStore.getLatestState()
@@ -103,6 +105,7 @@ class AuthManagerTest {
 
     @After
     fun tearDown() {
+        CookieManager.resetForTest()
         val tempDir = java.io.File(System.getProperty("java.io.tmpdir") ?: "/tmp")
         val tempFile = java.io.File(tempDir, "server_store.json")
         if (tempFile.exists()) {
@@ -127,8 +130,56 @@ class AuthManagerTest {
         AuthManager.setSelectedProfileId(AuthManager.DEFAULT_PROFILE_ID)
         AuthManager.setToken(null)
         assertNull(AuthManager.getToken())
-        verify { mockEditor.putString("token_${AuthManager.DEFAULT_PROFILE_ID}", null) }
+        verify { mockEditor.remove("token_${AuthManager.DEFAULT_PROFILE_ID}") }
         verify { mockEditor.apply() }
+    }
+
+    @Test
+    fun databasePasswordIsStableUnderConcurrentCreation() {
+        val values = java.util.concurrent.ConcurrentHashMap<String, String?>()
+        AuthManager.resetAuthStateForTest()
+        AuthManager.secureStorageFactory = {
+            object : SecretStore {
+                override fun getString(logicalKey: String): String? = values[logicalKey]
+
+                override fun putString(
+                    logicalKey: String,
+                    value: String?,
+                ) {
+                    if (value == null) values.remove(logicalKey) else values[logicalKey] = value
+                }
+
+                override fun deletePrefix(prefix: String) {
+                    values.keys.removeIf { it.startsWith(prefix) }
+                }
+            }
+        }
+        CookieManager.resetForTest()
+        CookieManager.secureStorageFactory = AuthManager.secureStorageFactory
+        AuthManager.init(testContext)
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(8)
+
+        val passwords =
+            (0 until 32).map { executor.submit<ByteArray> { AuthManager.getDatabasePassword() } }
+                .map { it.get() }
+        executor.shutdown()
+
+        assertTrue(passwords.all { it.size == 32 && it.contentEquals(passwords.first()) })
+    }
+
+    @Test(expected = com.m57.hermescontrol.data.security.SecureBlobException::class)
+    fun databasePasswordRejectsMalformedBase64() {
+        every { mockPrefs.getString("db_password", null) } returns "%%%"
+
+        AuthManager.getDatabasePassword()
+    }
+
+    @Test(expected = com.m57.hermescontrol.data.security.SecureBlobException::class)
+    fun databasePasswordRejectsWrongDecodedLength() {
+        every { mockPrefs.getString("db_password", null) } returns
+            java.util.Base64.getEncoder().withoutPadding().encodeToString(ByteArray(16))
+
+        AuthManager.getDatabasePassword()
     }
 
     @Test
@@ -481,7 +532,7 @@ class AuthManagerTest {
 
         AuthManager.setToken(null)
 
-        verify { mockEditor.putString("token_prof-a", null) }
+        verify { mockEditor.remove("token_prof-a") }
         verify { mockEditor.apply() }
     }
 
@@ -525,20 +576,13 @@ class AuthManagerTest {
     fun testMigrateLegacyToken_foldsIntoDefaultProfile() {
         // Simulate a legacy install: no profiles, a global auth_token, and a selected id of null.
         every { mockPrefs.getString("auth_token", null) } returns "legacy-standalone-token"
-        every { mockPrefs.getBoolean("legacy_default_migrated", false) } returns false
 
         // Re-initialize so init() runs the one-time migration
         AuthManager.resetAuthStateForTest()
         AuthManager.init(testContext)
-        kotlinx.coroutines.runBlocking {
-            val field = AuthManager::class.java.getDeclaredField("prefsDeferred")
-            field.isAccessible = true
-            (field.get(AuthManager) as? kotlinx.coroutines.Deferred<*>)?.await()
-        }
 
         // token should now be persisted under the default profile key, and the legacy key removed
         verify { mockEditor.putString("token_${AuthManager.DEFAULT_PROFILE_ID}", "legacy-standalone-token") }
-        verify { mockEditor.remove("auth_token") }
-        verify { mockEditor.putBoolean("legacy_default_migrated", true) }
+        verify { mockEditor.putString("legacy_default_migrated", "true") }
     }
 }

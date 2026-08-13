@@ -2,12 +2,11 @@ package com.m57.hermescontrol.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
 import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.config.ServerStoreState
 import com.m57.hermescontrol.data.config.resolveBaseUrl
 import com.m57.hermescontrol.data.config.resolvedBaseUrl
+import com.m57.hermescontrol.data.security.SecretStore
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
@@ -42,6 +41,7 @@ class Issue647ProfileUrlTest {
     private lateinit var mockEditor: SharedPreferences.Editor
     private lateinit var mockContext: Context
     private lateinit var testContext: Context
+    private lateinit var testSecretStore: SecretStore
 
     @Before
     fun setUp() {
@@ -68,35 +68,28 @@ class Issue647ProfileUrlTest {
         val tempFile = java.io.File(tempDir, "server_store.json")
         if (tempFile.exists()) tempFile.delete()
 
-        mockkStatic(EncryptedSharedPreferences::class)
-        every {
-            EncryptedSharedPreferences.create(
-                any<String>(),
-                any<String>(),
-                any<Context>(),
-                any<EncryptedSharedPreferences.PrefKeyEncryptionScheme>(),
-                any<EncryptedSharedPreferences.PrefValueEncryptionScheme>(),
-            )
-        } returns mockPrefs
-
-        mockkStatic(MasterKeys::class)
-        every { MasterKeys.getOrCreate(any()) } returns "mockMasterKey"
-
-        val field = AuthManager::class.java.getDeclaredField("prefsDeferred")
-        field.isAccessible = true
-        field.set(AuthManager, null)
-
-        val storeField = AuthManager::class.java.getDeclaredField("_serverStore")
-        storeField.isAccessible = true
-        storeField.set(AuthManager, null)
-
         AuthManager.resetAuthStateForTest()
-        AuthManager.init(testContext)
+        testSecretStore =
+            object : SecretStore {
+                private val values = mutableMapOf<String, String>()
 
-        kotlinx.coroutines.runBlocking {
-            val deferred = field.get(AuthManager) as? kotlinx.coroutines.Deferred<*>
-            deferred?.await()
-        }
+                override fun getString(logicalKey: String): String? = values[logicalKey]
+
+                override fun putString(
+                    logicalKey: String,
+                    value: String?,
+                ) {
+                    if (value == null) values.remove(logicalKey) else values[logicalKey] = value
+                }
+
+                override fun deletePrefix(prefix: String) {
+                    values.keys.removeAll { it.startsWith(prefix) }
+                }
+            }
+        AuthManager.secureStorageFactory = { testSecretStore }
+        com.m57.hermescontrol.data.remote.CookieManager.resetForTest()
+        com.m57.hermescontrol.data.remote.CookieManager.secureStorageFactory = { testSecretStore }
+        AuthManager.init(testContext)
         AuthManager.serverStore.getLatestState()
     }
 

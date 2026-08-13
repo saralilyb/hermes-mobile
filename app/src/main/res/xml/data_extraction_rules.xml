@@ -5,15 +5,17 @@
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="sharedpref" path="hermes_secure_prefs.xml" />
+        <exclude domain="sharedpref" path="hermes_secure_cookies.xml" />
+        <exclude domain="sharedpref" path="secure_storage_migration.xml" />
+        <exclude domain="database" path="." />
+        <exclude domain="file" path="secure_blobs_v1/" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="sharedpref" path="hermes_secure_prefs.xml" />
+        <exclude domain="sharedpref" path="hermes_secure_cookies.xml" />
+        <exclude domain="sharedpref" path="secure_storage_migration.xml" />
+        <exclude domain="database" path="." />
+        <exclude domain="file" path="secure_blobs_v1/" />
     </device-transfer>
-    -->
 </data-extraction-rules>

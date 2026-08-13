@@ -3,9 +3,9 @@
 package com.m57.hermescontrol.data.remote
 
 import android.content.Context
-import android.content.SharedPreferences
+import com.m57.hermescontrol.data.security.SecretStore
+import com.m57.hermescontrol.data.security.SecureStorage
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -32,6 +32,9 @@ object CookieManager {
 
     @Volatile private var jar: PersistentCookieJar? = null
 
+    @Volatile
+    internal var secureStorageFactory: (Context) -> SecretStore = ::SecureStorage
+
     val cookieJar: PersistentCookieJar
         get() = jar ?: error("CookieManager.initialize(context) must be called before use")
 
@@ -39,17 +42,17 @@ object CookieManager {
 
     fun initialize(
         context: Context,
-        legacyPrefsDeferred: Deferred<SharedPreferences>? = null,
         initialServerId: String = PersistentCookieJar.DEFAULT_SERVER_ID,
     ) {
         if (jar != null) return
         synchronized(this) {
             if (jar != null) return
-            val store = EncryptedCookieStore(context.applicationContext, legacyPrefsDeferred)
-            jar = PersistentCookieJar(store, scope, initialServerId)
+            val store = EncryptedCookieStore(context.applicationContext, secureStorageFactory)
+            val createdJar = PersistentCookieJar(store, scope, initialServerId)
+            jar = createdJar
             // Eagerly load the initial scope off the caller thread so the
             // first REST call is instant without blocking app startup.
-            scope.launch { jar!!.useStore(initialServerId) }
+            scope.launch { createdJar.useStore(initialServerId) }
         }
     }
 
@@ -61,6 +64,11 @@ object CookieManager {
 
     /** Read the current dashboard access-cookie value (or null). */
     fun getSessionCookie(): String? = jar?.getSessionCookieValue()
+
+    /** Open a new cookie credential generation for an explicit login. */
+    fun beginAuthentication() {
+        jar?.beginAuthentication()
+    }
 
     /**
      * Set the session cookie for the active scope and canonical endpoint.
@@ -75,6 +83,7 @@ object CookieManager {
             j.clearActive()
             return
         }
+        j.beginAuthentication()
         val builder =
             Cookie
                 .Builder()
@@ -116,5 +125,6 @@ object CookieManager {
     @Suppress("unused")
     internal fun resetForTest() {
         jar = null
+        secureStorageFactory = ::SecureStorage
     }
 }

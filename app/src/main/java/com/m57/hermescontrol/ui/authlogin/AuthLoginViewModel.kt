@@ -447,6 +447,7 @@ class AuthLoginViewModel(
                     .header("Content-Type", "application/json")
                     .post(jsonBody.toRequestBody(jsonMediaType))
                     .build()
+            com.m57.hermescontrol.data.remote.CookieManager.beginAuthentication()
             loginClient.newCall(loginReq).execute().use { loginResp ->
                 if (!loginResp.isSuccessful) {
                     val msg =

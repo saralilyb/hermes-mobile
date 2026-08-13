@@ -35,11 +35,25 @@ log. Logged WebSocket URLs have their entire query removed.
 
 ## Credential storage and backup
 
-Profile tokens, session cookies, and the encrypted database password are stored
-using Android Keystore-backed encrypted preferences. The local Room database is
-encrypted with SQLCipher. Server metadata, including the base URL, is not a
-secret, but application backup is disabled so encrypted credentials and local
-state are not copied into Android cloud or device-transfer backups.
+Profile tokens, endpoint-scoped session cookies, and the SQLCipher database
+password are stored as independent, app-owned atomic blobs. Each blob uses an
+Android Keystore AES-256 key with AES-GCM, a new 96-bit nonce, a 128-bit tag,
+and authenticated version and logical-key metadata. Authentication, format, or
+I/O errors fail closed. Deletes are authenticated tombstones, preventing a
+deleted value from being restored by a legacy fallback.
+
+Upgrades use a resumable copy-and-byte-verify migration followed by a
+one-release dual-write compatibility period. During that rollback window, the
+legacy store is committed first and remains authoritative; reads repair any
+interrupted second write into the new blob store. Outside that reconciliation
+path, legacy fallback is permitted only when no new blob or tombstone exists,
+never after corruption. The deprecated `EncryptedSharedPreferences` and
+`MasterKeys` APIs are isolated to the compatibility reader. Legacy ciphertext
+and keysets are not removed by migration, and fresh installs never create them.
+
+The local Room database remains encrypted with SQLCipher. Application backup is
+disabled, and the blob directory, migration metadata, legacy encrypted stores,
+and databases also have explicit cloud-backup and device-transfer exclusions.
 
 The app does not persist the user's dashboard password after login. A successful
 basic-authentication login stores the resulting session cookie and short-lived
