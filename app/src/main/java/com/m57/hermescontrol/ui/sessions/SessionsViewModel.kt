@@ -68,9 +68,9 @@ class SessionsViewModel(
     private var statsJob: Job? = null
     private var hydratePinsJob: Job? = null
 
-    /** Page size sent to the server — matches the default the gateway uses. */
+    /** Page size matches the desktop sidebar while staying below the server cap. */
     private companion object {
-        const val PAGE_SIZE = 20
+        const val PAGE_SIZE = 50
         const val SEARCH_DEBOUNCE_MS = 300L
     }
 
