@@ -411,6 +411,11 @@ fun ChatScreen(
                 }
                 val terminalBackend = state.terminalBackend
                 if (!terminalBackend.isNullOrBlank() && !terminalBackend.equals("local", ignoreCase = true)) {
+                    val terminalBackendDescription =
+                        stringResource(
+                            R.string.chat_terminal_backend_content_description,
+                            terminalBackend,
+                        )
                     Spacer(modifier = Modifier.width(8.dp))
                     Surface(
                         shape = RoundedCornerShape(6.dp),
@@ -423,11 +428,7 @@ fun ChatScreen(
                                 Modifier
                                     .padding(horizontal = 6.dp, vertical = 1.dp)
                                     .semantics {
-                                        contentDescription =
-                                            context.getString(
-                                                R.string.chat_terminal_backend_content_description,
-                                                terminalBackend,
-                                            )
+                                        contentDescription = terminalBackendDescription
                                     },
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
