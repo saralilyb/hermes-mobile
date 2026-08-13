@@ -23,7 +23,8 @@ internal data class CookieCredentialBoundary(
  * encrypted [CookieStore] persistence.
  *
  * Design notes (issue #470):
- * - **Memory cache** keyed by host for O(1) reads on every request.
+ * - **Memory cache** keyed by cookie domain; request reads apply OkHttp's
+ *   complete host-only/domain/path/secure matching rules.
  * - **Async persistence** — writes are dispatched to [storeScope] and never
  *   block the calling OkHttp thread.
  * - **Atomic server scoping** via [useStore] — callers (login, profile switch)
@@ -41,7 +42,7 @@ class PersistentCookieJar(
     private val storeScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     initialServerId: String = DEFAULT_SERVER_ID,
 ) : CookieJar {
-    // serverId -> (host -> cookies)
+    // serverId -> (cookie domain -> cookies)
     private val cache = ConcurrentHashMap<String, MutableMap<String, MutableList<Cookie>>>()
     private val loadedScopes = ConcurrentHashMap.newKeySet<String>()
     private val clearedScopes = ConcurrentHashMap.newKeySet<String>()
@@ -146,14 +147,17 @@ class PersistentCookieJar(
         synchronized(credentialLock) {
             if (!acceptsCredentialBoundary(boundary)) return
             val serverId = boundary.serverId
-            val hostKey = url.host
-            val bucket =
-                cache
-                    .getOrPut(serverId) { ConcurrentHashMap() }
-                    .getOrPut(hostKey) { mutableListOf() }
-            synchronized(bucket) {
-                for (cookie in cookies) {
-                    val idx = bucket.indexOfFirst { it.name == cookie.name && it.path == cookie.path }
+            val serverCookies = cache.getOrPut(serverId) { ConcurrentHashMap() }
+            for (cookie in cookies) {
+                val domainKey = cookie.domain.removePrefix(".")
+                val bucket = serverCookies.getOrPut(domainKey) { mutableListOf() }
+                synchronized(bucket) {
+                    val idx =
+                        bucket.indexOfFirst {
+                            it.name == cookie.name &&
+                                it.domain == cookie.domain &&
+                                it.path == cookie.path
+                        }
                     if (cookie.expiresAt <= System.currentTimeMillis()) {
                         if (idx >= 0) bucket.removeAt(idx)
                     } else if (idx >= 0) {
@@ -174,14 +178,18 @@ class PersistentCookieJar(
         if (!loadedScopes.contains(serverId)) {
             kotlinx.coroutines.runBlocking { ensureLoaded(serverId) }
         }
-        val hostKey = url.host
         val hosts = cache[serverId] ?: return emptyList()
         val now = System.currentTimeMillis()
-        val buckets = listOfNotNull(hosts[hostKey], hosts[WILDCARD_HOST])
+        val buckets = hosts.values.toList()
         synchronized(buckets) {
             return buckets.flatMap { bucket ->
                 synchronized(bucket) {
-                    bucket.filter { it.matches(url) && it.expiresAt > now }
+                    bucket.filter {
+                        val isLegacyWildcard =
+                            serverId == DEFAULT_SERVER_ID &&
+                                it.domain == LEGACY_WILDCARD_DOMAIN
+                        it.expiresAt > now && (it.matches(url) || isLegacyWildcard)
+                    }
                 }
             }
         }
@@ -198,9 +206,7 @@ class PersistentCookieJar(
         val persisted = store.load(serverId)
         val byHost = ConcurrentHashMap<String, MutableList<Cookie>>()
         for (cookie in persisted) {
-            // Blank domain => host-only (e.g. legacy migrated session cookie).
-            // Bucket it under a wildcard "*" so it is returned for every host.
-            val host = cookie.domain.removePrefix(".").ifBlank { WILDCARD_HOST }
+            val host = cookie.domain.removePrefix(".")
             byHost.getOrPut(host) { mutableListOf() }.add(cookie)
         }
         synchronized(credentialLock) {
@@ -290,8 +296,5 @@ class PersistentCookieJar(
 
     companion object {
         const val DEFAULT_SERVER_ID = "default"
-
-        /** Bucket key for host-only (blank-domain) cookies, returned for any host. */
-        const val WILDCARD_HOST = "*"
     }
 }
