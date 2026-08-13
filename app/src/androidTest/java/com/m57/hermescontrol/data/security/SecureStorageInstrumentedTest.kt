@@ -225,6 +225,18 @@ class SecureStorageInstrumentedTest {
         SecureStorage(context).getString(SecureStorage.authKey("db_password"))
     }
 
+    @Test(expected = SecureBlobException::class)
+    fun malformedLegacyDatabasePasswordWithTombstoneStillFailsClosed() {
+        val key = SecureStorage.authKey("db_password")
+        legacyAuth()
+            .edit()
+            .putStringSet("db_password", setOf("invalid-legacy-type"))
+            .commit()
+        SecureBlobStore(context).delete(key)
+
+        SecureStorage(context).getString(key)
+    }
+
     @Test
     fun authenticatedDatabasePasswordWinsWhenLegacyTypeIsMalformed() {
         val key = SecureStorage.authKey("db_password")

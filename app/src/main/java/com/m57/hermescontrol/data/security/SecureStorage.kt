@@ -160,8 +160,11 @@ internal class SecureStorage(
     private fun recoverFromMalformedLegacy(
         logicalKey: String,
         current: SecureBlobStore.ReadResult,
-    ): LegacyRead =
-        when (current) {
+    ): LegacyRead {
+        if (logicalKey == authKey(DATABASE_PASSWORD) && current !is SecureBlobStore.ReadResult.Value) {
+            throw SecureBlobException()
+        }
+        return when (current) {
             is SecureBlobStore.ReadResult.Value -> {
                 val value = current.bytes.toString(Charsets.UTF_8)
                 dualWrite(logicalKey, value)
@@ -172,13 +175,13 @@ internal class SecureStorage(
                 LegacyRead(value = null)
             }
             SecureBlobStore.ReadResult.Missing -> {
-                if (logicalKey == authKey(DATABASE_PASSWORD)) throw SecureBlobException()
                 dualWrite(logicalKey, null)
                 recordKey(logicalKey)
                 blobs.delete(logicalKey)
                 LegacyRead(value = null)
             }
         }
+    }
 
     private fun encodeLegacyValue(
         logicalKey: String,
