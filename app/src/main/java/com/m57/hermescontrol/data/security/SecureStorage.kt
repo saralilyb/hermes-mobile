@@ -127,8 +127,10 @@ internal class SecureStorage(
         val (prefs, key) = legacyTarget(logicalKey) ?: return null
         val present = prefs.contains(key)
         val value = encodeLegacyValue(prefs.all[key])
-        if (present && value == null) throw SecureBlobException()
         val current = blobs.read(logicalKey)
+        if (present && value == null) {
+            return recoverFromMalformedLegacy(logicalKey, current)
+        }
         if (!present) {
             if (current is SecureBlobStore.ReadResult.Value) blobs.delete(logicalKey)
             return LegacyRead(value = null)
@@ -140,6 +142,28 @@ internal class SecureStorage(
         }
         return LegacyRead(value)
     }
+
+    /**
+     * A malformed rollback value is not authenticated legacy plaintext. Keep a
+     * valid new blob authoritative; otherwise tombstone ordinary credentials
+     * so callers fail closed without entering a startup crash loop. Never mint
+     * a replacement SQLCipher password over malformed legacy state.
+     */
+    private fun recoverFromMalformedLegacy(
+        logicalKey: String,
+        current: SecureBlobStore.ReadResult,
+    ): LegacyRead =
+        when (current) {
+            is SecureBlobStore.ReadResult.Value ->
+                LegacyRead(current.bytes.toString(Charsets.UTF_8))
+            SecureBlobStore.ReadResult.Deleted -> LegacyRead(value = null)
+            SecureBlobStore.ReadResult.Missing -> {
+                if (logicalKey == authKey(DATABASE_PASSWORD)) throw SecureBlobException()
+                recordKey(logicalKey)
+                blobs.delete(logicalKey)
+                LegacyRead(value = null)
+            }
+        }
 
     private fun encodeLegacyValue(value: Any?): String? =
         when (value) {

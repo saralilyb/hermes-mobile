@@ -168,6 +168,55 @@ class SecureStorageInstrumentedTest {
     }
 
     @Test
+    fun malformedLegacyTokenDoesNotCrashStartup() {
+        legacyAuth()
+            .edit()
+            .putStringSet("token_default", setOf("invalid-legacy-type"))
+            .commit()
+
+        val storage = SecureStorage(context)
+
+        assertNull(storage.getString(SecureStorage.authKey("token_default")))
+    }
+
+    @Test
+    fun authenticatedBlobWinsWhenLegacyTokenTypeIsMalformed() {
+        val key = SecureStorage.authKey("token_default")
+        SecureStorage(context).putString(key, "authenticated-token")
+        legacyAuth()
+            .edit()
+            .putStringSet("token_default", setOf("invalid-legacy-type"))
+            .commit()
+
+        val reopened = SecureStorage(context)
+
+        assertEquals("authenticated-token", reopened.getString(key))
+    }
+
+    @Test(expected = SecureBlobException::class)
+    fun malformedLegacyDatabasePasswordStillFailsClosed() {
+        legacyAuth()
+            .edit()
+            .putStringSet("db_password", setOf("invalid-legacy-type"))
+            .commit()
+
+        SecureStorage(context).getString(SecureStorage.authKey("db_password"))
+    }
+
+    @Test
+    fun authenticatedDatabasePasswordWinsWhenLegacyTypeIsMalformed() {
+        val key = SecureStorage.authKey("db_password")
+        val encoded = android.util.Base64.encodeToString(ByteArray(32) { it.toByte() }, android.util.Base64.NO_WRAP)
+        SecureStorage(context).putString(key, encoded)
+        legacyAuth()
+            .edit()
+            .putStringSet("db_password", setOf("invalid-legacy-type"))
+            .commit()
+
+        assertEquals(encoded, SecureStorage(context).getString(key))
+    }
+
+    @Test
     fun migrationRecoversLegacyPreferencesBackupFile() {
         val prefs = legacyAuth()
         prefs.edit().putString("token_default", "backup-token").commit()
