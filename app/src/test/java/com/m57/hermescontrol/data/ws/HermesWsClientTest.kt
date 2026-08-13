@@ -110,6 +110,7 @@ class HermesWsClientTest {
 
         assertFalse(HermesWsClient.isConnected)
         assertEquals(ConnectionStatus.DISCONNECTED, HermesWsClient.connectionStatus.value)
+        assertFalse(HermesWsClient.shouldReconnectAfterNetworkRestore(autoReconnect = true))
     }
 
     @Test

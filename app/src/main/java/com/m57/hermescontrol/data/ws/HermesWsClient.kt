@@ -210,7 +210,7 @@ object HermesWsClient {
                 val autoReconnect =
                     runCatching { AuthManager.isAutoReconnect() }
                         .getOrDefault(false)
-                if (connected && !isConnected && !intentionalClose.get() && autoReconnect) {
+                if (connected && shouldReconnectAfterNetworkRestore(autoReconnect)) {
                     Log.d(TAG, "Network restored — triggering immediate reconnect")
                     // Serialize against scheduleReconnect(): both cancel and
                     // replace reconnectJob, so without the lock the collector
@@ -284,6 +284,13 @@ object HermesWsClient {
         connected.set(false)
         _connectionStatus.value = ConnectionStatus.DISCONNECTED
     }
+
+    @VisibleForTesting
+    internal fun shouldReconnectAfterNetworkRestore(autoReconnect: Boolean): Boolean =
+        !isConnected &&
+            !intentionalClose.get() &&
+            !backgroundIdleClosed.get() &&
+            autoReconnect
 
     /** Open a WebSocket connection using settings from [AuthManager]. */
     fun connect() {
