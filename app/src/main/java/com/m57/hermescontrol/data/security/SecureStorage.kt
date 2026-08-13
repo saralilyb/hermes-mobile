@@ -89,8 +89,16 @@ internal class SecureStorage(
             }
             val entries =
                 buildList {
-                    auth?.all?.forEach { (key, value) -> if (value is String) add(authKey(key) to value) }
-                    cookies?.all?.forEach { (key, value) -> if (value is String) add(cookieKey(key) to value) }
+                    auth?.all?.forEach { (key, value) ->
+                        encodeLegacyValue(authKey(key), value)?.let { encoded ->
+                            add(authKey(key) to encoded)
+                        }
+                    }
+                    cookies?.all?.forEach { (key, value) ->
+                        encodeLegacyValue(cookieKey(key), value)?.let { encoded ->
+                            add(cookieKey(key) to encoded)
+                        }
+                    }
                 }
             setState(MigrationState.COPYING)
             entries.forEachIndexed { index, (key, value) ->
@@ -116,7 +124,7 @@ internal class SecureStorage(
     private fun legacyValue(logicalKey: String): String? {
         if (state() == MigrationState.VERIFIED) return null
         val (prefs, key) = legacyTarget(logicalKey) ?: return null
-        return encodeLegacyValue(prefs.all[key])
+        return encodeLegacyValue(logicalKey, prefs.all[key])
     }
 
     /**
@@ -126,7 +134,7 @@ internal class SecureStorage(
     private fun reconcileFromLegacy(logicalKey: String): LegacyRead? {
         val (prefs, key) = legacyTarget(logicalKey) ?: return null
         val present = prefs.contains(key)
-        val value = encodeLegacyValue(prefs.all[key])
+        val value = encodeLegacyValue(logicalKey, prefs.all[key])
         val current = blobs.read(logicalKey)
         if (present && value == null) {
             return recoverFromMalformedLegacy(logicalKey, current)
@@ -154,22 +162,37 @@ internal class SecureStorage(
         current: SecureBlobStore.ReadResult,
     ): LegacyRead =
         when (current) {
-            is SecureBlobStore.ReadResult.Value ->
-                LegacyRead(current.bytes.toString(Charsets.UTF_8))
-            SecureBlobStore.ReadResult.Deleted -> LegacyRead(value = null)
+            is SecureBlobStore.ReadResult.Value -> {
+                val value = current.bytes.toString(Charsets.UTF_8)
+                dualWrite(logicalKey, value)
+                LegacyRead(value)
+            }
+            SecureBlobStore.ReadResult.Deleted -> {
+                dualWrite(logicalKey, null)
+                LegacyRead(value = null)
+            }
             SecureBlobStore.ReadResult.Missing -> {
                 if (logicalKey == authKey(DATABASE_PASSWORD)) throw SecureBlobException()
+                dualWrite(logicalKey, null)
                 recordKey(logicalKey)
                 blobs.delete(logicalKey)
                 LegacyRead(value = null)
             }
         }
 
-    private fun encodeLegacyValue(value: Any?): String? =
+    private fun encodeLegacyValue(
+        logicalKey: String,
+        value: Any?,
+    ): String? =
         when (value) {
             null -> null
             is String -> value
-            is Boolean -> value.toString()
+            is Boolean ->
+                if (logicalKey == authKey(LEGACY_DEFAULT_MIGRATED)) {
+                    value.toString()
+                } else {
+                    null
+                }
             else -> null
         }
 

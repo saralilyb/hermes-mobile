@@ -180,6 +180,27 @@ class SecureStorageInstrumentedTest {
     }
 
     @Test
+    fun legacyBooleanTokenDoesNotBecomeCredentialText() {
+        legacyAuth().edit().putBoolean("token_default", true).commit()
+
+        val storage = SecureStorage(context)
+
+        assertNull(storage.getString(SecureStorage.authKey("token_default")))
+    }
+
+    @Test
+    fun legacyBooleanMigrationMarkerRemainsSupported() {
+        legacyAuth().edit().putBoolean("legacy_default_migrated", true).commit()
+
+        val storage = SecureStorage(context)
+
+        assertEquals(
+            "true",
+            storage.getString(SecureStorage.authKey("legacy_default_migrated")),
+        )
+    }
+
+    @Test
     fun authenticatedBlobWinsWhenLegacyTokenTypeIsMalformed() {
         val key = SecureStorage.authKey("token_default")
         SecureStorage(context).putString(key, "authenticated-token")
@@ -191,6 +212,7 @@ class SecureStorageInstrumentedTest {
         val reopened = SecureStorage(context)
 
         assertEquals("authenticated-token", reopened.getString(key))
+        assertEquals("authenticated-token", legacyAuth().getString("token_default", null))
     }
 
     @Test(expected = SecureBlobException::class)
