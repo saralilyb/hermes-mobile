@@ -38,6 +38,8 @@ data class CronJob(
     val workdir: String? = null,
     val no_agent: Boolean? = null,
     val repeat: CronJobRepeat? = null,
+    val monitor_script: String? = null,
+    val monitor_url: String? = null,
 ) {
     val scheduleText: String
         get() =
@@ -52,4 +54,7 @@ data class CronJob(
 
     val nextRunTime: String
         get() = next_run ?: next_run_at ?: ""
+
+    val monitorSource: String?
+        get() = monitor_script ?: monitor_url
 }

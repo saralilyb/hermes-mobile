@@ -27,6 +27,7 @@ data class CronJobsUiState(
     val jobs: List<CronJob> = emptyList(),
     val errorMessage: String? = null,
     val toastMessage: String? = null,
+    val deleteTarget: CronJob? = null,
     // Editor state
     val editorState: CronJobEditorState = CronJobEditorState(),
 )
@@ -51,11 +52,16 @@ data class CronJobEditorState(
     val workdir: String = "",
     val enabled: Boolean = true,
     val no_agent: Boolean = false,
+    val monitorMode: String = "off",
+    val monitor_script: String = "",
+    val monitor_url: String = "",
 )
 
-class CronJobsViewModel :
+class CronJobsViewModel(
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
+) :
     ViewModel(),
-    ToastHost {
+        ToastHost {
     private val _uiState = MutableStateFlow(CronJobsUiState())
     val uiState: StateFlow<CronJobsUiState> = _uiState.asStateFlow()
 
@@ -93,7 +99,7 @@ class CronJobsViewModel :
         }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.pauseCronJob(id) }
                 }
             if (result is NetworkResult.Failure) {
@@ -114,7 +120,7 @@ class CronJobsViewModel :
         }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.resumeCronJob(id) }
                 }
             if (result is NetworkResult.Failure) {
@@ -126,7 +132,7 @@ class CronJobsViewModel :
     fun triggerCronJob(id: String) {
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.triggerCronJob(id) }
                 }
             when (result) {
@@ -148,13 +154,27 @@ class CronJobsViewModel :
         }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.deleteCronJob(id) }
                 }
             if (result is NetworkResult.Failure) {
                 revertJobs(originalJobs, "Failed to delete cron job: ${result.error.message}")
             }
         }
+    }
+
+    fun requestDeleteJob(job: CronJob) {
+        _uiState.update { it.copy(deleteTarget = job) }
+    }
+
+    fun dismissDeleteDialog() {
+        _uiState.update { it.copy(deleteTarget = null) }
+    }
+
+    fun confirmDeleteJob() {
+        val target = _uiState.value.deleteTarget ?: return
+        _uiState.update { it.copy(deleteTarget = null) }
+        deleteCronJob(target.id)
     }
 
     // ── Editor ──
@@ -185,7 +205,7 @@ class CronJobsViewModel :
         }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.getCronJob(id) }
                 }
             when (result) {
@@ -210,6 +230,14 @@ class CronJobsViewModel :
                                     workdir = job.workdir.orEmpty(),
                                     enabled = job.enabled ?: true,
                                     no_agent = job.no_agent ?: false,
+                                    monitorMode =
+                                        when {
+                                            !job.monitor_script.isNullOrBlank() -> "script"
+                                            !job.monitor_url.isNullOrBlank() -> "url"
+                                            else -> "off"
+                                        },
+                                    monitor_script = job.monitor_script.orEmpty(),
+                                    monitor_url = job.monitor_url.orEmpty(),
                                 ),
                         )
                     }
@@ -259,25 +287,49 @@ class CronJobsViewModel :
         _uiState.update { it.copy(editorState = editor.copy(isSaving = true)) }
 
         viewModelScope.launch {
+            var partialCreate = false
+            var partialCreatedJobId: String? = null
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     if (editor.isNew) {
-                        safeApiCall {
-                            ApiClient.hermesApi.createCronJob(
-                                CreateCronJobRequest(
-                                    name = editor.name,
-                                    schedule = editor.schedule,
-                                    prompt = editor.prompt,
-                                    deliver = editor.deliver,
-                                    skills = parseLines(editor.skills),
-                                    model = editor.model.ifBlank { null },
-                                    provider = editor.provider.ifBlank { null },
-                                    base_url = editor.base_url.ifBlank { null },
-                                    script = editor.script.ifBlank { null },
-                                    workdir = editor.workdir.ifBlank { null },
-                                    no_agent = editor.no_agent,
-                                ),
-                            )
+                        val created =
+                            safeApiCall {
+                                ApiClient.hermesApi.createCronJob(
+                                    CreateCronJobRequest(
+                                        name = editor.name,
+                                        schedule = editor.schedule,
+                                        prompt = editor.prompt,
+                                        deliver = editor.deliver,
+                                        skills = parseLines(editor.skills),
+                                        model = editor.model.ifBlank { null },
+                                        provider = editor.provider.ifBlank { null },
+                                        base_url = editor.base_url.ifBlank { null },
+                                        script = editor.script.ifBlank { null },
+                                        workdir = editor.workdir.ifBlank { null },
+                                        no_agent = editor.no_agent,
+                                        monitor_script = editor.monitor_script.ifBlank { null },
+                                        monitor_url = editor.monitor_url.ifBlank { null },
+                                    ),
+                                )
+                            }
+                        val monitorUpdates = editorMonitorUpdates(editor)
+                        if (created is NetworkResult.Success && monitorUpdates.isNotEmpty()) {
+                            val applied =
+                                safeApiCall {
+                                    ApiClient.hermesApi.updateCronJob(
+                                        created.data.id,
+                                        UpdateCronJobRequest(
+                                            updates = monitorUpdates.mapValues { it.value.toJsonElement() },
+                                        ),
+                                    )
+                                }
+                            if (applied is NetworkResult.Failure) {
+                                partialCreate = true
+                                partialCreatedJobId = created.data.id
+                            }
+                            applied
+                        } else {
+                            created
                         }
                     } else {
                         val updates = mutableMapOf<String, Any?>()
@@ -292,6 +344,8 @@ class CronJobsViewModel :
                         updates["script"] = editor.script.ifBlank { null }
                         updates["workdir"] = editor.workdir.ifBlank { null }
                         updates["no_agent"] = editor.no_agent
+                        updates["monitor_script"] = editor.monitor_script.ifBlank { null }
+                        updates["monitor_url"] = editor.monitor_url.ifBlank { null }
                         safeApiCall {
                             ApiClient.hermesApi.updateCronJob(
                                 editor.jobId ?: "",
@@ -311,8 +365,15 @@ class CronJobsViewModel :
                         it.copy(
                             editorState =
                                 it.editorState.copy(
+                                    isNew = if (partialCreate) false else it.editorState.isNew,
+                                    jobId = partialCreatedJobId ?: it.editorState.jobId,
                                     isSaving = false,
-                                    toastMessage = "Failed to save: ${result.error.message}",
+                                    toastMessage =
+                                        if (partialCreate) {
+                                            "Job was created, but monitor setup failed: ${result.error.message}"
+                                        } else {
+                                            "Failed to save: ${result.error.message}"
+                                        },
                                 ),
                         )
                     }
@@ -366,12 +427,50 @@ class CronJobsViewModel :
             "base_url" -> copy(base_url = value)
             "script" -> copy(script = value)
             "workdir" -> copy(workdir = value)
+            "monitor_script" ->
+                copy(
+                    monitor_script = value,
+                    monitor_url = if (value.isNotBlank()) "" else monitor_url,
+                )
+            "monitor_url" ->
+                copy(
+                    monitor_url = value,
+                    monitor_script = if (value.isNotBlank()) "" else monitor_script,
+                )
             else -> this
         }
 
     fun toggleNoAgent() {
         _uiState.update {
-            it.copy(editorState = it.editorState.copy(no_agent = !it.editorState.no_agent))
+            val enabling = !it.editorState.no_agent
+            it.copy(
+                editorState =
+                    it.editorState.copy(
+                        no_agent = enabling,
+                        monitorMode = if (enabling) "off" else it.editorState.monitorMode,
+                        monitor_script = if (enabling) "" else it.editorState.monitor_script,
+                        monitor_url = if (enabling) "" else it.editorState.monitor_url,
+                    ),
+            )
         }
     }
+
+    fun setMonitorMode(mode: String) {
+        _uiState.update { state ->
+            state.copy(
+                editorState =
+                    state.editorState.copy(
+                        monitorMode = mode,
+                        monitor_script = if (mode == "script") state.editorState.monitor_script else "",
+                        monitor_url = if (mode == "url") state.editorState.monitor_url else "",
+                    ),
+            )
+        }
+    }
+
+    private fun editorMonitorUpdates(editor: CronJobEditorState): Map<String, String> =
+        buildMap {
+            if (editor.monitor_script.isNotBlank()) put("monitor_script", editor.monitor_script.trim())
+            if (editor.monitor_url.isNotBlank()) put("monitor_url", editor.monitor_url.trim())
+        }
 }
