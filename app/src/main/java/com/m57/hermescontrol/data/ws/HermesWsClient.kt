@@ -10,22 +10,21 @@ import com.m57.hermescontrol.data.remote.AuthPayloads
 import com.m57.hermescontrol.data.remote.DashboardSessionTokenRefresher
 import com.m57.hermescontrol.data.remote.NetworkMonitor
 import com.m57.hermescontrol.data.remote.OkHttpProvider
+import com.m57.hermescontrol.data.session.ActiveSessionHolder
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.buffer
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.launch
@@ -56,6 +55,8 @@ enum class ConnectionStatus {
 internal data class SourcedWsEvent(
     val event: WsEvent,
     val profileId: String?,
+    val connectionGeneration: Int,
+    val storedSessionId: String? = null,
 )
 
 /**
@@ -96,7 +97,13 @@ object HermesWsClient {
     private val connected = AtomicBoolean(false)
     private val intentionalClose = AtomicBoolean(false)
     private val ticketAuthRetryUsed = AtomicBoolean(false)
+    private val appInForeground = AtomicBoolean(true)
     private val messageQueue = ConcurrentLinkedQueue<String>()
+    private val pendingPromptSubmits = ConcurrentHashMap.newKeySet<String>()
+
+    @Volatile
+    var pendingReply: Boolean = false
+        private set
 
     /**
      * Guards outbound-queue mutation and reconnect-job scheduling so a send, a
@@ -159,37 +166,13 @@ object HermesWsClient {
 
     // ── Public observable stream ─────────────────────────────────────────
 
-    private data class RawWsMessage(
-        val text: String,
-        val profileId: String?,
-    )
-
-    private val rawMessages =
-        MutableSharedFlow<RawWsMessage>(
+    private val parsedEvents =
+        MutableSharedFlow<SourcedWsEvent>(
             extraBufferCapacity = 512,
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
 
-    internal val sourcedEvents: SharedFlow<SourcedWsEvent> =
-        rawMessages
-            .buffer(Channel.BUFFERED)
-            .map { raw ->
-                val event =
-                    try {
-                        val rpc =
-                            OkHttpProvider.json
-                                .decodeFromString<JsonRpcResponse>(raw.text)
-                        EventParser.parse(rpc, raw.text)
-                    } catch (e: Exception) {
-                        Log.e(
-                            TAG,
-                            "Failed to parse WebSocket message (${e.javaClass.simpleName})",
-                        )
-                        WsEvent.Unknown(raw.text)
-                    }
-                SourcedWsEvent(event = event, profileId = raw.profileId)
-            }.flowOn(Dispatchers.Default) // CPU-bound
-            .shareIn(wsScope, SharingStarted.Eagerly)
+    internal val sourcedEvents: SharedFlow<SourcedWsEvent> = parsedEvents.asSharedFlow()
 
     /** Collect this from ViewModels to receive all parsed [WsEvent]s. */
     val events: SharedFlow<WsEvent> =
@@ -261,6 +244,23 @@ object HermesWsClient {
 
     @VisibleForTesting
     val isConnected: Boolean get() = connected.get()
+
+    fun setAppForeground(foreground: Boolean) {
+        appInForeground.set(foreground)
+        if (!foreground) disconnectIfIdleInBackground()
+    }
+
+    private fun disconnectIfIdleInBackground() {
+        synchronized(connectionLock) {
+            if (!appInForeground.get() &&
+                !pendingReply &&
+                pendingCalls.isEmpty() &&
+                messageQueue.isEmpty()
+            ) {
+                disconnect()
+            }
+        }
+    }
 
     /** Open a WebSocket connection using settings from [AuthManager]. */
     fun connect() {
@@ -424,6 +424,8 @@ object HermesWsClient {
             connected.set(false)
             if (clearPendingMessages) {
                 messageQueue.clear()
+                pendingPromptSubmits.clear()
+                pendingReply = false
             }
             _connectionStatus.value = ConnectionStatus.DISCONNECTED
         }
@@ -499,6 +501,7 @@ object HermesWsClient {
         } else {
             call.deferred.complete(result)
         }
+        disconnectIfIdleInBackground()
     }
 
     /**
@@ -538,17 +541,26 @@ object HermesWsClient {
         onSent?.invoke(id)
         val request = JsonRpcRequest(id = id, method = method, params = params.mapValues { it.value.toJsonElement() })
         val json = OkHttpProvider.json.encodeToString(request)
+        var accepted = false
         synchronized(connectionLock) {
+            if (method == WsMethods.PROMPT_SUBMIT) {
+                pendingPromptSubmits.add(id)
+                pendingReply = true
+            }
             val ws = webSocket
             if (ws != null && connected.get()) {
                 // OkHttp returns false when the frame could not be enqueued —
                 // the socket is closing or its outgoing buffer is full. The
                 // previous code ignored that and silently dropped the message.
-                if (!ws.send(json)) {
-                    if (webSocket !== ws || !acceptQueuedMessages.get()) return@synchronized
-                    if (isRetryableMessage(json)) {
+                if (ws.send(json)) {
+                    accepted = true
+                } else {
+                    if (webSocket !== ws || !acceptQueuedMessages.get()) {
+                        Log.w(TAG, "WS identity changed while sending — dropping message")
+                    } else if (isRetryableMessage(json)) {
                         Log.w(TAG, "WS rejected outgoing message — queuing for reconnect")
                         messageQueue.add(json)
+                        accepted = true
                         recoverRejectedSocket(ws)
                     } else {
                         Log.w(TAG, "WS rejected oversized outgoing message — not retrying")
@@ -558,11 +570,16 @@ object HermesWsClient {
                 if (isRetryableMessage(json)) {
                     Log.d(TAG, "WS disconnected — queuing message")
                     messageQueue.add(json)
+                    accepted = true
                 } else {
                     Log.w(TAG, "WS disconnected with oversized outgoing message — not queueing")
                 }
             } else {
                 Log.w(TAG, "WS credentials cleared — dropping outgoing message")
+            }
+            if (!accepted && method == WsMethods.PROMPT_SUBMIT) {
+                pendingPromptSubmits.remove(id)
+                if (pendingPromptSubmits.isEmpty()) pendingReply = false
             }
         }
         return id
@@ -636,6 +653,7 @@ object HermesWsClient {
                 }
                 messageQueue.poll()
             }
+            disconnectIfIdleInBackground()
         }
     }
 
@@ -901,18 +919,36 @@ object HermesWsClient {
                     ticketAuthRetryUsed.set(false)
                 }
                 when (event) {
-                    is WsEvent.RpcResult -> resolvePending(event.id, event.result, null)
-                    is WsEvent.RpcError -> resolvePending(event.id, null, event.error)
+                    is WsEvent.RpcResult -> {
+                        pendingPromptSubmits.remove(event.id)
+                        resolvePending(event.id, event.result, null)
+                    }
+                    is WsEvent.RpcError -> {
+                        if (pendingPromptSubmits.remove(event.id) && pendingPromptSubmits.isEmpty()) {
+                            pendingReply = false
+                        }
+                        resolvePending(event.id, null, event.error)
+                    }
+                    is WsEvent.MessageComplete -> pendingReply = false
                     else -> Unit
                 }
                 val emitted =
-                    rawMessages.tryEmit(
-                        RawWsMessage(text = text, profileId = profileId),
+                    parsedEvents.tryEmit(
+                        SourcedWsEvent(
+                            event = event,
+                            profileId = profileId,
+                            connectionGeneration = generation,
+                            storedSessionId =
+                                (event as? WsEvent.MessageComplete)?.sessionId?.let(
+                                    ActiveSessionHolder::resolveStoredSessionId,
+                                ),
+                        ),
                     )
                 if (!emitted && BuildConfig.DEBUG) {
                     Log.w(TAG, "WebSocket message dropped due to buffer overflow")
                 }
             }
+            disconnectIfIdleInBackground()
         }
 
         override fun onClosing(

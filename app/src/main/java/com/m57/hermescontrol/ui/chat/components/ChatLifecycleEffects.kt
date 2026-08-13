@@ -24,7 +24,6 @@ import com.m57.hermescontrol.NavigationController
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.ws.ConnectionStatus
 import com.m57.hermescontrol.idForProfile
-import com.m57.hermescontrol.notification.NotificationHelper
 import com.m57.hermescontrol.ui.chat.ChatMessage
 import com.m57.hermescontrol.ui.chat.ChatViewModel
 import com.m57.hermescontrol.ui.chat.ClarifyUi
@@ -102,21 +101,15 @@ fun ChatLifecycleEffects(
         }
     }
 
-    // Lifecycle observer for notification foreground service
+    // Refresh chat state when the app returns to the foreground. MainActivity
+    // owns socket/service foreground transitions so they apply on every screen.
     DisposableEffect(lifecycleOwner) {
         val observer =
             LifecycleEventObserver { _, event ->
                 when (event) {
                     Lifecycle.Event.ON_START -> {
-                        NotificationHelper.setAppForeground(context, true)
-                        NotificationHelper.stop(context)
                         viewModel.refreshSettings()
                         viewModel.refreshCurrentSession()
-                    }
-
-                    Lifecycle.Event.ON_STOP -> {
-                        NotificationHelper.setAppForeground(context, false)
-                        NotificationHelper.start(context)
                     }
 
                     else -> {}

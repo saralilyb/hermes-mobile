@@ -18,11 +18,34 @@ import kotlinx.coroutines.flow.asStateFlow
 object ActiveSessionHolder {
     private val _activeSessionId = MutableStateFlow<String?>(null)
 
-    /** The currently active chat session id, or null if none is known yet. */
+    @Volatile
+    private var storedSessionId: String? = null
+
+    /** The currently active runtime session id, or null if none is known yet. */
     val activeSessionId: StateFlow<String?> = _activeSessionId.asStateFlow()
 
-    /** Update the active session id. Pass null to clear (e.g. on logout). */
-    fun set(sessionId: String?) {
-        _activeSessionId.value = sessionId
+    /**
+     * Update the active runtime and storage identities.
+     *
+     * Hermes may return a short-lived runtime id while retaining a distinct
+     * persisted session id. Notification deep links must use the persisted id.
+     */
+    fun set(
+        runtimeSessionId: String?,
+        persistedSessionId: String? = runtimeSessionId,
+    ) {
+        _activeSessionId.value = runtimeSessionId
+        storedSessionId = persistedSessionId
+    }
+
+    fun resolveStoredSessionId(runtimeSessionId: String): String =
+        if (_activeSessionId.value == runtimeSessionId) {
+            storedSessionId ?: runtimeSessionId
+        } else {
+            runtimeSessionId
+        }
+
+    fun clear() {
+        set(null)
     }
 }

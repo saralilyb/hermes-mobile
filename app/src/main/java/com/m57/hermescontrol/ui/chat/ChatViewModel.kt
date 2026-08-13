@@ -714,7 +714,7 @@ class ChatViewModel(
                 // Mirror the active session id app-wide so session-scoped
                 // drawer screens (e.g. Processes, issue #532) can issue
                 // session-scoped RPCs. See ActiveSessionHolder.
-                ActiveSessionHolder.set(runtimeId)
+                ActiveSessionHolder.set(runtimeId, storageId)
                 _streamingState.update { StreamingState() }
                 addSystemMessage("Session created", persist = true)
                 loadSessions()
@@ -845,7 +845,7 @@ class ChatViewModel(
                     )
                 }
                 // Mirror the active runtime session id app-wide (issue #532).
-                ActiveSessionHolder.set(runtimeSessionId ?: sessionId)
+                ActiveSessionHolder.set(runtimeSessionId ?: sessionId, sessionId)
                 addSystemMessage("Session resumed")
             }
 

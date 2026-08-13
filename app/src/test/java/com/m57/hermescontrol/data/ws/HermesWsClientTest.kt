@@ -8,6 +8,7 @@ import com.m57.hermescontrol.data.remote.CleartextPolicy
 import com.m57.hermescontrol.data.remote.CookieManager
 import com.m57.hermescontrol.data.remote.ServerEndpoint
 import com.m57.hermescontrol.data.remote.buildFakePersistentCookieJar
+import com.m57.hermescontrol.data.session.ActiveSessionHolder
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
@@ -87,8 +88,76 @@ class HermesWsClientTest {
         // so clear it explicitly or a frame queued by one test leaks into the
         // next one's connection.
         outboundQueue().clear()
+        pendingPromptSubmits().clear()
+        val pendingReplyField = HermesWsClient::class.java.getDeclaredField("pendingReply")
+        pendingReplyField.isAccessible = true
+        pendingReplyField.setBoolean(HermesWsClient, false)
+        ActiveSessionHolder.clear()
 
         HermesWsClient.disconnect() // Ensure it starts clean
+        HermesWsClient.setAppForeground(true)
+    }
+
+    @Test
+    fun testBackgroundWithoutPendingWorkDisconnects() {
+        mockWebServer.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}))
+        HermesWsClient.connect()
+        runBlocking { withTimeout(5000) { HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED } } }
+
+        HermesWsClient.setAppForeground(false)
+
+        assertFalse(HermesWsClient.isConnected)
+        assertEquals(ConnectionStatus.DISCONNECTED, HermesWsClient.connectionStatus.value)
+    }
+
+    @Test
+    fun testBackgroundPendingPromptStaysConnectedUntilCompletionWithProvenance() {
+        lateinit var serverSocket: WebSocket
+        val connectedLatch = CountDownLatch(1)
+        every { AuthManager.getSelectedProfileId() } returns "profile-a"
+        mockWebServer.enqueue(
+            MockResponse().withWebSocketUpgrade(
+                object : WebSocketListener() {
+                    override fun onOpen(
+                        webSocket: WebSocket,
+                        response: okhttp3.Response,
+                    ) {
+                        serverSocket = webSocket
+                        connectedLatch.countDown()
+                    }
+                },
+            ),
+        )
+        HermesWsClient.connect()
+        assertTrue(connectedLatch.await(5, TimeUnit.SECONDS))
+        ActiveSessionHolder.set("runtime-session", "stored-session")
+        HermesWsClient.sendMessage("runtime-session", "hello")
+        HermesWsClient.setAppForeground(false)
+        assertTrue(HermesWsClient.isConnected)
+
+        val completion =
+            runBlocking {
+                withTimeout(5000) {
+                    launch {
+                        serverSocket.send(
+                            """
+                            {"jsonrpc":"2.0","method":"event","params":{"type":"message.complete",
+                            "payload":{"text":"done","session_id":"runtime-session"}}}
+                            """.trimIndent(),
+                        )
+                    }
+                    HermesWsClient.sourcedEvents.first { it.event is WsEvent.MessageComplete }
+                }
+            }
+
+        runBlocking {
+            withTimeout(5000) {
+                HermesWsClient.connectionStatus.first { it == ConnectionStatus.DISCONNECTED }
+            }
+        }
+        assertEquals("profile-a", completion.profileId)
+        assertEquals("stored-session", completion.storedSessionId)
+        assertEquals(connectionGeneration() - 1, completion.connectionGeneration)
     }
 
     private fun outboundQueue(): java.util.Queue<*> {
@@ -102,6 +171,12 @@ class HermesWsClientTest {
         field.isAccessible = true
         @Suppress("UNCHECKED_CAST")
         return field.get(HermesWsClient) as MutableMap<String, *>
+    }
+
+    private fun pendingPromptSubmits(): MutableSet<*> {
+        val field = HermesWsClient::class.java.getDeclaredField("pendingPromptSubmits")
+        field.isAccessible = true
+        return field.get(HermesWsClient) as MutableSet<*>
     }
 
     private fun connectionGeneration(): Int {
@@ -153,6 +228,7 @@ class HermesWsClientTest {
     @After
     fun tearDown() {
         HermesWsClient.disconnect()
+        ActiveSessionHolder.clear()
         // Wait a bit to allow internal OkHttp coroutines to clean up before shutting down MockWebServer
         // Increased from 100ms for OkHttp 5.x — needs more time for the WS close handshake
         Thread.sleep(500)

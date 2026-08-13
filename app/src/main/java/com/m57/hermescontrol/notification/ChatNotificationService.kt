@@ -95,9 +95,10 @@ class ChatNotificationService : Service() {
                                                 .ifBlank { getString(R.string.notif_new_message) }
                                         showReplyNotification(
                                             preview,
-                                            event.sessionId,
+                                            sourcedEvent.storedSessionId ?: event.sessionId,
                                             notificationProfileId,
                                         )
+                                        stopSelf()
                                     }
 
                                     is WsEvent.ClarifyRequest -> {
@@ -200,7 +201,7 @@ class ChatNotificationService : Service() {
         intent: Intent?,
         flags: Int,
         startId: Int,
-    ): Int = START_STICKY
+    ): Int = START_NOT_STICKY
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -216,7 +217,8 @@ class ChatNotificationService : Service() {
  */
 object NotificationHelper {
     fun start(context: Context) {
-        if (AuthManager.getToken().isNullOrBlank()) return
+        if (!HermesWsClient.pendingReply) return
+        if (!AuthManager.isGatedMode() && AuthManager.getToken().isNullOrBlank()) return
         val intent = Intent(context, ChatNotificationService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
@@ -234,5 +236,6 @@ object NotificationHelper {
         foreground: Boolean,
     ) {
         ChatNotificationService.setAppForeground(foreground)
+        HermesWsClient.setAppForeground(foreground)
     }
 }
