@@ -163,6 +163,10 @@ object EventParser {
                 WsEvent.SessionUpdated(payload)
             }
 
+            "session.usage" -> {
+                WsEvent.SessionUsage(payload, sessionId)
+            }
+
             "reaction" -> {
                 val kind = payload?.get("kind") as? String ?: ""
                 WsEvent.ReactionEvent(kind)

@@ -11,7 +11,6 @@ import com.m57.hermescontrol.data.model.AuxiliaryModelsResponse
 import com.m57.hermescontrol.data.model.BulkDeleteRequest
 import com.m57.hermescontrol.data.model.BulkDeleteResponse
 import com.m57.hermescontrol.data.model.CheckpointsResponse
-import com.m57.hermescontrol.data.model.CloneProfileRequest
 import com.m57.hermescontrol.data.model.ConfigSchemaResponse
 import com.m57.hermescontrol.data.model.ConfigUpdateRequest
 import com.m57.hermescontrol.data.model.CreateCronJobRequest
@@ -77,7 +76,6 @@ import com.m57.hermescontrol.data.model.SessionInfo
 import com.m57.hermescontrol.data.model.SessionLatestDescendantResponse
 import com.m57.hermescontrol.data.model.SessionListResponse
 import com.m57.hermescontrol.data.model.SessionMessagesResponse
-import com.m57.hermescontrol.data.model.SessionPromptResponse
 import com.m57.hermescontrol.data.model.SessionRenameRequest
 import com.m57.hermescontrol.data.model.SessionSearchResponse
 import com.m57.hermescontrol.data.model.SessionStatsResponse
@@ -199,13 +197,6 @@ interface HermesApiService {
     suspend fun pruneSessions(
         @Body body: PruneRequest,
     ): Response<Unit>
-
-    @GET("api/sessions/{id}/prompt")
-    suspend fun getSessionPrompt(
-        // Preserve slashes in session IDs — backend generates IDs containing '/' characters (issue #468).
-        // Contract: The server-generated sessionId must only contain URL-safe characters (no ?, #, or spaces).
-        @Path("id", encoded = true) sessionId: String,
-    ): Response<SessionPromptResponse>
 
     @GET("api/system/stats")
     suspend fun getSystemStats(): Response<SystemStatsResponse>
@@ -341,12 +332,6 @@ interface HermesApiService {
         @Body body: UpdateProfileModelRequest,
     ): Response<Unit>
 
-    @POST("api/profiles/{name}/clone")
-    suspend fun cloneProfile(
-        @Path("name") name: String,
-        @Body body: CloneProfileRequest,
-    ): Response<Unit>
-
     @PUT("api/profiles/{name}/description")
     suspend fun updateProfileDescription(
         @Path("name") name: String,
@@ -428,11 +413,6 @@ interface HermesApiService {
         @Path("name") name: String,
         @Body body: Map<String, Any>,
     ): Response<McpServer>
-
-    @POST("api/mcp/servers/{name}/restart")
-    suspend fun restartMcpServer(
-        @Path("name") name: String,
-    ): Response<Unit>
 
     @POST("api/mcp/servers/{name}/auth")
     suspend fun authMcpServer(

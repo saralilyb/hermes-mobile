@@ -152,6 +152,12 @@ sealed class WsEvent {
         val data: Map<String, Any?>?,
     ) : WsEvent()
 
+    /** Live context usage snapshot emitted while a session turn is running. */
+    data class SessionUsage(
+        val data: Map<String, Any?>?,
+        val sessionId: String? = null,
+    ) : WsEvent()
+
     // ── RPC responses ────────────────────────────────────────────────────
 
     data class RpcResult(

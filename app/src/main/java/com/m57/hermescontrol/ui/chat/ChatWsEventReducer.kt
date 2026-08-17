@@ -41,6 +41,7 @@ object ChatWsEventReducer {
                 is WsEvent.ToolGenerating -> event.sessionId
                 is WsEvent.SubagentEvent -> event.sessionId
                 is WsEvent.ReviewSummary -> event.sessionId
+                is WsEvent.SessionUsage -> event.sessionId
                 else -> null
             }
         if (eventSessionId != null && currentSessionId != null && eventSessionId != currentSessionId) {
@@ -95,6 +96,10 @@ object ChatWsEventReducer {
             is WsEvent.BackgroundComplete -> onBackgroundComplete(state, streamingState, event)
 
             is WsEvent.SessionUpdated -> onSessionUpdated(state, streamingState)
+
+            // SessionUsage is handled by the ViewModel's exact ContextUsage
+            // parser after this reducer applies the session fence above.
+            is WsEvent.SessionUsage -> ReducerResult(state = state, streamingState = streamingState)
 
             is WsEvent.StatusUpdate -> onStatusUpdate(state, streamingState)
 
