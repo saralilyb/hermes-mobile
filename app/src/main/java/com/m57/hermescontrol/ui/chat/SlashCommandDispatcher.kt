@@ -26,6 +26,10 @@ class SlashCommandDispatcher {
             "/new" -> SlashResult.NewSession
             "/fork", "/branch" -> SlashResult.SessionBranch
             "/model" -> SlashResult.ModelSwitch
+            "/queue", "/q" -> {
+                val arg = command.split(" ", limit = 2).getOrElse(1) { "" }.trim()
+                SlashResult.QueuePrompt(arg.ifBlank { command })
+            }
             "/resume", "/history" -> SlashResult.OpenHistory
             else -> SlashResult.RpcDispatch
         }
@@ -56,6 +60,9 @@ sealed class SlashResult {
      * `/model <model> --provider <slug> --session`.
      */
     data object ModelSwitch : SlashResult()
+
+    /** Queue a prompt without redirecting the active turn. */
+    data class QueuePrompt(val displayContent: String) : SlashResult()
 
     data object OpenHistory : SlashResult()
 }

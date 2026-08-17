@@ -820,6 +820,7 @@ private fun ProviderCard(
                                             } else {
                                                 MaterialTheme.colorScheme.onSurface
                                             },
+                                        modifier = Modifier.weight(1f),
                                     )
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,

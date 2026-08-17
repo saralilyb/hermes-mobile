@@ -18,6 +18,8 @@ ktlint
 
 # Local workspace artifacts and logs
 .kotlin/
+__pycache__/
+*.py[cod]
 
 
 # direnv

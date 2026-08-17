@@ -714,12 +714,20 @@ object HermesWsClient {
         sessionId: String,
         text: String,
         onSent: ((String) -> Unit)? = null,
-    ): String =
-        send(
+        queued: Boolean = false,
+    ): String {
+        val params =
+            buildMap<String, Any> {
+                put("session_id", sessionId)
+                put("text", text)
+                if (queued) put("queued", true)
+            }
+        return send(
             method = WsMethods.PROMPT_SUBMIT,
-            params = mapOf("session_id" to sessionId, "text" to text),
+            params = params,
             onSent = onSent,
         )
+    }
 
     /**
      * Convenience: steer the active model turn while it is still generating

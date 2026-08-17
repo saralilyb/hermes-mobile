@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "fork_base": "0699470e96a7e5944deb72fbccf2ef4cdbd5f1a9",
+  "review_start_exclusive": "daf33dcb4c8f7fdafc890acfffc2fbb04569f004",
+  "reviewed_through": "bd75a6d8eaec5ada6b24699d4a379481fca11e60",
+  "entries": [
+    {
+      "commit": "3c0f281276dd695f09cf38a43fa379f843483646",
+      "disposition": "accepted",
+      "reason": "patch-dependency"
+    },
+    {
+      "commit": "2077fda912e21169f710aeac211d03646f265301",
+      "disposition": "deferred",
+      "reason": "toolchain-validation"
+    },
+    {
+      "commit": "4479ebbddae92aba319b7d16812e644a7013a944",
+      "disposition": "accepted",
+      "reason": "patch-dependency"
+    },
+    {
+      "commit": "f5ce07b1962601163239c0c429189143fcb7b239",
+      "disposition": "accepted",
+      "reason": "patch-dependency"
+    },
+    {
+      "commit": "9c7bb8635f60bb4ec042e8762364292548b7db4f",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation"
+    },
+    {
+      "commit": "90c1e8dc5f3a04a4df8c34927ebd33b0396bf03a",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "9e454ce67bb7757420b6328b30d4c1daeb370642",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "f1c5c2816c5076d92468b7fd14d00e0049080c97",
+      "disposition": "accepted",
+      "reason": "release-correctness"
+    },
+    {
+      "commit": "0a5eb7a5b0e47c4f290d3ca6e87b4757264304e8",
+      "disposition": "partial",
+      "reason": "source-compatibility-only",
+      "scope": [
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/components/MessageCards.kt"
+      ]
+    },
+    {
+      "commit": "fdbd98af3e39b6da0a0d39fc173a5b323935098a",
+      "disposition": "deferred",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "063c27b1419b78dc2f4dc90e979459f8332bf78d",
+      "disposition": "deferred",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "2746d39c7f0b474d00e668099051c474c6e8f631",
+      "disposition": "excluded",
+      "reason": "distribution-policy"
+    },
+    {
+      "commit": "85087c70c7517669e8167a816fa15d4586bd985c",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "4be1e965f240ed336da28240dadfde3e6d3ad095",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "dadcc3e588d6d89743541bac37e0d92ee80e41a6",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation"
+    },
+    {
+      "commit": "b653903fa8375bdad7f31fa48eeead4112c6615d",
+      "disposition": "deferred",
+      "reason": "security-review"
+    },
+    {
+      "commit": "d8be45b8fcc551aa611fcca208d0d4fce39587bb",
+      "disposition": "deferred",
+      "reason": "security-review"
+    },
+    {
+      "commit": "75023a2bf0d65cbfbe3204d0970c5995840797b6",
+      "disposition": "deferred",
+      "reason": "security-review"
+    },
+    {
+      "commit": "bd75a6d8eaec5ada6b24699d4a379481fca11e60",
+      "disposition": "excluded",
+      "reason": "distribution-policy"
+    }
+  ]
+}

@@ -1195,7 +1195,10 @@ class ChatViewModel(
     fun clearAttachments() = attachmentsDelegate.clearAttachments()
 
     private fun handleSlashCommand(command: String) {
-        val userMsg = ChatMessage(role = MessageRole.USER, content = command)
+        val result = slashDispatcher.dispatch(command)
+        val displayContent =
+            if (result is SlashResult.QueuePrompt) result.displayContent else command
+        val userMsg = ChatMessage(role = MessageRole.USER, content = displayContent)
         val sessionId = _uiState.value.currentSessionId
 
         _uiState.update { it.copy(messages = it.messages + userMsg) }
@@ -1218,7 +1221,7 @@ class ChatViewModel(
             return
         }
 
-        when (val result = slashDispatcher.dispatch(command)) {
+        when (result) {
             is SlashResult.Interrupt -> {
                 interruptSession { recordAcceptedSlash(command) }
             }
@@ -1240,10 +1243,27 @@ class ChatViewModel(
                 recordAcceptedSlash(command)
             }
 
+            is SlashResult.QueuePrompt -> {
+                handleQueueCommand(command)
+            }
+
             is SlashResult.RpcDispatch -> {
                 dispatchViaRpc(command)
             }
         }
+    }
+
+    private fun handleQueueCommand(command: String) {
+        val arg = command.split(" ", limit = 2).getOrElse(1) { "" }.trim()
+        if (arg.isBlank()) {
+            addAssistantMessage("usage: /queue <prompt>")
+            return
+        }
+        submitPrompt(
+            text = arg,
+            queued = true,
+            onDispatched = { recordAcceptedSlash(command) },
+        )
     }
 
     /**
@@ -1374,9 +1394,13 @@ class ChatViewModel(
     /**
      * Submits [text] as a prompt to the current session via WS, without
      * adding a duplicate user message. Used by [handleDispatchResult] when
-     * a slash command resolves to a normal user prompt (e.g. `/queue` → "help me").
+     * a slash command resolves to a normal user prompt.
      */
-    private fun submitPrompt(text: String) {
+    private fun submitPrompt(
+        text: String,
+        queued: Boolean = false,
+        onDispatched: (() -> Unit)? = null,
+    ) {
         if (text.isBlank()) return
         val sessionId = runtimeSessionId ?: return
         _uiState.update { it.copy(isAgentTyping = true) }
@@ -1384,7 +1408,11 @@ class ChatViewModel(
             wsClient.sendMessage(
                 sessionId,
                 text,
-                onSent = { id -> trackRequest(id, WsMethods.PROMPT_SUBMIT) },
+                onSent = { id ->
+                    trackRequest(id, WsMethods.PROMPT_SUBMIT)
+                    onDispatched?.invoke()
+                },
+                queued = queued,
             )
         }
     }

@@ -67,6 +67,34 @@ class SlashCommandDispatcherTest {
     }
 
     @Test
+    fun `queue routes to QueuePrompt with stripped display content`() {
+        assertEquals(
+            SlashResult.QueuePrompt("do the thing"),
+            dispatcher.dispatch("/queue do the thing"),
+        )
+        assertEquals(
+            SlashResult.QueuePrompt("hi"),
+            dispatcher.dispatch("/q hi"),
+        )
+        assertEquals(
+            SlashResult.QueuePrompt("hi"),
+            dispatcher.dispatch("/QUEUE hi"),
+        )
+    }
+
+    @Test
+    fun `bare queue keeps the raw command as display content`() {
+        assertEquals(
+            SlashResult.QueuePrompt("/queue"),
+            dispatcher.dispatch("/queue"),
+        )
+        assertEquals(
+            SlashResult.QueuePrompt("/q"),
+            dispatcher.dispatch("/q"),
+        )
+    }
+
+    @Test
     fun `command with args forwards to RpcDispatch`() {
         // Anything not /stop, /interrupt, /new goes to the backend.
         assertEquals(SlashResult.RpcDispatch, dispatcher.dispatch("/foo bar"))

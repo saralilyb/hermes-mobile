@@ -710,6 +710,7 @@ class HermesWsClientTest {
         assertTrue(msg.contains(WsMethods.PROMPT_SUBMIT))
         assertTrue(msg.contains("test_session_id"))
         assertTrue(msg.contains("Hello Hermes!"))
+        assertFalse(msg.contains("\"queued\""))
     }
 
     @Test
