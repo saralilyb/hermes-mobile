@@ -614,6 +614,20 @@ class ChatViewModel(
                 loadSessions()
             }
 
+            is WsEvent.SessionUsage -> {
+                if (isCurrentSession(event.sessionId)) {
+                    val usage =
+                        (event.data?.get("usage") as? Map<*, *>)
+                            ?: event.data
+                    _uiState.update { state ->
+                        state.copy(
+                            contextUsage =
+                                parseContextUsage(usage, state.contextUsage),
+                        )
+                    }
+                }
+            }
+
             is WsEvent.ClarifyRequest -> {
                 _uiState.update {
                     it.copy(

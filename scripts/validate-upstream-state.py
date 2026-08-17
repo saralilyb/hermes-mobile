@@ -25,6 +25,7 @@ REASONS = {
     "distribution-policy",
     "downstream-adaptation",
     "downstream-conflict",
+    "downstream-equivalent",
     "feature-review",
     "patch-dependency",
     "product-scope",

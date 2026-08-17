@@ -39,9 +39,10 @@ distinguish a side-by-side personal installation.
 
 - **Real-Time Chat:** Room-backed history, profile-scoped pinned sessions, rich
   tool, approval, and clarification cards, explicit `/queue` prompt handling,
-  bottom-follow with unread counts, persisted reasoning cards and controls, and
-  a two-row composer.
-- **System Config:** Manage active profiles, installed skills, plugins, and LLM model selections.
+  live context-window updates, bottom-follow with unread counts, persisted
+  reasoning cards and controls, and a two-row composer.
+- **System Config:** Manage and clone profiles, installed skills, plugins, and
+  LLM model selections.
 - **Operations:** Stream and filter live logs by server file, level, component,
   and line count; manage cron jobs and categorized environment keys with warned
   sensitive copying; and test webhooks.

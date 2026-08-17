@@ -722,6 +722,98 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun testSessionUsagePush_updatesCurrentWindowAndPreservesPartialTotals() =
+        runTest {
+            val (viewModel, sessionId) = createViewModelWithSession()
+            mockEventsFlow.emit(
+                WsEvent.SessionInfo(
+                    data =
+                        mapOf(
+                            "usage" to
+                                mapOf(
+                                    "context_used" to 54_321,
+                                    "context_max" to 272_000,
+                                    "input" to 1_900_000,
+                                ),
+                        ),
+                    sessionId = sessionId,
+                ),
+            )
+            advanceUntilIdle()
+
+            mockEventsFlow.emit(
+                WsEvent.SessionUsage(
+                    data =
+                        mapOf(
+                            "usage" to
+                                mapOf(
+                                    "context_used" to 0,
+                                    "compressions" to 4,
+                                ),
+                        ),
+                    sessionId = sessionId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val usage = viewModel.uiState.value.contextUsage
+            assertEquals(0L, usage?.usedTokens)
+            assertEquals(272_000L, usage?.maxTokens)
+            assertEquals(1_900_000L, usage?.inputTokens)
+            assertEquals(4L, usage?.compressions)
+        }
+
+    @Test
+    fun testSessionUsagePush_rejectsStaleSessionAndFractionalOccupancy() =
+        runTest {
+            val (viewModel, sessionId) = createViewModelWithSession()
+            mockEventsFlow.emit(
+                WsEvent.SessionInfo(
+                    data =
+                        mapOf(
+                            "usage" to
+                                mapOf(
+                                    "context_used" to 10_000,
+                                    "context_max" to 272_000,
+                                ),
+                        ),
+                    sessionId = sessionId,
+                ),
+            )
+            advanceUntilIdle()
+
+            mockEventsFlow.emit(
+                WsEvent.SessionUsage(
+                    data =
+                        mapOf(
+                            "usage" to
+                                mapOf(
+                                    "context_used" to 99_000,
+                                ),
+                        ),
+                    sessionId = "another-session",
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(10_000L, viewModel.uiState.value.contextUsage?.usedTokens)
+
+            mockEventsFlow.emit(
+                WsEvent.SessionUsage(
+                    data =
+                        mapOf(
+                            "usage" to
+                                mapOf(
+                                    "context_used" to 1.5,
+                                ),
+                        ),
+                    sessionId = sessionId,
+                ),
+            )
+            advanceUntilIdle()
+            assertNull(viewModel.uiState.value.contextUsage?.usedTokens)
+        }
+
+    @Test
     fun testBranchResult_replacesParentUsageWithChildSnapshot() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
