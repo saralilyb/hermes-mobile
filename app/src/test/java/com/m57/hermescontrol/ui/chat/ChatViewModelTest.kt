@@ -121,7 +121,7 @@ class ChatViewModelTest {
             arg<((String) -> Unit)?>(2)?.invoke(id)
             id
         }
-        every { HermesWsClient.sendMessage(any(), any(), any()) } answers {
+        every { HermesWsClient.sendMessage(any(), any(), any(), any()) } answers {
             reqCount++
             val id = "req-msg-$reqCount"
             arg<((String) -> Unit)?>(2)?.invoke(id)
@@ -651,7 +651,7 @@ class ChatViewModelTest {
 
             assertFalse(viewModel.uiState.value.isSessionReady)
             assertFalse(viewModel.sendMessage("first prompt"))
-            verify(exactly = 0) { HermesWsClient.sendMessage(any(), any(), any()) }
+            verify(exactly = 0) { HermesWsClient.sendMessage(any(), any(), any(), any()) }
         }
 
     @Test
@@ -1622,7 +1622,14 @@ class ChatViewModelTest {
             )
             assertTrue(viewModel.uiState.value.isAgentTyping)
 
-            verify { HermesWsClient.sendMessage(sessionId, "Hello Hermes", any()) }
+            verify {
+                HermesWsClient.sendMessage(
+                    sessionId,
+                    "Hello Hermes",
+                    any(),
+                    any(),
+                )
+            }
         }
 
     @Test
@@ -1634,7 +1641,14 @@ class ChatViewModelTest {
             viewModel.sendMessage("Hello Hermes")
             advanceUntilIdle()
             assertTrue(viewModel.uiState.value.isAgentTyping)
-            verify { HermesWsClient.sendMessage(sessionId, "Hello Hermes", any()) }
+            verify {
+                HermesWsClient.sendMessage(
+                    sessionId,
+                    "Hello Hermes",
+                    any(),
+                    any(),
+                )
+            }
 
             // Second send lands mid-turn — steer the live turn instead.
             viewModel.sendMessage("Wait, correction")
@@ -1666,7 +1680,9 @@ class ChatViewModelTest {
             advanceUntilIdle()
 
             verify(exactly = 0) { HermesWsClient.sendRedirect(any(), any(), any()) }
-            verify { HermesWsClient.sendMessage(sessionId, any(), any()) }
+            verify {
+                HermesWsClient.sendMessage(sessionId, any(), any(), any())
+            }
         }
 
     @Test
@@ -1697,7 +1713,14 @@ class ChatViewModelTest {
             )
             advanceUntilIdle()
 
-            verify { HermesWsClient.sendMessage(sessionId, "Wait, correction", any()) }
+            verify {
+                HermesWsClient.sendMessage(
+                    sessionId,
+                    "Wait, correction",
+                    any(),
+                    any(),
+                )
+            }
             assertNull(viewModel.uiState.value.errorMessage)
         }
 
@@ -1729,7 +1752,12 @@ class ChatViewModelTest {
             advanceUntilIdle()
 
             verify(exactly = 0) {
-                HermesWsClient.sendMessage(sessionId, "Wait, correction", any())
+                HermesWsClient.sendMessage(
+                    sessionId,
+                    "Wait, correction",
+                    any(),
+                    any(),
+                )
             }
             assertNotNull(viewModel.uiState.value.errorMessage)
         }

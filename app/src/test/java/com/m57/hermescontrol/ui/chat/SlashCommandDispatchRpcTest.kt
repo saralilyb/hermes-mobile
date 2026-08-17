@@ -11,6 +11,7 @@ import com.m57.hermescontrol.data.ws.HermesWsClient
 import com.m57.hermescontrol.data.ws.WsEvent
 import com.m57.hermescontrol.data.ws.WsMethods
 import com.m57.hermescontrol.ui.chat.fakes.FakeChatPersistenceRepository
+import com.m57.hermescontrol.ui.chat.fakes.FakeSlashUsageStore
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
@@ -52,6 +53,7 @@ class SlashCommandDispatchRpcTest {
     private val mockConnectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     private lateinit var app: Application
     private lateinit var fakeRepo: FakeChatPersistenceRepository
+    private lateinit var fakeSlashUsageStore: FakeSlashUsageStore
     private var reqCount = 0
 
     @Before
@@ -78,10 +80,12 @@ class SlashCommandDispatchRpcTest {
 
         app = mockk(relaxed = true)
         fakeRepo = FakeChatPersistenceRepository()
+        fakeSlashUsageStore = FakeSlashUsageStore()
 
         mockConnectionStatus.value = ConnectionStatus.DISCONNECTED
 
         every { AuthManager.getToken() } returns "test-token"
+        every { AuthManager.getSelectedProfileId() } returns "profile-test"
         every { AuthManager.isTypingEffectEnabled() } returns true
         every { AuthManager.getTypingEffectDelayMs() } returns 30
         every { AuthManager.isAutoReconnect() } returns false
@@ -98,7 +102,7 @@ class SlashCommandDispatchRpcTest {
             arg<((String) -> Unit)?>(2)?.invoke(id)
             id
         }
-        every { HermesWsClient.sendMessage(any(), any(), any()) } answers {
+        every { HermesWsClient.sendMessage(any(), any(), any(), any()) } answers {
             reqCount++
             val id = "req-msg-$reqCount"
             arg<((String) -> Unit)?>(2)?.invoke(id)
@@ -113,7 +117,14 @@ class SlashCommandDispatchRpcTest {
     }
 
     private suspend fun TestScope.createViewModelWithSession(): Pair<ChatViewModel, String> {
-        val vm = ChatViewModel(app, false, fakeRepo)
+        val vm =
+            ChatViewModel(
+                app,
+                false,
+                fakeRepo,
+                fakeSlashUsageStore,
+                testDispatcher,
+            )
         advanceUntilIdle()
         mockConnectionStatus.value = ConnectionStatus.CONNECTED
         mockEventsFlow.emit(WsEvent.GatewayReady(null))
@@ -152,26 +163,64 @@ class SlashCommandDispatchRpcTest {
         }
 
     @Test
-    fun `slash command with args forwards arg separately`() =
+    fun `slash queue submits prompt with queued flag`() =
         runTest {
             val (vm, sessionId) = createViewModelWithSession()
 
-            val methodSlot = slot<String>()
-            val paramsSlot = slot<Map<String, Any>>()
+            val sentSession = slot<String>()
+            val sentText = slot<String>()
+            val sentQueued = slot<Boolean>()
+            val rpcMethods = mutableListOf<String>()
             every {
-                HermesWsClient.request(capture(methodSlot), capture(paramsSlot), any())
+                HermesWsClient.request(capture(rpcMethods), any(), any())
             } answers {
                 CompletableDeferred<Any?>(Unit)
+            }
+            every {
+                HermesWsClient.sendMessage(
+                    capture(sentSession),
+                    capture(sentText),
+                    any(),
+                    capture(sentQueued),
+                )
+            } answers {
+                "queued-msg-1"
             }
 
             vm.sendMessage("/queue do the thing")
             advanceUntilIdle()
 
-            assertEquals(WsMethods.COMMAND_DISPATCH, methodSlot.captured)
-            val params = paramsSlot.captured
-            assertEquals("queue", params["name"])
-            assertEquals("do the thing", params["arg"])
-            assertEquals(sessionId, params["session_id"])
+            assertTrue(WsMethods.COMMAND_DISPATCH !in rpcMethods)
+            assertEquals(sessionId, sentSession.captured)
+            assertEquals("do the thing", sentText.captured)
+            assertEquals(true, sentQueued.captured)
+            val userBubble =
+                vm.uiState.value.messages.lastOrNull {
+                    it.role == MessageRole.USER
+                }
+            assertEquals("do the thing", userBubble?.content)
+        }
+
+    @Test
+    fun `bare queue shows usage without sending`() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            var sendCalls = 0
+            every {
+                HermesWsClient.sendMessage(any(), any(), any(), any())
+            } answers {
+                sendCalls++
+                "queued-msg-1"
+            }
+
+            vm.sendMessage("/queue")
+            advanceUntilIdle()
+
+            assertEquals(0, sendCalls)
+            assertEquals(
+                "usage: /queue <prompt>",
+                vm.uiState.value.messages.lastOrNull()?.content,
+            )
         }
 
     @Test
@@ -453,7 +502,12 @@ class SlashCommandDispatchRpcTest {
             }
             // submitPrompt() forwards the returned prompt via wsClient.sendMessage.
             every {
-                HermesWsClient.sendMessage(any(), capture(sentText), any())
+                HermesWsClient.sendMessage(
+                    any(),
+                    capture(sentText),
+                    any(),
+                    any(),
+                )
             } answers {
                 val id = "send-msg-1"
                 arg<((String) -> Unit)?>(2)?.invoke(id)
