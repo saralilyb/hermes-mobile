@@ -52,6 +52,8 @@ data class CronJobEditorState(
     val workdir: String = "",
     val enabled: Boolean = true,
     val no_agent: Boolean = false,
+    val runContinuity: Boolean = false,
+    val contextFrom: List<String> = emptyList(),
     val monitorMode: String = "off",
     val monitor_script: String = "",
     val monitor_url: String = "",
@@ -230,6 +232,8 @@ class CronJobsViewModel(
                                     workdir = job.workdir.orEmpty(),
                                     enabled = job.enabled ?: true,
                                     no_agent = job.no_agent ?: false,
+                                    runContinuity = SELF_CONTEXT_SOURCE in job.context_from.orEmpty(),
+                                    contextFrom = job.context_from.orEmpty(),
                                     monitorMode =
                                         when {
                                             !job.monitor_script.isNullOrBlank() -> "script"
@@ -307,6 +311,7 @@ class CronJobsViewModel(
                                         script = editor.script.ifBlank { null },
                                         workdir = editor.workdir.ifBlank { null },
                                         no_agent = editor.no_agent,
+                                        context_from = editor.continuityContextSources().ifEmpty { null },
                                         monitor_script = editor.monitor_script.ifBlank { null },
                                         monitor_url = editor.monitor_url.ifBlank { null },
                                     ),
@@ -344,6 +349,7 @@ class CronJobsViewModel(
                         updates["script"] = editor.script.ifBlank { null }
                         updates["workdir"] = editor.workdir.ifBlank { null }
                         updates["no_agent"] = editor.no_agent
+                        updates["context_from"] = editor.continuityContextSources().ifEmpty { null }
                         updates["monitor_script"] = editor.monitor_script.ifBlank { null }
                         updates["monitor_url"] = editor.monitor_url.ifBlank { null }
                         safeApiCall {
@@ -440,6 +446,18 @@ class CronJobsViewModel(
             else -> this
         }
 
+    fun toggleRunContinuity() {
+        _uiState.update { state ->
+            state.copy(
+                editorState =
+                    state.editorState.copy(
+                        runContinuity = !state.editorState.runContinuity,
+                        toastMessage = null,
+                    ),
+            )
+        }
+    }
+
     fun toggleNoAgent() {
         _uiState.update {
             val enabling = !it.editorState.no_agent
@@ -473,4 +491,18 @@ class CronJobsViewModel(
             if (editor.monitor_script.isNotBlank()) put("monitor_script", editor.monitor_script.trim())
             if (editor.monitor_url.isNotBlank()) put("monitor_url", editor.monitor_url.trim())
         }
+
+    private fun CronJobEditorState.continuityContextSources(): List<String> {
+        if (!runContinuity) {
+            return contextFrom.filterNot { it == SELF_CONTEXT_SOURCE }
+        }
+        if (SELF_CONTEXT_SOURCE in contextFrom) {
+            return contextFrom
+        }
+        return contextFrom + SELF_CONTEXT_SOURCE
+    }
+
+    private companion object {
+        const val SELF_CONTEXT_SOURCE = "self"
+    }
 }

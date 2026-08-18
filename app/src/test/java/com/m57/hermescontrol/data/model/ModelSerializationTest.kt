@@ -106,6 +106,42 @@ class ModelSerializationTest {
     }
 
     @Test
+    fun cronJob_decodesNestedLastFireError() {
+        val job =
+            json.decodeFromString<CronJob>(
+                """
+                {
+                    "id": "job-fire-error",
+                    "name": "Scheduled digest",
+                    "last_fire_error": {
+                        "at": "2026-08-18T09:00:00Z",
+                        "detail": "gateway unreachable"
+                    }
+                }
+                """.trimIndent(),
+            )
+
+        assertEquals("2026-08-18T09:00:00Z", job.last_fire_error?.at)
+        assertEquals("gateway unreachable", job.last_fire_error?.detail)
+    }
+
+    @Test
+    fun cronJob_allowsMissingAndPartialLastFireError() {
+        val missing =
+            json.decodeFromString<CronJob>(
+                """{"id":"job-missing","name":"Missing"}""",
+            )
+        val partial =
+            json.decodeFromString<CronJob>(
+                """{"id":"job-partial","name":"Partial","last_fire_error":{"detail":"offline"}}""",
+            )
+
+        assertNull(missing.last_fire_error)
+        assertNull(partial.last_fire_error?.at)
+        assertEquals("offline", partial.last_fire_error?.detail)
+    }
+
+    @Test
     fun testToggleSkillRequestSerialization() {
         val request = ToggleSkillRequest(name = "weather", enabled = false)
         val jsonStr = json.encodeToString(request)
