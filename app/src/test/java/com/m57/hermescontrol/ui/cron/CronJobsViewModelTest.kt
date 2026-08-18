@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.ui.cron
 
+import com.m57.hermescontrol.data.model.CreateCronJobRequest
 import com.m57.hermescontrol.data.model.CronJob
 import com.m57.hermescontrol.data.model.UpdateCronJobRequest
 import com.m57.hermescontrol.data.remote.ApiClient
@@ -18,6 +19,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
@@ -109,5 +111,89 @@ class CronJobsViewModelTest {
 
             assertNull(viewModel.uiState.value.deleteTarget)
             coVerify(exactly = 1) { api.deleteCronJob("job-delete") }
+        }
+
+    @Test
+    fun `new job with run continuity sends self context`() =
+        runTest(dispatcher) {
+            val viewModel = CronJobsViewModel(ioDispatcher = dispatcher)
+            viewModel.openNewJobDialog()
+            viewModel.updateEditorField("name", "Daily digest")
+            viewModel.updateEditorField("schedule", "every 1d")
+            viewModel.toggleRunContinuity()
+            coEvery { api.createCronJob(any()) } returns
+                Response.success(CronJob(id = "job-continuity", name = "Daily digest"))
+            coEvery { api.getCronJobs() } returns Response.success(emptyList())
+
+            viewModel.saveEditor()
+            advanceUntilIdle()
+
+            val request = slot<CreateCronJobRequest>()
+            coVerify(exactly = 1) { api.createCronJob(capture(request)) }
+            assertEquals(listOf("self"), request.captured.context_from)
+        }
+
+    @Test
+    fun `editing continuity preserves non-self context sources`() =
+        runTest(dispatcher) {
+            val viewModel = CronJobsViewModel(ioDispatcher = dispatcher)
+            coEvery { api.getCronJob("job-context") } returns
+                Response.success(
+                    CronJob(
+                        id = "job-context",
+                        name = "Digest",
+                        schedule = JsonPrimitive("every 1d"),
+                        context_from = listOf("project", "self"),
+                    ),
+                )
+            coEvery { api.updateCronJob("job-context", any()) } returns
+                Response.success(CronJob(id = "job-context", name = "Digest"))
+            coEvery { api.getCronJobs() } returns Response.success(emptyList())
+
+            viewModel.openEditJobDialog("job-context")
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.editorState.runContinuity)
+
+            viewModel.toggleRunContinuity()
+            viewModel.saveEditor()
+            advanceUntilIdle()
+
+            val request = slot<UpdateCronJobRequest>()
+            coVerify { api.updateCronJob("job-context", capture(request)) }
+            assertEquals(
+                JsonArray(listOf(JsonPrimitive("project"))),
+                request.captured.updates["context_from"],
+            )
+        }
+
+    @Test
+    fun `editing unrelated fields retains non-self context sources`() =
+        runTest(dispatcher) {
+            val viewModel = CronJobsViewModel(ioDispatcher = dispatcher)
+            coEvery { api.getCronJob("job-external-context") } returns
+                Response.success(
+                    CronJob(
+                        id = "job-external-context",
+                        name = "Digest",
+                        schedule = JsonPrimitive("every 1d"),
+                        context_from = listOf("project"),
+                    ),
+                )
+            coEvery { api.updateCronJob("job-external-context", any()) } returns
+                Response.success(CronJob(id = "job-external-context", name = "Digest"))
+            coEvery { api.getCronJobs() } returns Response.success(emptyList())
+
+            viewModel.openEditJobDialog("job-external-context")
+            advanceUntilIdle()
+            viewModel.updateEditorField("name", "Renamed digest")
+            viewModel.saveEditor()
+            advanceUntilIdle()
+
+            val request = slot<UpdateCronJobRequest>()
+            coVerify { api.updateCronJob("job-external-context", capture(request)) }
+            assertEquals(
+                JsonArray(listOf(JsonPrimitive("project"))),
+                request.captured.updates["context_from"],
+            )
         }
 }

@@ -11,6 +11,12 @@ data class CronJobRepeat(
 )
 
 @Serializable
+data class CronJobFireError(
+    val at: String? = null,
+    val detail: String? = null,
+)
+
+@Serializable
 data class CronJob(
     val id: String,
     val name: String,
@@ -24,6 +30,7 @@ data class CronJob(
     val last_run_at: String? = null,
     val last_error: String? = null,
     val last_delivery_error: String? = null,
+    val last_fire_error: CronJobFireError? = null,
     // Full editor fields — all optional with defaults for backward compat
     val enabled: Boolean? = null,
     val prompt: String? = null,

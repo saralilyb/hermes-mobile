@@ -3,6 +3,7 @@ package com.m57.hermescontrol.ui.cron
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -161,17 +162,37 @@ fun CronJobsScreen(
                                                 StatusBadgeType.NEUTRAL
                                             },
                                     )
-                                    when (job.lastRunStatus) {
-                                        "blocked_config" ->
+                                }
+                                if (job.hasSecondaryBadges()) {
+                                    Spacer(modifier = Modifier.height(spacing.xs))
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                                        verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                                    ) {
+                                        when (job.lastRunStatus) {
+                                            "blocked_config" ->
+                                                StatusBadge(
+                                                    text = stringResource(R.string.cron_status_blocked_config),
+                                                    status = StatusBadgeType.ERROR,
+                                                )
+                                            "no_change" ->
+                                                StatusBadge(
+                                                    text = stringResource(R.string.cron_status_no_change),
+                                                    status = StatusBadgeType.INFO,
+                                                )
+                                        }
+                                        if (job.context_from?.contains("self") == true) {
                                             StatusBadge(
-                                                text = stringResource(R.string.cron_status_blocked_config),
-                                                status = StatusBadgeType.ERROR,
-                                            )
-                                        "no_change" ->
-                                            StatusBadge(
-                                                text = stringResource(R.string.cron_status_no_change),
+                                                text = stringResource(R.string.cron_badge_continuity),
                                                 status = StatusBadgeType.INFO,
                                             )
+                                        }
+                                        if (job.last_fire_error.hasContent()) {
+                                            StatusBadge(
+                                                text = stringResource(R.string.cron_badge_dispatch_error),
+                                                status = StatusBadgeType.ERROR,
+                                            )
+                                        }
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(spacing.xs))
@@ -254,6 +275,7 @@ fun CronJobsScreen(
             state = state.editorState,
             onFieldChange = { name, value -> viewModel.updateEditorField(name, value) },
             onToggleNoAgent = { viewModel.toggleNoAgent() },
+            onToggleRunContinuity = { viewModel.toggleRunContinuity() },
             onSetMonitorMode = viewModel::setMonitorMode,
             onSave = { viewModel.saveEditor() },
             onDismiss = { viewModel.closeEditor() },
@@ -280,6 +302,16 @@ fun CronJobsScreen(
                     RunDetailRow("Schedule", CronExpressionFormatter.cronToHumanReadable(job.scheduleText))
                     if (job.last_error != null && job.last_error.isNotBlank()) {
                         RunDetailRow("Error", job.last_error)
+                    }
+                    job.last_fire_error?.let { fireError ->
+                        val detail = fireError.detail?.takeIf { it.isNotBlank() }
+                        val at = fireError.at?.takeIf { it.isNotBlank() }
+                        if (detail != null || at != null) {
+                            RunDetailRow(
+                                stringResource(R.string.cron_detail_dispatch_error),
+                                listOfNotNull(detail, at?.let { "($it)" }).joinToString(" "),
+                            )
+                        }
                     }
                     job.script?.let { if (it.isNotBlank()) RunDetailRow("Script", it) }
                     job.monitorSource?.let { if (it.isNotBlank()) RunDetailRow("Monitor", it) }
@@ -315,6 +347,7 @@ fun CronJobEditorDialog(
     state: CronJobEditorState,
     onFieldChange: (String, String) -> Unit,
     onToggleNoAgent: () -> Unit,
+    onToggleRunContinuity: () -> Unit,
     onSetMonitorMode: (String) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
@@ -525,6 +558,28 @@ fun CronJobEditorDialog(
                             )
                         }
 
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = state.runContinuity,
+                                onCheckedChange = { onToggleRunContinuity() },
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.cron_edit_field_run_continuity),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Text(
+                                    text = stringResource(R.string.cron_edit_hint_run_continuity),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+
                         MonitorModeSection(
                             monitorMode = state.monitorMode,
                             monitorScript = state.monitor_script,
@@ -564,6 +619,15 @@ fun CronJobEditorDialog(
         )
     }
 }
+
+private fun CronJob.hasSecondaryBadges(): Boolean =
+    lastRunStatus == "blocked_config" ||
+        lastRunStatus == "no_change" ||
+        context_from?.contains("self") == true ||
+        last_fire_error.hasContent()
+
+private fun com.m57.hermescontrol.data.model.CronJobFireError?.hasContent(): Boolean =
+    !this?.detail.isNullOrBlank() || !this?.at.isNullOrBlank()
 
 @Composable
 private fun MonitorModeSection(
