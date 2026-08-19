@@ -4,6 +4,8 @@ data class SessionTreeItem(
     val session: SessionInfo,
     val depth: Int,
     val branchStem: String?,
+    val isFork: Boolean = false,
+    val forkDepth: Int = 0,
     val displayTitle: String,
 )
 
@@ -29,7 +31,15 @@ fun flattenSessionTree(sessions: List<SessionInfo>): List<SessionTreeItem> {
                 } else {
                     session.preview?.takeIf(String::isNotBlank)?.take(80) ?: "Untitled"
                 }
-        result += SessionTreeItem(session, depth, branchStem, title)
+        result +=
+            SessionTreeItem(
+                session = session,
+                depth = depth,
+                branchStem = branchStem,
+                isFork = isBranch,
+                forkDepth = if (isBranch) depth else 0,
+                displayTitle = title,
+            )
         val descendants = children[session.id].orEmpty()
         descendants.forEachIndexed { index, child ->
             append(

@@ -47,7 +47,12 @@ internal fun buildSessionSections(
                     it.session.matchesPin(pinId) &&
                         seenSessionIds.add(it.session.id)
                 }
-                ?.copy(depth = 0, branchStem = null)
+                ?.copy(
+                    depth = 0,
+                    branchStem = null,
+                    isFork = false,
+                    forkDepth = 0,
+                )
         }
     val pinnedIds = pinned.mapTo(mutableSetOf()) { it.session.id }
     val recentSessions = sessions.filterNot { it.id in pinnedIds }

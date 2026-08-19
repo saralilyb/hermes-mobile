@@ -113,6 +113,7 @@ class SessionPinningTest {
         assertEquals(listOf("second", "first"), sections.pinned.map { it.session.id })
         assertEquals(listOf("recent", "child"), sections.recent.map { it.session.id })
         assertTrue(sections.pinned.all { it.depth == 0 && it.branchStem == null })
+        assertTrue(sections.pinned.none { it.isFork || it.forkDepth != 0 })
         assertTrue(sections.recent.all { it.depth == 0 })
     }
 

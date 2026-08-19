@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -730,8 +731,8 @@ fun SessionsScreen(
                                 SessionCard(
                                     session = session,
                                     displayTitle = item.displayTitle,
-                                    depth = item.depth,
-                                    branchStem = item.branchStem,
+                                    isFork = item.isFork,
+                                    forkDepth = item.forkDepth,
                                     query = state.searchQuery,
                                     isSelecting = state.isSelecting,
                                     isSelected = session.id in state.selectedIds,
@@ -1005,8 +1006,8 @@ private fun SessionPinButton(
 private fun SessionCard(
     session: com.m57.hermescontrol.data.model.SessionInfo,
     displayTitle: String,
-    depth: Int,
-    branchStem: String?,
+    isFork: Boolean,
+    forkDepth: Int,
     query: String,
     isSelecting: Boolean,
     isSelected: Boolean,
@@ -1029,7 +1030,6 @@ private fun SessionCard(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .padding(start = (depth * 16).dp)
                 .testTag("session_card_${session.id}")
                 .combinedClickable(
                     onClick = onCardClick,
@@ -1062,12 +1062,23 @@ private fun SessionCard(
                 Spacer(modifier = Modifier.width(spacing.sm))
             }
 
-            // Branch tree stem
-            if (branchStem != null && !isSelecting) {
+            if (isFork && forkDepth > 0 && !isSelecting) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.CallSplit,
+                    contentDescription =
+                        stringResource(
+                            R.string.sessions_fork_indicator,
+                            forkDepth,
+                        ),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(modifier = Modifier.width(spacing.xs))
                 Text(
-                    text = branchStem,
+                    text = forkDepth.toString(),
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.outline,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
                 )
                 Spacer(modifier = Modifier.width(spacing.sm))
             }

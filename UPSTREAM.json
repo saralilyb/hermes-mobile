@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "fork_base": "4f1ea004edd24ed890f96d17bab5bcfdcc44ef69",
+  "fork_base": "10affb8299c6d49e29b187901ea3b00ec9ece657",
   "review_start_exclusive": "daf33dcb4c8f7fdafc890acfffc2fbb04569f004",
-  "reviewed_through": "79c2ea13414d5b9e11a147f6f899cc3cde22ddd6",
+  "reviewed_through": "caed4db31671af89e290dcc3b366a4fed7cead0e",
   "entries": [
     {
       "commit": "3c0f281276dd695f09cf38a43fa379f843483646",
@@ -131,6 +131,35 @@
       "commit": "79c2ea13414d5b9e11a147f6f899cc3cde22ddd6",
       "disposition": "accepted",
       "reason": "downstream-adaptation"
+    },
+    {
+      "commit": "53c86d58719174b020782ed38d5f34690f7beb85",
+      "disposition": "deferred",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "82e2d787af04d8a5b4fda35776dd74b5b8dcc055",
+      "disposition": "partial",
+      "reason": "downstream-adaptation",
+      "scope": [
+        "app/src/main/java/com/m57/hermescontrol/data/model/SessionTreeItem.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/sessions/SessionPinning.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/sessions/SessionsScreen.kt",
+        "app/src/main/res/values-ko/strings.xml",
+        "app/src/main/res/values/strings.xml",
+        "app/src/test/java/com/m57/hermescontrol/data/model/SessionTreeTest.kt",
+        "app/src/test/java/com/m57/hermescontrol/ui/sessions/SessionPinningTest.kt"
+      ]
+    },
+    {
+      "commit": "0d1b4fee11b86618a04f239eca14240c9082c478",
+      "disposition": "deferred",
+      "reason": "patch-dependency"
+    },
+    {
+      "commit": "caed4db31671af89e290dcc3b366a4fed7cead0e",
+      "disposition": "deferred",
+      "reason": "security-review"
     }
   ]
 }
