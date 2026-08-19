@@ -26,6 +26,25 @@ class SessionTreeTest {
             },
         )
         assertEquals(listOf(null, null, "├─", "└─", "└─"), tree.map { it.branchStem })
+        assertEquals(listOf(false, false, true, true, true), tree.map { it.isFork })
+        assertEquals(listOf(0, 0, 1, 1, 2), tree.map { it.forkDepth })
+    }
+
+    @Test
+    fun marksDeeplyNestedForksWithTheirDepth() {
+        val sessions =
+            listOf(
+                SessionInfo(id = "root", title = "Root"),
+                SessionInfo(id = "child-a", parent_session_id = "root"),
+                SessionInfo(id = "child-b", parent_session_id = "root"),
+                SessionInfo(id = "grandchild", parent_session_id = "child-a"),
+            )
+
+        val tree = flattenSessionTree(sessions)
+
+        assertEquals(listOf("root", "child-a", "grandchild", "child-b"), tree.map { it.session.id })
+        assertEquals(listOf(false, true, true, true), tree.map { it.isFork })
+        assertEquals(listOf(0, 1, 2, 1), tree.map { it.forkDepth })
     }
 
     @Test
@@ -41,5 +60,7 @@ class SessionTreeTest {
 
         assertEquals(setOf("orphan", "a", "b"), tree.map { it.session.id }.toSet())
         assertEquals("orphan preview", tree.first { it.session.id == "orphan" }.displayTitle)
+        assertEquals(false, tree.first { it.session.id == "orphan" }.isFork)
+        assertEquals(0, tree.first { it.session.id == "orphan" }.forkDepth)
     }
 }
