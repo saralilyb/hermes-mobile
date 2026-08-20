@@ -52,6 +52,8 @@ data class ChatMessage(
      * Transient — not persisted to SQLite.
      */
     val progressPreview: String? = null,
+    /** Backend timeline classification. Non-null values are never rendered as user input. */
+    val displayKind: String? = null,
 )
 
 /**

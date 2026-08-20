@@ -980,4 +980,13 @@
     <string name="attachment_error_access_denied">アクセスが拒否されました: %1$s</string>
     <string name="attachment_error_too_large">ファイルが大きすぎて開けません: %1$s</string>
     <string name="attachment_error_session_expired">セッションの有効期限が切れました — 再接続して開いてください: %1$s</string>
+    <string name="timeline_marker_model_switch">モデルを切り替えました</string>
+    <string name="timeline_marker_model_switch_to">モデルを %1$s に切り替えました</string>
+    <string name="timeline_marker_personality_switch">パーソナリティを切り替えました</string>
+    <string name="timeline_marker_auto_continue">ターンを自動継続しました</string>
+    <string name="timeline_marker_delegation_complete">委任タスクが完了しました</string>
+    <string name="timeline_marker_skill_invocation">スキルを呼び出しました</string>
+    <string name="timeline_marker_internal_notification">システム通知</string>
+    <string name="timeline_marker_max_iterations">ツール呼び出し上限に達しました</string>
+    <string name="timeline_marker_system_notice">システムからのお知らせ</string>
 </resources>

@@ -2815,6 +2815,15 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun sameMessagesDetectsDisplayKindChange() {
+        val viewModel = createViewModel()
+        val before = ChatMessage(role = MessageRole.USER, content = "marker")
+        val after = before.copy(displayKind = "internal_notification")
+
+        assertFalse(viewModel.sameMessages(listOf(before), listOf(after)))
+    }
+
+    @Test
     fun `openAttachment GATEWAY success fires ACTION_VIEW with FileProvider uri`() =
         runTest {
             val cacheDir =

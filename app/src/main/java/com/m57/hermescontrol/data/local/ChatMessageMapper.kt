@@ -30,6 +30,7 @@ fun ChatMessageEntity.toUiModel(): ChatMessage =
         isStreaming = isStreaming,
         attachments = decodeAttachments(attachmentsJson),
         toolName = toolName,
+        toolCallId = toolCallId,
         toolStatus =
             when (toolStatus) {
                 "RUNNING" -> ToolStatus.RUNNING
@@ -37,6 +38,7 @@ fun ChatMessageEntity.toUiModel(): ChatMessage =
                 "FAILED" -> ToolStatus.FAILED
                 else -> null
             },
+        displayKind = displayKind,
     )
 
 fun ChatMessage.toEntity(sessionId: String): ChatMessageEntity =
@@ -48,9 +50,11 @@ fun ChatMessage.toEntity(sessionId: String): ChatMessageEntity =
         reasoningText = reasoningText,
         timestamp = timestamp,
         toolName = toolName,
+        toolCallId = toolCallId,
         toolStatus = toolStatus?.name,
         isStreaming = isStreaming,
         attachmentsJson = OkHttpProvider.json.encodeToString(attachments.orEmpty()),
+        displayKind = displayKind,
     )
 
 private fun decodeAttachments(value: String): List<Attachment> =

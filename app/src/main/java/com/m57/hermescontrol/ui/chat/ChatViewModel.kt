@@ -2317,6 +2317,7 @@ class ChatViewModel(
                 toolName = msg.toolName,
                 toolCallId = msg.toolCallId,
                 toolStatus = if (role == MessageRole.TOOL) ToolStatus.COMPLETED else null,
+                displayKind = msg.displayKind,
             )
         }
     }
@@ -2409,6 +2410,7 @@ class ChatViewModel(
                         } else {
                             null
                         },
+                    displayKind = message["display_kind"] as? String,
                     toolStatus = if (role == MessageRole.TOOL) ToolStatus.COMPLETED else null,
                 )
             }
@@ -2667,9 +2669,11 @@ class ChatViewModel(
                     a.role == b.role &&
                     a.content == b.content &&
                     a.reasoningText == b.reasoningText &&
+                    a.attachments == b.attachments &&
                     a.toolName == b.toolName &&
                     a.toolCallId == b.toolCallId &&
-                    a.toolStatus == b.toolStatus
+                    a.toolStatus == b.toolStatus &&
+                    a.displayKind == b.displayKind
             }
 
     // ── UI actions ───────────────────────────────────────────────────────

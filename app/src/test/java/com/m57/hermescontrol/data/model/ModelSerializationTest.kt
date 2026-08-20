@@ -14,6 +14,16 @@ import org.junit.Test
 
 class ModelSerializationTest {
     @Test
+    fun sessionMessageDeserializesDisplayKind() {
+        val message =
+            json.decodeFromString<SessionMessage>(
+                """{"role":"user","content":"notice","display_kind":"model_switch"}""",
+            )
+
+        assertEquals("model_switch", message.displayKind)
+    }
+
+    @Test
     fun sessionStats_decodesServerMessageCount() {
         val stats = json.decodeFromString<SessionStatsResponse>("""{"total":12,"messages":345}""")
 

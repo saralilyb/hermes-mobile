@@ -43,6 +43,8 @@ data class SessionMessage(
     @SerialName("reasoning_text")
     @Serializable(with = JsonElementStringSerializer::class)
     val legacyReasoningText: String? = null,
+    @SerialName("display_kind")
+    val displayKind: String? = null,
 ) {
     val timestampText: String?
         get() = (timestamp as? JsonPrimitive)?.content
