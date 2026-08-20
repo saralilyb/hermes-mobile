@@ -36,25 +36,13 @@ object LocaleContextWrapper {
     /**
      * Resolve a language code ("system", "en", "ko", …) into a [Locale].
      *
-     * "system" returns the device's default locale. Codes containing a region
-     * separator ("zh-rCN", "pt-BR") are split into language + country.
+     * "system" returns the device's default locale. Android resource-style
+     * region separators (for example, "zh-rCN") are normalized to BCP 47.
      */
     fun localeForCode(code: String): Locale =
         when {
             code.isEmpty() || code == SYSTEM_LANGUAGE -> Locale.getDefault()
-            code.contains("-r", ignoreCase = true) -> {
-                val parts = code.split("-r", ignoreCase = true)
-                Locale(parts[0], parts.getOrElse(1) { "" })
-            }
-            code.contains("-") -> {
-                val parts = code.split("-")
-                Locale(parts[0], parts.getOrElse(1) { "" })
-            }
-            code.contains("_") -> {
-                val parts = code.split("_")
-                Locale(parts[0], parts.getOrElse(1) { "" })
-            }
-            else -> Locale(code)
+            else -> Locale.forLanguageTag(code.replace("-r", "-").replace('_', '-'))
         }
 
     /**

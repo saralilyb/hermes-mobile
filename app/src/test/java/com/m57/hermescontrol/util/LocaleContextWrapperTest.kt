@@ -25,6 +25,11 @@ class LocaleContextWrapperTest {
     }
 
     @Test
+    fun japaneseLanguageTag() {
+        assertEquals("ja", LocaleContextWrapper.localeForCode("ja").toLanguageTag())
+    }
+
+    @Test
     fun regionSeparator_r() {
         val locale = LocaleContextWrapper.localeForCode("zh-rCN")
         assertEquals("zh", locale.language)
