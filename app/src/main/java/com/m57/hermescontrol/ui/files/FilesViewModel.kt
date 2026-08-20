@@ -17,6 +17,7 @@ import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -82,14 +83,17 @@ inline fun <T, R> NetworkResult<T>.map(transform: (T) -> R): NetworkResult<R> =
         is NetworkResult.Failure -> this
     }
 
-class FilesViewModel :
+class FilesViewModel(
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) :
     ViewModel(),
-    ToastHost {
+        ToastHost {
     private val _uiState = MutableStateFlow(FilesUiState())
     val uiState: StateFlow<FilesUiState> = _uiState.asStateFlow()
 
     fun load(path: String? = null) {
         safeLaunchLoad(
+            ioDispatcher = ioDispatcher,
             apiCall = {
                 safeApiCall { ApiClient.hermesApi.listManagedFiles(path) }
             },
@@ -157,7 +161,7 @@ class FilesViewModel :
         _uiState.update { it.copy(isCreatingDir = false, newDirName = "", isLoading = true) }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall {
                         ApiClient.hermesApi.createManagedDirectory(ManagedDirectoryCreate(target))
                     }
@@ -189,7 +193,7 @@ class FilesViewModel :
         _uiState.update { it.copy(isUploading = true) }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall {
                         ApiClient.hermesApi.uploadManagedFileStream(pathBody, overwriteBody, part)
                     }
@@ -221,7 +225,7 @@ class FilesViewModel :
         }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall {
                         ApiClient.hermesApi.deleteManagedFile(
                             ManagedFileDelete(target.path, recursive = target.isDirectory),

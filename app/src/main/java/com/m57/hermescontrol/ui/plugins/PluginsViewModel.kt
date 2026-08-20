@@ -10,6 +10,7 @@ import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,14 +52,17 @@ data class PluginsUiState(
     }
 }
 
-class PluginsViewModel :
+class PluginsViewModel(
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) :
     ViewModel(),
-    ToastHost {
+        ToastHost {
     private val _uiState = MutableStateFlow(PluginsUiState())
     val uiState: StateFlow<PluginsUiState> = _uiState.asStateFlow()
 
     fun loadPlugins() {
         safeLaunchLoad(
+            ioDispatcher = ioDispatcher,
             apiCall = { safeApiCall { ApiClient.hermesApi.getPlugins() } },
             onStart = { _uiState.update { it.copy(isLoading = true, errorMessage = null) } },
             onSuccess = { data ->
@@ -117,7 +121,7 @@ class PluginsViewModel :
         viewModelScope.launch {
             _uiState.update { it.copy(installBusy = true) }
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall {
                         ApiClient.hermesApi.installPlugin(
                             com.m57.hermescontrol.data.model.AgentPluginInstallBody(
@@ -165,7 +169,7 @@ class PluginsViewModel :
             _uiState.update { it.copy(providerBusy = true) }
             val state = _uiState.value
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall {
                         ApiClient.hermesApi.savePluginProviders(
                             PluginProvidersPutRequest(
@@ -197,7 +201,7 @@ class PluginsViewModel :
         viewModelScope.launch {
             _uiState.update { it.copy(rescanBusy = true) }
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.rescanPlugins() }
                 }
             when (result) {
@@ -238,7 +242,7 @@ class PluginsViewModel :
 
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     if (targetEnabled) {
                         safeApiCall { ApiClient.hermesApi.enablePlugin(plugin.name) }
                     } else {
@@ -254,7 +258,7 @@ class PluginsViewModel :
     fun activatePlugin(plugin: PluginInfo) {
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.enablePlugin(plugin.name) }
                 }
             when (result) {
@@ -286,7 +290,7 @@ class PluginsViewModel :
         viewModelScope.launch {
             setRowBusy(name)
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.uninstallPlugin(name) }
                 }
             when (result) {
@@ -308,7 +312,7 @@ class PluginsViewModel :
         viewModelScope.launch {
             setRowBusy(name)
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.updatePlugin(name) }
                 }
             when (result) {
@@ -331,7 +335,7 @@ class PluginsViewModel :
             setRowBusy(plugin.name)
             val targetHidden = !plugin.userHidden
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall {
                         ApiClient.hermesApi.setPluginVisibility(
                             plugin.name,

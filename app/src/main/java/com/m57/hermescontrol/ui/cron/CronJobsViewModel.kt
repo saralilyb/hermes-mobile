@@ -73,6 +73,7 @@ class CronJobsViewModel(
         loadJob =
             safeLaunchLoad(
                 currentJob = loadJob,
+                ioDispatcher = ioDispatcher,
                 apiCall = { safeApiCall { ApiClient.hermesApi.getCronJobs() } },
                 onStart = { _uiState.update { it.copy(isLoading = true, errorMessage = null) } },
                 onSuccess = { data ->

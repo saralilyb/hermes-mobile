@@ -6,6 +6,8 @@ import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,9 +36,11 @@ data class LogsUiState(
     val filters: LogsFilters = LogsFilters(),
 )
 
-class LogsViewModel :
+class LogsViewModel(
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) :
     ViewModel(),
-    ToastHost {
+        ToastHost {
     private val _uiState = MutableStateFlow(LogsUiState())
     val uiState: StateFlow<LogsUiState> = _uiState.asStateFlow()
 
@@ -48,6 +52,7 @@ class LogsViewModel :
         loadJob =
             safeLaunchLoad(
                 currentJob = loadJob,
+                ioDispatcher = ioDispatcher,
                 apiCall = {
                     safeApiCall {
                         ApiClient.hermesApi.getLogs(

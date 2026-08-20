@@ -11,6 +11,7 @@ import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,9 +50,11 @@ private val CATEGORY_ORDER =
         "Agent Settings",
     )
 
-class KeysViewModel :
+class KeysViewModel(
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) :
     ViewModel(),
-    ToastHost {
+        ToastHost {
     private val _uiState = MutableStateFlow(KeysUiState())
     val uiState: StateFlow<KeysUiState> = _uiState.asStateFlow()
 
@@ -91,6 +94,7 @@ class KeysViewModel :
 
     fun loadKeys() {
         safeLaunchLoad(
+            ioDispatcher = ioDispatcher,
             apiCall = { safeApiCall { ApiClient.hermesApi.getEnvVars() } },
             onStart = { _uiState.update { it.copy(isLoading = true, errorMessage = null) } },
             onSuccess = { data ->
@@ -167,7 +171,7 @@ class KeysViewModel :
         _uiState.update { it.copy(isAddingKey = true) }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.updateEnvVar(EnvVarUpdate(key, value)) }
                 }
             when (result) {
@@ -215,7 +219,7 @@ class KeysViewModel :
         _uiState.update { it.copy(deletingKeys = it.deletingKeys + key) }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.deleteEnvVar(EnvVarDeleteRequest(key)) }
                 }
             when (result) {
@@ -246,7 +250,7 @@ class KeysViewModel :
     fun revealKey(key: String) {
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.revealEnvVar(EnvVarRevealRequest(key)) }
                 }
             when (result) {
@@ -280,7 +284,7 @@ class KeysViewModel :
     ) {
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.updateEnvVar(EnvVarUpdate(key, value)) }
                 }
             when (result) {
@@ -310,7 +314,7 @@ class KeysViewModel :
         _uiState.update { it.copy(isRestartingGateway = true) }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.restartGateway() }
                 }
             when (result) {
