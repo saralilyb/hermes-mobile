@@ -86,7 +86,25 @@ release builds. Debug builds may use HTTP/WS on a trusted development network.
 
 ## Build & Test Commands
 
-### ✅ Local Android SDK — if available
+### ✅ Local Android SDK
+
+A local SDK is provisioned and the flavor-qualified Gradle matrix is a
+**required** gate for every change. Do not report validation as skipped without
+first proving the SDK is genuinely absent.
+
+The live checkout resolves the SDK through its untracked `local.properties`.
+A detached maintenance worktree has no `local.properties`, so it resolves the
+SDK from `ANDROID_HOME` / `ANDROID_SDK_ROOT` instead. Both are exported from the
+operator's shell profile above its interactive guard, so non-interactive agent
+and cron shells inherit them. If Gradle reports `SDK location not found`,
+confirm the environment first:
+
+```bash
+echo "${ANDROID_HOME:?ANDROID_HOME unset}"
+"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list_installed
+```
+
+Only after that command fails is "no SDK available" an accurate report.
 
 The project has `hermes` and `iris` product flavors. Unqualified tasks such as
 `assembleDebug`, `lintDebug`, and `testDebugUnitTest` are ambiguous; use the
