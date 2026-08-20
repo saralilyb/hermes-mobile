@@ -8,7 +8,9 @@ import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.ServerEndpoint
 import com.m57.hermescontrol.theme.ThemePreference
 import com.m57.hermescontrol.theme.ThemePreset
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
@@ -167,6 +169,24 @@ class SettingsViewModelTest {
         val viewModel = createViewModel()
         assertEquals("", viewModel.uiState.value.renameProfileName)
     }
+
+    @Test
+    fun japaneseSelection_isPersisted_andRestoredByANewViewModel() =
+        runTest {
+            every { AuthManager.getAppLanguage() } returns "system" andThen "ja"
+            every { AuthManager.setAppLanguage(any()) } just Runs
+            val first = SettingsViewModel(ioDispatcher = testDispatcher)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            first.onAppLanguageChange("ja")
+
+            assertEquals("ja", first.uiState.value.appLanguage)
+            verify { AuthManager.setAppLanguage("ja") }
+
+            val recreated = SettingsViewModel(ioDispatcher = testDispatcher)
+            testDispatcher.scheduler.advanceUntilIdle()
+            assertEquals("ja", recreated.uiState.value.appLanguage)
+        }
 
     @Test
     fun testSelectProfile_updatesAndRebuildsApi() {

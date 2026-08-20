@@ -286,7 +286,22 @@ tasks.register("checkColorLiterals") {
 }
 
 tasks.named("check") {
-    dependsOn("checkColorLiterals")
+    dependsOn("checkColorLiterals", "checkLocalizedResources")
+}
+
+tasks.register<Exec>("testLocalizedResourceChecker") {
+    group = "verification"
+    description = "Tests localized-resource placeholder validation."
+    workingDir = rootProject.projectDir
+    commandLine("python3", "-m", "unittest", "scripts/test_check_localized_resources.py")
+}
+
+tasks.register<Exec>("checkLocalizedResources") {
+    group = "verification"
+    description = "Checks zh, ja, and ko string key and format-placeholder parity."
+    dependsOn("testLocalizedResourceChecker")
+    workingDir = rootProject.projectDir
+    commandLine("python3", "scripts/check-localized-resources.py")
 }
 
 tasks.withType<Test> {

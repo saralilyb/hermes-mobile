@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Card
@@ -39,9 +40,11 @@ import com.m57.hermescontrol.SettingsAppearance
 import com.m57.hermescontrol.SettingsBehavior
 import com.m57.hermescontrol.SettingsChat
 import com.m57.hermescontrol.SettingsConnection
+import com.m57.hermescontrol.SettingsLanguage
 import com.m57.hermescontrol.theme.ThemePreference
 import com.m57.hermescontrol.ui.common.HermesScaffold
 import com.m57.hermescontrol.ui.common.NavIcon
+import com.m57.hermescontrol.ui.settings.components.languageLabel
 
 @Composable
 fun SettingsScreen(
@@ -67,6 +70,12 @@ fun SettingsScreen(
             SettingsCategoryCard(
                 items =
                     listOf(
+                        SettingsRow(
+                            icon = Icons.Filled.Language,
+                            label = stringResource(R.string.settings_sec_language),
+                            summary = languageLabel(state.appLanguage),
+                            onClick = { NavigationController.navigateTo(SettingsLanguage) },
+                        ),
                         SettingsRow(
                             icon = Icons.AutoMirrored.Filled.ListAlt,
                             label = stringResource(R.string.settings_sec_connection),
@@ -121,21 +130,12 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun appearanceSummary(state: SettingsUiState): String {
-    val theme =
-        when (state.themePreference) {
-            ThemePreference.SYSTEM -> stringResource(R.string.settings_summary_theme_system)
-            ThemePreference.LIGHT -> stringResource(R.string.settings_summary_theme_light)
-            ThemePreference.DARK -> stringResource(R.string.settings_summary_theme_dark)
-        }
-    val lang =
-        when (state.appLanguage) {
-            "system" -> stringResource(R.string.language_system)
-            "ko" -> stringResource(R.string.language_korean)
-            else -> stringResource(R.string.language_english)
-        }
-    return "$theme · $lang"
-}
+private fun appearanceSummary(state: SettingsUiState): String =
+    when (state.themePreference) {
+        ThemePreference.SYSTEM -> stringResource(R.string.settings_summary_theme_system)
+        ThemePreference.LIGHT -> stringResource(R.string.settings_summary_theme_light)
+        ThemePreference.DARK -> stringResource(R.string.settings_summary_theme_dark)
+    }
 
 private data class SettingsRow(
     val icon: ImageVector,

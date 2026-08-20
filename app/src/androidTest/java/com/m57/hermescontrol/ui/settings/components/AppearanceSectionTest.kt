@@ -1,15 +1,16 @@
 package com.m57.hermescontrol.ui.settings.components
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.material3.Text
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.m57.hermescontrol.R
-import com.m57.hermescontrol.theme.ThemePreference
-import com.m57.hermescontrol.theme.ThemePreset
 import com.m57.hermescontrol.util.LocaleContextWrapper
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -22,45 +23,65 @@ class AppearanceSectionTest {
     val composeTestRule = createComposeRule()
 
     @Test
-    fun languageSegments_areEqualHeight_andDoNotRepeatPageTitle() {
-        val pageTitle =
-            InstrumentationRegistry
-                .getInstrumentation()
-                .targetContext
-                .getString(R.string.settings_sec_appearance)
+    fun languageDropdown_listsEveryOption_andReportsChangedSelection() {
+        var selected: String? = null
+        var recreateCount = 0
 
         composeTestRule.setContent {
             MaterialTheme {
-                AppearanceSection(
-                    themePreference = ThemePreference.SYSTEM,
-                    onThemeChange = {},
-                    useDynamicColors = true,
-                    onUseDynamicColorsChange = {},
-                    themePreset = ThemePreset.DEFAULT,
-                    onThemePresetChange = {},
+                LanguageSection(
                     appLanguage = LocaleContextWrapper.SYSTEM_LANGUAGE,
-                    onAppLanguageChange = {},
+                    onAppLanguageChange = { selected = it },
+                    onRecreate = { recreateCount++ },
                 )
             }
         }
 
-        val heights =
-            listOf(
-                "language_option_${LocaleContextWrapper.SYSTEM_LANGUAGE}",
-                "language_option_en",
-                "language_option_ko",
-            ).map { tag ->
-                composeTestRule
-                    .onNodeWithTag(tag)
-                    .fetchSemanticsNode()
-                    .boundsInRoot.height
-            }
-
-        heights.drop(1).forEach { height ->
-            assertEquals(heights.first(), height, 0.5f)
-        }
+        composeTestRule.onNodeWithTag("language_picker").performClick()
         composeTestRule
-            .onAllNodesWithText(pageTitle)
-            .assertCountEquals(0)
+            .onNodeWithTag("language_option_system")
+            .assertIsSelected()
+        SUPPORTED_LANGUAGE_CODES.forEach { code ->
+            composeTestRule.onNodeWithTag("language_option_$code").assertIsDisplayed()
+        }
+        composeTestRule.onNodeWithTag("language_option_ja").performClick()
+        composeTestRule.runOnIdle {
+            assertEquals("ja", selected)
+            assertEquals(1, recreateCount)
+        }
+    }
+
+    @Test
+    fun unknownLanguageSummary_fallsBackToSystem() {
+        val systemLabel =
+            InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.language_system)
+
+        composeTestRule.setContent {
+            MaterialTheme { Text(languageLabel("retired-code")) }
+        }
+
+        composeTestRule.onNodeWithText(systemLabel).assertIsDisplayed()
+    }
+
+    @Test
+    fun selectingCurrentLanguage_doesNotPersistOrRecreate() {
+        var changeCount = 0
+        var recreateCount = 0
+        composeTestRule.setContent {
+            MaterialTheme {
+                LanguageSection(
+                    appLanguage = LocaleContextWrapper.SYSTEM_LANGUAGE,
+                    onAppLanguageChange = { changeCount++ },
+                    onRecreate = { recreateCount++ },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("language_picker").performClick()
+        composeTestRule.onNodeWithTag("language_option_system").performClick()
+        composeTestRule.runOnIdle {
+            assertEquals(0, changeCount)
+            assertEquals(0, recreateCount)
+        }
     }
 }

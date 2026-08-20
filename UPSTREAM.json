@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "fork_base": "bba7033a61c3db4cf8db1bbd9a085540127a066a",
+  "fork_base": "f17e4864bc1c5243b6781b393559fe43f6420d9d",
   "review_start_exclusive": "daf33dcb4c8f7fdafc890acfffc2fbb04569f004",
   "reviewed_through": "bb4ca6bfa97c3ab333ccfa6cc4c1a2597392f379",
   "entries": [
@@ -173,6 +173,18 @@
       "disposition": "accepted",
       "reason": "downstream-adaptation",
       "downstream_commit": "181d5f6129f5b87078e69eea29005799c63222d5"
+    },
+    {
+      "upstream_commit": "fdbd98af3e39b6da0a0d39fc173a5b323935098a",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation",
+      "downstream_commit": "041514a561101bb0a67cfdfcf34fe0c51a7df38d"
+    },
+    {
+      "upstream_commit": "063c27b1419b78dc2f4dc90e979459f8332bf78d",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation",
+      "downstream_commit": "041514a561101bb0a67cfdfcf34fe0c51a7df38d"
     }
   ]
 }
