@@ -171,8 +171,8 @@
     {
       "upstream_commit": "2077fda912e21169f710aeac211d03646f265301",
       "disposition": "accepted",
-      "reason": "patch-dependency",
-      "downstream_commit": "ba34aa4b726fe709874b33511ffb44880bb5fe11"
+      "reason": "downstream-adaptation",
+      "downstream_commit": "181d5f6129f5b87078e69eea29005799c63222d5"
     }
   ]
 }
