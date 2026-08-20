@@ -543,7 +543,7 @@
     <string name="webhooks_action_delete">削除</string>
     <string name="webhooks_dialog_create_title">サブスクリプションを作成</string>
     <string name="webhooks_dialog_delete_title">サブスクリプションを削除</string>
-    <string name="webhooks_dialog_delete_message">\"%1$s\" を削除してもよろしいですか？この操作は元に戻せません。この URL に送信されたすべてのイベントは拒否されます。</string>
+    <string name="webhooks_dialog_delete_message">「%1$s」を削除してもよろしいですか？この操作は元に戻せません。このURLに送信されたすべてのイベントは拒否されます。</string>
     <string name="webhooks_field_name">名前 *</string>
     <string name="webhooks_field_description">説明</string>
     <string name="webhooks_field_events">イベント</string>
@@ -576,7 +576,7 @@
     <string name="profiles_action_clone">複製</string>
     <string name="profiles_action_edit_description">説明を編集</string>
     <string name="profiles_content_desc_active">アクティブなプロファイル</string>
-    <string name="profiles_title_edit_soul">Soul プロファイルを編集: %1$s</string>
+    <string name="profiles_title_edit_soul">プロファイル「%1$s」のSoulを編集</string>
     <string name="profiles_title_set_model">モデルを設定: %1$s</string>
     <string name="profiles_title_clone">プロファイルを複製: %1$s</string>
     <string name="profiles_title_edit_description">説明を編集: %1$s</string>
@@ -585,7 +585,7 @@
     <string name="profiles_label_new_name_input">新しいプロファイル名</string>
     <string name="profiles_label_description_input">説明</string>
     <string name="profiles_description_placeholder">説明がありません。このプロファイルの役割を記述してください。</string>
-    <string name="profiles_builder_step_indicator">5 ステップ中 %1$d</string>
+    <string name="profiles_builder_step_indicator">全5ステップ中%1$dステップ目</string>
     <string name="profiles_builder_step_identity">基本情報</string>
     <string name="profiles_builder_step_model">モデル設定</string>
     <string name="profiles_builder_step_skills">スキルの選択</string>
@@ -599,7 +599,7 @@
     <string name="profiles_builder_title_provider">プロバイダーを選択（任意）</string>
     <string name="profiles_builder_title_model">モデルを選択</string>
     <string name="profiles_builder_skills_default">デフォルトのスキルバンドルを含める</string>
-    <string name="profiles_builder_skills_default_desc">一般的なシステムツールを自動的にまとめます</string>
+    <string name="profiles_builder_skills_default_desc">一般的なシステムツールを自動的に組み込みます</string>
     <string name="profiles_builder_skills_local">ローカルスキルを選択</string>
     <string name="profiles_builder_skills_search_hub">Hub を検索</string>
     <string name="profiles_builder_skills_hub_title">Hermes Hub からスキルを追加</string>
@@ -648,7 +648,7 @@
     <string name="plugins_context_engine_label">コンテキストエンジン</string>
     <string name="plugins_provider_defaults">（設定のデフォルト）</string>
     <string name="plugins_remove_confirm_title">プラグインを削除</string>
-    <string name="plugins_remove_confirm_text">エージェントから "%1$s" プラグインを削除します。</string>
+    <string name="plugins_remove_confirm_text">エージェントからプラグイン「%1$s」を削除します。</string>
     <string name="plugins_auth_required">認証が必要</string>
     <string name="plugins_auth_command_hint">認証コマンド: %1$s</string>
     <string name="plugins_dashboard_slots">ダッシュボードスロット: %1$s</string>
@@ -851,7 +851,7 @@
     <string name="files_new_folder_label">フォルダー名</string>
     <string name="files_new_folder_placeholder">my-folder</string>
     <string name="files_dialog_delete_title">削除しますか？</string>
-    <string name="files_dialog_delete_message">\"%1$s\"を削除してもよろしいですか？この操作は元に戻せません。</string>
+    <string name="files_dialog_delete_message">「%1$s」を削除してもよろしいですか？この操作は元に戻せません。</string>
     <string name="files_error_read_selected">選択したファイルを読み取れませんでした: %1$s</string>
     <string name="files_error_selected_unavailable_or_too_large">選択したファイルは利用できないか、25 MBの上限を超えています</string>
     <string name="files_error_list">ファイル一覧の取得に失敗しました: %1$s</string>

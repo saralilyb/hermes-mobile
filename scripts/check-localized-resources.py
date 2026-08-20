@@ -12,7 +12,9 @@ from xml.etree import ElementTree
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 RESOURCE_ROOT = ROOT / "app" / "src" / "main" / "res"
 LOCALES = ("zh", "ja", "ko")
-FORMAT_ARGUMENT = re.compile(r"%(?:\d+\$)?[-#+ 0,(<]*\d*(?:\.\d+)?[a-zA-Z%]")
+FORMAT_ARGUMENT = re.compile(
+    r"%(?:\d+\$)?[-#+ 0,(<]*\d*(?:\.\d+)?(?:[tT][a-zA-Z]|[a-zA-Z%])"
+)
 
 
 def strings(path: pathlib.Path) -> dict[str, str]:

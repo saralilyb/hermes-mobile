@@ -56,6 +56,7 @@ internal fun languageLabel(code: String): String =
 internal fun LanguageSection(
     appLanguage: String,
     onAppLanguageChange: (String) -> Unit,
+    onRecreate: (() -> Unit)? = null,
 ) {
     SectionCard {
         Text(
@@ -65,6 +66,7 @@ internal fun LanguageSection(
         Spacer(modifier = Modifier.height(8.dp))
 
         val activity = LocalActivity.current
+        val recreateActivity = onRecreate ?: { activity?.recreate() }
         var expanded by remember { mutableStateOf(false) }
         Box(modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(
@@ -98,7 +100,7 @@ internal fun LanguageSection(
                             expanded = false
                             if (code != appLanguage) {
                                 onAppLanguageChange(code)
-                                activity?.recreate()
+                                recreateActivity()
                             }
                         },
                     )

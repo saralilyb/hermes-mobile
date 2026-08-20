@@ -28,6 +28,10 @@ class PlaceholderTests(unittest.TestCase):
     def test_missing_argument_fails(self) -> None:
         self.assertFalse(checker.placeholders_match("%1$s: %2$d", "%1$s"))
 
+    def test_date_time_suffix_must_match(self) -> None:
+        self.assertTrue(checker.placeholders_match("%1$tY", "%1$tY"))
+        self.assertFalse(checker.placeholders_match("%1$tY", "%1$tm"))
+
 
 if __name__ == "__main__":
     unittest.main()

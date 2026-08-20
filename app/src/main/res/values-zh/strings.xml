@@ -424,7 +424,7 @@
     <string name="system_op_backup_download">下载备份</string>
     <string name="system_sec_backup">备份</string>
     <string name="system_sec_restore">从上传恢复</string>
-    <string name="system_op_restore_upload">上传恢复包</string>
+    <string name="system_op_restore_upload">从上传文件恢复</string>
     <string name="system_op_restore_path_label">从备份路径恢复</string>
     <string name="system_op_restore_path">恢复路径</string>
     <string name="system_op_import_confirm_title">恢复完整 Hermes 备份？</string>
@@ -782,7 +782,7 @@
     <string name="achievements_search_hint">搜索成就…</string>
     <string name="achievements_stat_unlocked">已解锁</string>
     <string name="achievements_stat_discovered">已发现</string>
-    <string name="achievements_stat_secret">秘密</string>
+    <string name="achievements_stat_secret">隐藏</string>
     <string name="achievements_stat_total">总计</string>
     <string name="achievements_scan_idle">空闲</string>
     <string name="achievements_scan_running">扫描中…</string>
@@ -793,7 +793,7 @@
     <string name="achievements_filter_all">全部</string>
     <string name="achievements_state_unlocked">已解锁</string>
     <string name="achievements_state_discovered">已发现</string>
-    <string name="achievements_state_secret">秘密</string>
+    <string name="achievements_state_secret">隐藏</string>
     <string name="achievements_recent_title">最近解锁</string>
     <string name="achievements_count_label">%1$d / %2$d 个成就</string>
     <string name="achievements_criteria_show">显示条件</string>

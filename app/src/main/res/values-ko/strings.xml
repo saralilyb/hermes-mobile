@@ -97,14 +97,14 @@
     <string name="screen_files">파일</string>
 
     <!-- Notifications -->
-    <string name="notif_title">헤르메스</string>
-    <string name="notif_waiting_replies">헤르메스 응답 대기 중</string>
+    <string name="notif_title">Hermes</string>
+    <string name="notif_waiting_replies">Hermes 응답 대기 중</string>
     <string name="notif_new_message">새 메시지</string>
-    <string name="notif_clarification_needed">헤르메스의 확인이 필요합니다</string>
-    <string name="notif_channel_service_name">헤르메스 백그라운드 서비스</string>
+    <string name="notif_clarification_needed">Hermes의 확인이 필요합니다</string>
+    <string name="notif_channel_service_name">Hermes 백그라운드 서비스</string>
     <string name="notif_channel_service_desc">백그라운드에서 연결 유지</string>
-    <string name="notif_channel_chat_name">헤르메스 채팅 응답</string>
-    <string name="notif_channel_chat_desc">헤르메스의 새 응답 알림</string>
+    <string name="notif_channel_chat_name">Hermes 채팅 응답</string>
+    <string name="notif_channel_chat_desc">Hermes의 새 응답 알림</string>
 
     <!-- Chat Screen & Bubble -->
     <string name="chat_action_search">검색</string>
@@ -119,7 +119,7 @@
     <string name="chat_model_switch_failed">모델 전환 실패: %1$s</string>
     <string name="chat_action_reconnect">재접속</string>
     <string name="chat_action_relogin">재로그인</string>
-    <string name="chat_relogin_title">헤르메스 재로그인</string>
+    <string name="chat_relogin_title">Hermes 재로그인</string>
     <string name="chat_relogin_username">사용자명</string>
     <string name="chat_relogin_password">비밀번호</string>
     <string name="chat_relogin_submit">로그인</string>
@@ -128,7 +128,7 @@
     <string name="chat_empty_title">채팅 준비 완료</string>
     <string name="chat_empty_subtitle">메시지를 보내 대화를 시작하세요</string>
     <string name="chat_new_session_failed">새 채팅을 시작하지 못했습니다. 연결을 확인한 후 다시 시도하세요.</string>
-    <string name="chat_status_connecting">헤르메스에 연결 중…</string>
+    <string name="chat_status_connecting">Hermes에 연결 중…</string>
     <string name="chat_status_reconnecting">재연결 중…</string>
     <string name="chat_status_disconnected">연결 끊김</string>
     <string name="chat_status_no_network">네트워크 없음</string>
@@ -258,7 +258,7 @@
 
     <string name="connect_save_profile">연결 프로필 저장</string>
     <string name="connect_profile_name">프로필 이름</string>
-    <string name="connect_placeholder_profile_name">예: 집 헤르메스, 사무실 서버</string>
+    <string name="connect_placeholder_profile_name">예: 집 Hermes, 사무실 서버</string>
     <string name="connect_action_hide_manual">수동 입력 숨기기</string>
     <string name="connect_action_show_manual">수동으로 입력</string>
     <string name="connect_placeholder_token">API 토큰</string>
@@ -340,7 +340,7 @@
     <string name="system_label_arch">아키텍처</string>
     <string name="system_label_hostname">호스트명</string>
     <string name="system_label_python">파이썬</string>
-    <string name="system_label_hermes_version">헤르메스</string>
+    <string name="system_label_hermes_version">Hermes</string>
     <string name="system_label_cpu">CPU</string>
     <string name="system_label_memory">메모리</string>
     <string name="system_label_disk">디스크</string>
@@ -424,7 +424,7 @@
     <string name="system_op_backup_download">백업 다운로드</string>
     <string name="system_sec_backup">백업</string>
     <string name="system_sec_restore">업로드에서 복원</string>
-    <string name="system_op_restore_upload">업로드 복원</string>
+    <string name="system_op_restore_upload">업로드한 백업 복원</string>
     <string name="system_op_restore_path_label">백업 경로에서 복원</string>
     <string name="system_op_restore_path">복원 경로</string>
     <string name="system_op_import_confirm_title">전체 Hermes 백업을 복원하시겠습니까?</string>
@@ -586,7 +586,7 @@
     <string name="profiles_label_description_input">설명</string>
     <string name="profiles_description_placeholder">설명이 없습니다. 이 프로필의 역할을 설명해주세요.</string>
     <string name="profiles_builder_step_indicator">%1$d / 5 단계</string>
-    <string name="profiles_builder_step_identity">아이덴티티</string>
+    <string name="profiles_builder_step_identity">기본 정보</string>
     <string name="profiles_builder_step_model">모델 설정</string>
     <string name="profiles_builder_step_skills">스킬 선택</string>
     <string name="profiles_builder_step_mcp">MCP 서버</string>

@@ -25,12 +25,14 @@ class AppearanceSectionTest {
     @Test
     fun languageDropdown_listsEveryOption_andReportsChangedSelection() {
         var selected: String? = null
+        var recreateCount = 0
 
         composeTestRule.setContent {
             MaterialTheme {
                 LanguageSection(
                     appLanguage = LocaleContextWrapper.SYSTEM_LANGUAGE,
                     onAppLanguageChange = { selected = it },
+                    onRecreate = { recreateCount++ },
                 )
             }
         }
@@ -43,7 +45,10 @@ class AppearanceSectionTest {
             composeTestRule.onNodeWithTag("language_option_$code").assertIsDisplayed()
         }
         composeTestRule.onNodeWithTag("language_option_ja").performClick()
-        composeTestRule.runOnIdle { assertEquals("ja", selected) }
+        composeTestRule.runOnIdle {
+            assertEquals("ja", selected)
+            assertEquals(1, recreateCount)
+        }
     }
 
     @Test
@@ -61,17 +66,22 @@ class AppearanceSectionTest {
     @Test
     fun selectingCurrentLanguage_doesNotPersistOrRecreate() {
         var changeCount = 0
+        var recreateCount = 0
         composeTestRule.setContent {
             MaterialTheme {
                 LanguageSection(
                     appLanguage = LocaleContextWrapper.SYSTEM_LANGUAGE,
                     onAppLanguageChange = { changeCount++ },
+                    onRecreate = { recreateCount++ },
                 )
             }
         }
 
         composeTestRule.onNodeWithTag("language_picker").performClick()
         composeTestRule.onNodeWithTag("language_option_system").performClick()
-        composeTestRule.runOnIdle { assertEquals(0, changeCount) }
+        composeTestRule.runOnIdle {
+            assertEquals(0, changeCount)
+            assertEquals(0, recreateCount)
+        }
     }
 }
