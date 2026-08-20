@@ -178,13 +178,13 @@
       "upstream_commit": "fdbd98af3e39b6da0a0d39fc173a5b323935098a",
       "disposition": "accepted",
       "reason": "downstream-adaptation",
-      "downstream_commit": "28797b6bbfe58b76e131e29b9a08a3e0bfe5c785"
+      "downstream_commit": "907c45ab0a408c22fb49d537c03e2167297c9bd4"
     },
     {
       "upstream_commit": "063c27b1419b78dc2f4dc90e979459f8332bf78d",
       "disposition": "accepted",
       "reason": "downstream-adaptation",
-      "downstream_commit": "28797b6bbfe58b76e131e29b9a08a3e0bfe5c785"
+      "downstream_commit": "907c45ab0a408c22fb49d537c03e2167297c9bd4"
     }
   ]
 }
