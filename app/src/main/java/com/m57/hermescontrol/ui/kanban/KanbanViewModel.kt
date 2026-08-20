@@ -10,6 +10,7 @@ import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,14 +29,17 @@ data class KanbanUiState(
     val toastMessage: String? = null,
 )
 
-class KanbanViewModel :
+class KanbanViewModel(
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) :
     ViewModel(),
-    ToastHost {
+        ToastHost {
     private val _uiState = MutableStateFlow(KanbanUiState())
     val uiState: StateFlow<KanbanUiState> = _uiState.asStateFlow()
 
     fun loadBoards() {
         safeLaunchLoad(
+            ioDispatcher = ioDispatcher,
             apiCall = { safeApiCall { ApiClient.hermesApi.getKanbanBoards() } },
             onStart = { _uiState.update { it.copy(isLoading = true, errorMessage = null) } },
             onSuccess = { data ->
@@ -62,7 +66,7 @@ class KanbanViewModel :
         _uiState.update { it.copy(selectedBoard = board, isLoading = true, errorMessage = null) }
         viewModelScope.launch {
             val switchResult =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.switchKanbanBoard(board.id) }
                 }
             if (switchResult is NetworkResult.Failure) {
@@ -76,7 +80,7 @@ class KanbanViewModel :
             }
 
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.getKanbanBoard() }
                 }
             when (result) {
@@ -112,7 +116,7 @@ class KanbanViewModel :
         val board = _uiState.value.selectedBoard ?: return
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall {
                         ApiClient.hermesApi.createKanbanTask(
                             board = board.id,
@@ -156,7 +160,7 @@ class KanbanViewModel :
 
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.updateKanbanTask(task.id, mapOf("status" to newStatus)) }
                 }
             if (result is NetworkResult.Failure) {

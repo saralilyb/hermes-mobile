@@ -8,6 +8,7 @@ import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,14 +25,17 @@ data class GatewayUiState(
     val toastMessage: String? = null,
 )
 
-class GatewayViewModel :
+class GatewayViewModel(
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) :
     ViewModel(),
-    ToastHost {
+        ToastHost {
     private val _uiState = MutableStateFlow(GatewayUiState())
     val uiState: StateFlow<GatewayUiState> = _uiState.asStateFlow()
 
     fun loadStatus() {
         safeLaunchLoad(
+            ioDispatcher = ioDispatcher,
             apiCall = { safeApiCall { ApiClient.hermesApi.getStatus() } },
             onStart = { _uiState.update { it.copy(isLoading = true, errorMessage = null) } },
             onSuccess = { data ->
@@ -66,7 +70,7 @@ class GatewayViewModel :
     ) {
         _uiState.update { it.copy(isActionRunning = true) }
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { apiCall() }
+            val result = withContext(ioDispatcher) { apiCall() }
             when (result) {
                 is NetworkResult.Success -> {
                     _uiState.update {

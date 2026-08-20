@@ -55,7 +55,7 @@ class LogsViewModelTest {
                 )
             } returns Response.success(LogResponse(lines = listOf("default")))
 
-            val viewModel = LogsViewModel()
+            val viewModel = LogsViewModel(ioDispatcher = testDispatcher)
             viewModel.loadLogs()
             withTimeout(5_000) {
                 viewModel.uiState.first { it.logs == listOf("default") }
@@ -96,7 +96,7 @@ class LogsViewModelTest {
                 )
             } returns Response.success(LogResponse(lines = listOf("filtered")))
 
-            val viewModel = LogsViewModel()
+            val viewModel = LogsViewModel(ioDispatcher = testDispatcher)
             viewModel.loadLogs()
             withTimeout(5_000) { firstRequestStarted.await() }
 
@@ -124,7 +124,7 @@ class LogsViewModelTest {
             coEvery { mockApi.getLogs(any(), any(), any(), any()) } returns
                 Response.success(LogResponse(logs = listOf("legacy")))
 
-            val viewModel = LogsViewModel()
+            val viewModel = LogsViewModel(ioDispatcher = testDispatcher)
             viewModel.loadLogs()
             withTimeout(5_000) {
                 viewModel.uiState.first { it.logs == listOf("legacy") }

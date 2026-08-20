@@ -33,7 +33,7 @@ class SessionsViewModelTest {
     private val mockApi = mockk<HermesApiService>(relaxed = true)
 
     private fun createViewModel(): SessionsViewModel {
-        val vm = SessionsViewModel()
+        val vm = SessionsViewModel(ioDispatcher = testDispatcher)
         testDispatcher.scheduler.advanceUntilIdle()
         return vm
     }
@@ -104,7 +104,7 @@ class SessionsViewModelTest {
     @Test
     fun `load more dedupes churn without advancing by hydrated pins`() {
         val pinStore = FakeSessionPinStore(listOf("lineage-pinned"))
-        val vm = SessionsViewModel(pinStore)
+        val vm = SessionsViewModel(pinStore = pinStore, ioDispatcher = testDispatcher)
         coEvery { mockApi.getSessions(50, 0, "recent") } returns
             Response.success(
                 SessionListResponse(
@@ -140,7 +140,11 @@ class SessionsViewModelTest {
 
     @Test
     fun `load more advances server offset across duplicate-only page`() {
-        val vm = SessionsViewModel(FakeSessionPinStore(emptyList()))
+        val vm =
+            SessionsViewModel(
+                pinStore = FakeSessionPinStore(emptyList()),
+                ioDispatcher = testDispatcher,
+            )
         coEvery { mockApi.getSessions(50, 0, "recent") } returns
             Response.success(
                 SessionListResponse(
@@ -171,7 +175,11 @@ class SessionsViewModelTest {
 
     @Test
     fun `refresh cancels stale load more before it can mutate refreshed state`() {
-        val vm = SessionsViewModel(FakeSessionPinStore(emptyList()))
+        val vm =
+            SessionsViewModel(
+                pinStore = FakeSessionPinStore(emptyList()),
+                ioDispatcher = testDispatcher,
+            )
         val stalePage = CompletableDeferred<Response<SessionListResponse>>()
         coEvery { mockApi.getSessions(50, 0, "recent") } returnsMany
             listOf(

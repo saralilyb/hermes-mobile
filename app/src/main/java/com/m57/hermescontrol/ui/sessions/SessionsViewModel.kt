@@ -12,6 +12,8 @@ import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,6 +61,7 @@ data class SessionsUiState(
 
 class SessionsViewModel(
     private val pinStore: SessionPinStore = AuthManagerSessionPinStore(),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel(), ToastHost {
     private val _uiState =
         MutableStateFlow(
@@ -87,6 +90,7 @@ class SessionsViewModel(
         loadJob =
             safeLaunchLoad(
                 currentJob = loadJob,
+                ioDispatcher = ioDispatcher,
                 apiCall = {
                     safeApiCall {
                         ApiClient.hermesApi.getSessions(
@@ -279,6 +283,7 @@ class SessionsViewModel(
         statsJob =
             safeLaunchLoad(
                 currentJob = statsJob,
+                ioDispatcher = ioDispatcher,
                 apiCall = {
                     safeApiCall { ApiClient.hermesApi.getSessionStats() }
                 },

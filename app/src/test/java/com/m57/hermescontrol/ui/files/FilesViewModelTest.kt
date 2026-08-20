@@ -42,7 +42,7 @@ class FilesViewModelTest {
 
     @Test
     fun `createDir validation emits localized message resource`() {
-        val viewModel = FilesViewModel()
+        val viewModel = FilesViewModel(ioDispatcher = dispatcher)
 
         viewModel.openCreateDir()
         viewModel.createDir()
@@ -65,7 +65,7 @@ class FilesViewModelTest {
                         bytes = bytes,
                     ),
                 )
-            val viewModel = FilesViewModel()
+            val viewModel = FilesViewModel(ioDispatcher = dispatcher)
             var result: NetworkResult<DownloadedFile>? = null
 
             viewModel.downloadFile(
@@ -84,7 +84,7 @@ class FilesViewModelTest {
     fun `downloadFile maps device size cap to HTTP 413`() =
         runTest(dispatcher) {
             coEvery { GatewayFileClient.fetch("/tmp/large.bin") } returns GatewayFileResult.TooLarge
-            val viewModel = FilesViewModel()
+            val viewModel = FilesViewModel(ioDispatcher = dispatcher)
             var result: NetworkResult<DownloadedFile>? = null
 
             viewModel.downloadFile(

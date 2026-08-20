@@ -11,6 +11,8 @@ import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,9 +54,11 @@ data class ChannelsUiState(
     val envPath: String = "~/.hermes/.env",
 )
 
-class ChannelsViewModel :
+class ChannelsViewModel(
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) :
     ViewModel(),
-    ToastHost {
+        ToastHost {
     private val _uiState = MutableStateFlow(ChannelsUiState())
     val uiState: StateFlow<ChannelsUiState> = _uiState.asStateFlow()
 
@@ -62,6 +66,7 @@ class ChannelsViewModel :
 
     fun loadPlatforms() {
         safeLaunchLoad(
+            ioDispatcher = ioDispatcher,
             apiCall = { safeApiCall { ApiClient.hermesApi.getMessagingPlatforms() } },
             onStart = {
                 _uiState.update {
@@ -96,6 +101,7 @@ class ChannelsViewModel :
     ) {
         _uiState.update { it.copy(togglingId = platformId) }
         safeLaunchLoad(
+            ioDispatcher = ioDispatcher,
             apiCall = {
                 safeApiCall {
                     ApiClient.hermesApi.configurePlatform(
@@ -139,6 +145,7 @@ class ChannelsViewModel :
     fun removePlatform(platformId: String) {
         _uiState.update { it.copy(removingId = platformId) }
         safeLaunchLoad(
+            ioDispatcher = ioDispatcher,
             apiCall = {
                 safeApiCall {
                     ApiClient.hermesApi.removeMessagingPlatform(platformId)
@@ -171,6 +178,7 @@ class ChannelsViewModel :
         update: MessagingPlatformUpdate,
     ) {
         safeLaunchLoad(
+            ioDispatcher = ioDispatcher,
             apiCall = {
                 safeApiCall {
                     ApiClient.hermesApi.configurePlatform(platformId, update)
@@ -215,6 +223,7 @@ class ChannelsViewModel :
     fun testPlatform(platformId: String) {
         _uiState.update { it.copy(testingId = platformId) }
         safeLaunchLoad(
+            ioDispatcher = ioDispatcher,
             apiCall = { safeApiCall { ApiClient.hermesApi.testMessagingPlatform(platformId) } },
             onStart = {},
             onSuccess = { result ->
@@ -234,6 +243,7 @@ class ChannelsViewModel :
     /** Restart the whole gateway. Reloads platforms after a 4s delay. */
     fun restartGateway() {
         safeLaunchLoad(
+            ioDispatcher = ioDispatcher,
             apiCall = { safeApiCall { ApiClient.hermesApi.restartGateway() } },
             onStart = {
                 _uiState.update {

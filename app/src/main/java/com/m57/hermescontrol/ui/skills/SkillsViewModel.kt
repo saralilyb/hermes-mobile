@@ -15,6 +15,7 @@ import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,8 +79,11 @@ data class SkillsUiState(
 
 class SkillsViewModel(
     application: Application,
+    private val ioDispatcher: CoroutineDispatcher,
 ) : AndroidViewModel(application),
     ToastHost {
+    constructor(application: Application) : this(application, Dispatchers.IO)
+
     private val _uiState = MutableStateFlow(SkillsUiState())
     val uiState: StateFlow<SkillsUiState> = _uiState.asStateFlow()
 
@@ -90,6 +94,7 @@ class SkillsViewModel(
         loadJob =
             safeLaunchLoad(
                 currentJob = loadJob,
+                ioDispatcher = ioDispatcher,
                 apiCall = { safeApiCall { ApiClient.hermesApi.getSkills() } },
                 onStart = { _uiState.update { it.copy(isLoading = true, errorMessage = null) } },
                 onSuccess = { data ->
@@ -133,6 +138,7 @@ class SkillsViewModel(
         searchJob =
             safeLaunchLoad(
                 currentJob = searchJob,
+                ioDispatcher = ioDispatcher,
                 apiCall = {
                     safeApiCall { ApiClient.hermesApi.searchSkillsHub(q = query) }
                 },
@@ -180,7 +186,7 @@ class SkillsViewModel(
         }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.previewHubSkill(identifier = identifier) }
                 }
             when (result) {
@@ -216,7 +222,7 @@ class SkillsViewModel(
         }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.installHubSkill(SkillHubInstallRequest(identifier = identifier)) }
                 }
             when (result) {
@@ -254,7 +260,7 @@ class SkillsViewModel(
         }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.uninstallHubSkill(SkillHubUninstallRequest(name = name)) }
                 }
             when (result) {
@@ -309,7 +315,7 @@ class SkillsViewModel(
 
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.toggleSkill(ToggleSkillRequest(skill.name, targetEnabled)) }
                 }
             if (result is NetworkResult.Failure) {
@@ -349,7 +355,7 @@ class SkillsViewModel(
         }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.getSkillContent(skillName) }
                 }
             when (result) {
@@ -382,7 +388,7 @@ class SkillsViewModel(
         _uiState.update { it.copy(isSavingContent = true, saveContentSuccess = false) }
         viewModelScope.launch {
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall {
                         ApiClient.hermesApi.saveSkillContent(
                             SaveSkillContentRequest(
@@ -420,7 +426,7 @@ class SkillsViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(toastMessage = "Updating skills from hub…") }
             val result =
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     safeApiCall { ApiClient.hermesApi.updateSkillsFromHub() }
                 }
             when (result) {
