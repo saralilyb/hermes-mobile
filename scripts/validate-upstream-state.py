@@ -12,15 +12,18 @@ from pathlib import Path
 from typing import Any
 
 HASH_RE = re.compile(r"^[0-9a-f]{40}$")
-ROOT_KEYS = {
+ROOT_KEYS_V1 = {
     "schema_version",
     "fork_base",
     "review_start_exclusive",
     "reviewed_through",
     "entries",
 }
+ROOT_KEYS_V2 = ROOT_KEYS_V1 | {"resolutions"}
 ENTRY_KEYS = {"commit", "disposition", "reason"}
+RESOLUTION_KEYS = {"upstream_commit", "disposition", "reason", "downstream_commit"}
 DISPOSITIONS = {"accepted", "deferred", "excluded", "partial"}
+RESOLUTION_DISPOSITIONS = {"accepted", "excluded", "partial"}
 REASONS = {
     "distribution-policy",
     "downstream-adaptation",
@@ -44,8 +47,7 @@ def git(*args: str) -> str:
     result = subprocess.run(
         ["git", *args],
         check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
     if result.returncode:
@@ -67,13 +69,27 @@ def load_state(path: Path) -> dict[str, Any]:
         raise ValidationError(f"cannot read {path}: {exc}") from exc
     if not isinstance(data, dict):
         raise ValidationError("state root must be an object")
-    if set(data) != ROOT_KEYS:
-        raise ValidationError(
-            f"state root keys must be exactly {sorted(ROOT_KEYS)}",
-        )
-    if data["schema_version"] != 1:
+    version = data.get("schema_version")
+    if type(version) is not int:
+        raise ValidationError("schema_version must be an integer")
+    expected_keys = {1: ROOT_KEYS_V1, 2: ROOT_KEYS_V2}.get(version)
+    if expected_keys is None:
         raise ValidationError("unsupported schema_version")
+    if set(data) != expected_keys:
+        raise ValidationError(
+            f"state root keys must be exactly {sorted(expected_keys)}",
+        )
     return data
+
+
+def validate_scope(scope: Any, disposition: Any, label: str) -> None:
+    if disposition == "partial":
+        if not isinstance(scope, list) or not scope:
+            raise ValidationError(f"{label}.scope is required for partial")
+        if not all(isinstance(item, str) and item for item in scope):
+            raise ValidationError(f"{label}.scope must contain paths")
+    elif scope is not None:
+        raise ValidationError(f"{label}.scope requires partial disposition")
 
 
 def validate_entries(data: dict[str, Any]) -> list[str]:
@@ -94,19 +110,11 @@ def validate_entries(data: dict[str, Any]) -> list[str]:
         commit = require_hash(entry.get("commit"), f"{label}.commit")
         disposition = entry.get("disposition")
         reason = entry.get("reason")
-        if disposition not in DISPOSITIONS:
+        if not isinstance(disposition, str) or disposition not in DISPOSITIONS:
             raise ValidationError(f"{label}.disposition is invalid")
-        if reason not in REASONS:
+        if not isinstance(reason, str) or reason not in REASONS:
             raise ValidationError(f"{label}.reason is invalid")
-
-        scope = entry.get("scope")
-        if disposition == "partial":
-            if not isinstance(scope, list) or not scope:
-                raise ValidationError(f"{label}.scope is required for partial")
-            if not all(isinstance(item, str) and item for item in scope):
-                raise ValidationError(f"{label}.scope must contain paths")
-        elif scope is not None:
-            raise ValidationError(f"{label}.scope requires partial disposition")
+        validate_scope(entry.get("scope"), disposition, label)
         commits.append(commit)
 
     if len(commits) != len(set(commits)):
@@ -114,37 +122,108 @@ def validate_entries(data: dict[str, Any]) -> list[str]:
     return commits
 
 
-def validate_previous_entries(
-    old_entries: Any,
-    entries: list[dict[str, Any]],
-) -> None:
-    if not isinstance(old_entries, list):
-        raise ValidationError("old entries must be an array")
-    if entries[: len(old_entries)] != old_entries:
-        raise ValidationError("previous entries must remain an unchanged prefix")
+def validate_resolutions(data: dict[str, Any]) -> list[dict[str, Any]]:
+    if data["schema_version"] == 1:
+        return []
+    resolutions = data["resolutions"]
+    if not isinstance(resolutions, list):
+        raise ValidationError("resolutions must be an array")
+
+    entry_positions = {
+        entry["commit"]: (index, entry["disposition"])
+        for index, entry in enumerate(data["entries"])
+    }
+    upstream_commits: list[str] = []
+    positions: list[int] = []
+    for index, resolution in enumerate(resolutions):
+        label = f"resolutions[{index}]"
+        if not isinstance(resolution, dict):
+            raise ValidationError(f"{label} must be an object")
+        keys = set(resolution)
+        allowed_with_scope = RESOLUTION_KEYS | {"scope"}
+        if keys != RESOLUTION_KEYS and keys != allowed_with_scope:
+            raise ValidationError(f"{label} has invalid keys: {sorted(keys)}")
+
+        upstream_commit = require_hash(
+            resolution.get("upstream_commit"), f"{label}.upstream_commit"
+        )
+        require_hash(resolution.get("downstream_commit"), f"{label}.downstream_commit")
+        disposition = resolution.get("disposition")
+        if (
+            not isinstance(disposition, str)
+            or disposition not in RESOLUTION_DISPOSITIONS
+        ):
+            raise ValidationError(f"{label}.disposition is invalid")
+        reason = resolution.get("reason")
+        if not isinstance(reason, str) or reason not in REASONS:
+            raise ValidationError(f"{label}.reason is invalid")
+        validate_scope(resolution.get("scope"), disposition, label)
+
+        entry = entry_positions.get(upstream_commit)
+        if entry is None:
+            raise ValidationError(
+                f"{label}.upstream_commit must refer to an existing entry"
+            )
+        position, original_disposition = entry
+        if original_disposition != "deferred":
+            raise ValidationError(
+                f"{label}.upstream_commit must have original disposition deferred"
+            )
+        upstream_commits.append(upstream_commit)
+        positions.append(position)
+
+    if len(upstream_commits) != len(set(upstream_commits)):
+        raise ValidationError("each resolved upstream_commit must appear exactly once")
+    if positions != sorted(positions):
+        raise ValidationError("resolutions must follow original entry order")
+    return resolutions
+
+
+def validate_previous_prefix(old: Any, current: list[Any], name: str) -> None:
+    if not isinstance(old, list):
+        raise ValidationError(f"old {name} must be an array")
+    if current[: len(old)] != old:
+        raise ValidationError(f"previous {name} must remain an unchanged prefix")
+
+
+def require_ancestor(ancestor: str, descendant: str, message: str) -> None:
+    try:
+        git("merge-base", "--is-ancestor", ancestor, descendant)
+    except ValidationError as exc:
+        raise ValidationError(message) from exc
+
+
+def validate_downstream_commit(commit: str) -> None:
+    try:
+        git("cat-file", "-e", f"{commit}^{{commit}}")
+    except ValidationError as exc:
+        raise ValidationError(f"downstream_commit {commit} does not exist") from exc
+    require_ancestor(
+        commit, "HEAD", f"downstream_commit {commit} must be an ancestor of HEAD"
+    )
 
 
 def validate_git_state(
     data: dict[str, Any],
     commits: list[str],
+    resolutions: list[dict[str, Any]],
     check_branch_base: bool,
 ) -> None:
     fork_base = require_hash(data["fork_base"], "fork_base")
-    start = require_hash(
-        data["review_start_exclusive"],
-        "review_start_exclusive",
-    )
+    start = require_hash(data["review_start_exclusive"], "review_start_exclusive")
     reviewed = require_hash(data["reviewed_through"], "reviewed_through")
 
     upstream = git("rev-parse", "upstream/main")
-    git("merge-base", "--is-ancestor", reviewed, upstream)
-
+    require_ancestor(reviewed, upstream, "reviewed_through must be on upstream/main")
     expected = git("rev-list", "--reverse", f"{start}..{reviewed}")
     expected_commits = expected.splitlines() if expected else []
     if commits != expected_commits:
         raise ValidationError(
-            "entries must exactly match the ordered reviewed commit range",
+            "entries must exactly match the ordered reviewed commit range"
         )
+
+    for resolution in resolutions:
+        validate_downstream_commit(resolution["downstream_commit"])
 
     if check_branch_base:
         origin = git("rev-parse", "origin/main")
@@ -162,29 +241,44 @@ def validate_git_state(
         text=True,
     )
     if previous.returncode:
-        return
-    old = json.loads(previous.stdout)
-    old_reviewed = require_hash(old.get("reviewed_through"), "old reviewed")
-    git("merge-base", "--is-ancestor", old_reviewed, reviewed)
-    if old.get("review_start_exclusive") != start:
-        raise ValidationError("review_start_exclusive may not change")
-    validate_previous_entries(old.get("entries"), data["entries"])
+        old_resolutions: list[dict[str, Any]] = []
+    else:
+        old = json.loads(previous.stdout)
+        old_reviewed = require_hash(old.get("reviewed_through"), "old reviewed")
+        require_ancestor(
+            old_reviewed, reviewed, "reviewed_through may not move backward"
+        )
+        if old.get("review_start_exclusive") != start:
+            raise ValidationError("review_start_exclusive may not change")
+        validate_previous_prefix(old.get("entries"), data["entries"], "entries")
+        old_resolutions = old.get("resolutions", [])
+        validate_previous_prefix(old_resolutions, resolutions, "resolutions")
+
+    # Only resolutions appended on this branch must postdate this branch's base.
+    # Historical resolutions remain valid after main advances and fork_base changes.
+    if check_branch_base:
+        for resolution in resolutions[len(old_resolutions) :]:
+            downstream = resolution["downstream_commit"]
+            if downstream == fork_base:
+                raise ValidationError("new downstream_commit must be after fork_base")
+            require_ancestor(
+                fork_base,
+                downstream,
+                "new downstream_commit must be after fork_base",
+            )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--state",
-        type=Path,
-        default=Path("UPSTREAM.json"),
-    )
+    parser.add_argument("--state", type=Path, default=Path("UPSTREAM.json"))
     parser.add_argument("--check-branch-base", action="store_true")
     args = parser.parse_args()
 
     try:
         data = load_state(args.state)
         commits = validate_entries(data)
-        validate_git_state(data, commits, args.check_branch_base)
+        resolutions = validate_resolutions(data)
+        validate_git_state(data, commits, resolutions, args.check_branch_base)
     except (ValidationError, json.JSONDecodeError) as exc:
         print(f"upstream state invalid: {exc}", file=sys.stderr)
         return 1
@@ -193,11 +287,15 @@ def main() -> int:
     for entry in data["entries"]:
         disposition = entry["disposition"]
         counts[disposition] = counts.get(disposition, 0) + 1
-    summary = " ".join(
-        f"{key}={counts.get(key, 0)}"
-        for key in sorted(DISPOSITIONS)
+    raw_deferred = counts.get("deferred", 0)
+    resolved = len(resolutions)
+    unresolved_deferred = raw_deferred - resolved
+    summary = " ".join(f"{key}={counts.get(key, 0)}" for key in sorted(DISPOSITIONS))
+    print(
+        f"upstream state valid: entries={len(commits)} {summary} "
+        f"raw_deferred={raw_deferred} resolved={resolved} "
+        f"unresolved_deferred={unresolved_deferred}"
     )
-    print(f"upstream state valid: entries={len(commits)} {summary}")
     return 0
 
 
