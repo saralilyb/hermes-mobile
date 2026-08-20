@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "fork_base": "66297a9ce5c17ab4315ea1bb9f63ae022e0ea149",
+  "fork_base": "bba7033a61c3db4cf8db1bbd9a085540127a066a",
   "review_start_exclusive": "daf33dcb4c8f7fdafc890acfffc2fbb04569f004",
   "reviewed_through": "bb4ca6bfa97c3ab333ccfa6cc4c1a2597392f379",
   "entries": [
@@ -167,5 +167,12 @@
       "reason": "toolchain-validation"
     }
   ],
-  "resolutions": []
+  "resolutions": [
+    {
+      "upstream_commit": "2077fda912e21169f710aeac211d03646f265301",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation",
+      "downstream_commit": "181d5f6129f5b87078e69eea29005799c63222d5"
+    }
+  ]
 }
