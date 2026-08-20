@@ -980,4 +980,13 @@
     <string name="attachment_error_access_denied">접근 거부됨: %1$s</string>
     <string name="attachment_error_too_large">열기에 파일이 너무 큼: %1$s</string>
     <string name="attachment_error_session_expired">세션이 만료됨 — 다시 연결하여 열기: %1$s</string>
+    <string name="timeline_marker_model_switch">모델 전환됨</string>
+    <string name="timeline_marker_model_switch_to">모델이 %1$s(으)로 전환됨</string>
+    <string name="timeline_marker_personality_switch">페르소나 전환됨</string>
+    <string name="timeline_marker_auto_continue">턴이 자동으로 계속됨</string>
+    <string name="timeline_marker_delegation_complete">위임 작업 완료됨</string>
+    <string name="timeline_marker_skill_invocation">스킬 호출됨</string>
+    <string name="timeline_marker_internal_notification">시스템 알림</string>
+    <string name="timeline_marker_max_iterations">도구 호출 한도 도달</string>
+    <string name="timeline_marker_system_notice">시스템 안내</string>
 </resources>

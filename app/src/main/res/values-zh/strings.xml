@@ -980,4 +980,13 @@
     <string name="attachment_error_access_denied">访问被拒绝：%1$s</string>
     <string name="attachment_error_too_large">文件过大，无法打开：%1$s</string>
     <string name="attachment_error_session_expired">会话已过期 — 请重新连接后打开：%1$s</string>
+    <string name="timeline_marker_model_switch">模型已切换</string>
+    <string name="timeline_marker_model_switch_to">模型已切换为 %1$s</string>
+    <string name="timeline_marker_personality_switch">人格已切换</string>
+    <string name="timeline_marker_auto_continue">回合已自动继续</string>
+    <string name="timeline_marker_delegation_complete">委派任务已完成</string>
+    <string name="timeline_marker_skill_invocation">技能已调用</string>
+    <string name="timeline_marker_internal_notification">系统通知</string>
+    <string name="timeline_marker_max_iterations">已达到工具调用上限</string>
+    <string name="timeline_marker_system_notice">系统提示</string>
 </resources>

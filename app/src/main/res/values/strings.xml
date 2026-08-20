@@ -980,4 +980,13 @@
     <string name="attachment_error_access_denied">Access denied: %1$s</string>
     <string name="attachment_error_too_large">File too large to open: %1$s</string>
     <string name="attachment_error_session_expired">Session expired — reconnect to open: %1$s</string>
+    <string name="timeline_marker_model_switch">Model switched</string>
+    <string name="timeline_marker_model_switch_to">Model switched to %1$s</string>
+    <string name="timeline_marker_personality_switch">Personality switched</string>
+    <string name="timeline_marker_auto_continue">Turn auto-continued</string>
+    <string name="timeline_marker_delegation_complete">Delegated task completed</string>
+    <string name="timeline_marker_skill_invocation">Skill invoked</string>
+    <string name="timeline_marker_internal_notification">System notification</string>
+    <string name="timeline_marker_max_iterations">Reached tool-call limit</string>
+    <string name="timeline_marker_system_notice">System notice</string>
 </resources>

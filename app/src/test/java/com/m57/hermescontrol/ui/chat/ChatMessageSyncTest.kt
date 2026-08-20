@@ -47,6 +47,28 @@ class ChatMessageSyncTest {
         assertEquals(listOf("local-a", "local-b", "rest-session-10"), merged.map { it.id })
     }
 
+    @Test
+    fun stableRestRowReplacesCachedRowWithDisplayKind() {
+        val current =
+            listOf(
+                ChatMessage(
+                    id = "rest-session-1",
+                    role = MessageRole.USER,
+                    content = "model changed",
+                ),
+            )
+        val incoming = listOf(current.single().copy(displayKind = "model_switch"))
+
+        val merged =
+            mergeSyncedMessages(
+                current = current,
+                incoming = incoming,
+                isServerMessage = { it.startsWith("rest-session-") },
+            )
+
+        assertEquals("model_switch", merged.single().displayKind)
+    }
+
     private fun runningTool(
         id: String,
         callId: String?,

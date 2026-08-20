@@ -1,10 +1,12 @@
 package com.m57.hermescontrol.ui.chat
 
 import android.content.pm.PackageManager
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -104,6 +106,59 @@ class ChatScreenTest {
         composeTestRule.onNodeWithTag("send_button").assertDoesNotExist()
         composeTestRule.onNodeWithTag("chat_input").assertTextEquals("first prompt")
         verify(exactly = 0) { mockViewModel.sendMessage(any()) }
+    }
+
+    @Test
+    fun taggedAndSyntheticRowsRenderAsTimelineEventsNeverUserBubbles() {
+        val uiState =
+            ChatUiState(
+                connectionStatus = ConnectionStatus.CONNECTED,
+                isSessionReady = true,
+                messages =
+                    listOf(
+                        ChatMessage(
+                            role = MessageRole.USER,
+                            content = "backend marker",
+                            displayKind = "future_kind",
+                        ),
+                        ChatMessage(
+                            role = MessageRole.USER,
+                            content =
+                                "You've reached the maximum number of tool-calling iterations allowed. " +
+                                    "Please provide a final response.",
+                        ),
+                    ),
+            )
+        val mockViewModel = mockk<ChatViewModel>(relaxed = true)
+        every { mockViewModel.uiState } returns MutableStateFlow(uiState).asStateFlow()
+        every { mockViewModel.streamingState } returns MutableStateFlow(StreamingState()).asStateFlow()
+
+        composeTestRule.setContent {
+            ChatScreen(onOpenDrawer = {}, sessionId = "session", viewModel = mockViewModel)
+        }
+
+        composeTestRule.onAllNodesWithTag("system_timeline_event").assertCountEquals(2)
+        composeTestRule.onNodeWithTag("chat_bubble_user").assertDoesNotExist()
+    }
+
+    @Test
+    fun genuineUserRowStillRendersAsUserBubble() {
+        val uiState =
+            ChatUiState(
+                connectionStatus = ConnectionStatus.CONNECTED,
+                isSessionReady = true,
+                messages = listOf(ChatMessage(role = MessageRole.USER, content = "hello")),
+            )
+        val mockViewModel = mockk<ChatViewModel>(relaxed = true)
+        every { mockViewModel.uiState } returns MutableStateFlow(uiState).asStateFlow()
+        every { mockViewModel.streamingState } returns MutableStateFlow(StreamingState()).asStateFlow()
+
+        composeTestRule.setContent {
+            ChatScreen(onOpenDrawer = {}, sessionId = "session", viewModel = mockViewModel)
+        }
+
+        composeTestRule.onNodeWithTag("chat_bubble_user").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("system_timeline_event").assertDoesNotExist()
     }
 
     @Test

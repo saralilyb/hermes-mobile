@@ -115,6 +115,46 @@ class HermesDatabaseMigrationTest {
     }
 
     @Test
+    fun migrate5To6PreservesAttachmentsAndAddsNullableDisplayKind() {
+        helper.createDatabase(TEST_DATABASE_FROM_5, 5).apply {
+            execSQL(
+                """
+                INSERT INTO chat_messages (
+                    id, session_id, role, content, reasoning_text, timestamp,
+                    tool_name, tool_status, is_streaming, attachments_json
+                ) VALUES (
+                    'marker', 'session', 'USER', 'notice', 'reasoning', 42,
+                    'tool', 'COMPLETED', 0, '[{"name":"kept"}]'
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        val migrated =
+            helper.runMigrationsAndValidate(
+                TEST_DATABASE_FROM_5,
+                6,
+                true,
+                HermesDatabase.MIGRATION_5_6,
+            )
+
+        migrated.query(
+            "SELECT attachments_json, reasoning_text, tool_name, tool_status, " +
+                "tool_call_id, display_kind FROM chat_messages",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("[{\"name\":\"kept\"}]", cursor.getString(0))
+            assertEquals("reasoning", cursor.getString(1))
+            assertEquals("tool", cursor.getString(2))
+            assertEquals("COMPLETED", cursor.getString(3))
+            assertTrue(cursor.isNull(4))
+            assertTrue(cursor.isNull(5))
+        }
+        migrated.close()
+    }
+
+    @Test
     fun migrate2To5PreservesMessagesAndAddsDefaults() {
         helper.createDatabase(TEST_DATABASE_FROM_2, 2).apply {
             execSQL(
@@ -214,6 +254,7 @@ class HermesDatabaseMigrationTest {
         const val PRODUCTION_DATABASE = "hermes_control.db"
         const val TEST_DATABASE = "hermes-migration-test"
         const val TEST_DATABASE_FROM_2 = "hermes-migration-test-from-2"
+        const val TEST_DATABASE_FROM_5 = "hermes-migration-test-from-5"
         val TEST_PASSWORD = "room-migration-test-only".encodeToByteArray()
     }
 }

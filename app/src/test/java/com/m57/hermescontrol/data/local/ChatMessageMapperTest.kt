@@ -204,4 +204,28 @@ class ChatMessageMapperTest {
 
         assertTrue(entity.toUiModel().attachments.orEmpty().isEmpty())
     }
+
+    @Test
+    fun roundTripPreservesTimelineKindAlongsideExistingFields() {
+        val attachment = Attachment(uri = "file", name = "file", mimeType = "text/plain")
+        val message =
+            ChatMessage(
+                role = MessageRole.TOOL,
+                content = "result",
+                reasoningText = "reasoning",
+                toolName = "terminal",
+                toolCallId = "call-1",
+                toolStatus = ToolStatus.COMPLETED,
+                attachments = listOf(attachment),
+                displayKind = "internal_notification",
+            )
+
+        val restored = message.toEntity("session").toUiModel()
+
+        assertEquals("internal_notification", restored.displayKind)
+        assertEquals("reasoning", restored.reasoningText)
+        assertEquals("call-1", restored.toolCallId)
+        assertEquals(listOf(attachment), restored.attachments)
+        assertEquals(ToolStatus.COMPLETED, restored.toolStatus)
+    }
 }

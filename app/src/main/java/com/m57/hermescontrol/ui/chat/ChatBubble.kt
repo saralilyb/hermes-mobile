@@ -85,6 +85,7 @@ import com.m57.hermescontrol.theme.LocalHermesStatusColors
 import com.m57.hermescontrol.theme.onColorFor
 import com.m57.hermescontrol.ui.chat.components.DiffViewCard
 import com.m57.hermescontrol.ui.chat.components.ReasoningCard
+import com.m57.hermescontrol.ui.chat.components.SystemTimelineMarker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
@@ -118,40 +119,45 @@ fun ChatBubble(
                     animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                 ),
     ) {
-        when (message.role) {
-            MessageRole.USER -> {
-                UserBubble(
-                    message = message,
-                    searchQuery = searchQuery,
-                    isCurrentMatch = isCurrentMatch,
-                    onOpenAttachment = onOpenAttachment,
-                    onImageClick = onImageClick,
-                    modifier = modifier,
-                )
-            }
+        val timelineEvent = classifySystemTimelineEvent(message)
+        if (timelineEvent != null) {
+            SystemTimelineMarker(event = timelineEvent, modifier = modifier)
+        } else {
+            when (message.role) {
+                MessageRole.USER -> {
+                    UserBubble(
+                        message = message,
+                        searchQuery = searchQuery,
+                        isCurrentMatch = isCurrentMatch,
+                        onOpenAttachment = onOpenAttachment,
+                        onImageClick = onImageClick,
+                        modifier = modifier,
+                    )
+                }
 
-            MessageRole.ASSISTANT -> {
-                AssistantBubble(
-                    message = message,
-                    isDarkTheme = isDarkTheme,
-                    searchQuery = searchQuery,
-                    isCurrentMatch = isCurrentMatch,
-                    onOpenAttachment = onOpenAttachment,
-                    onImageClick = onImageClick,
-                    modifier = modifier,
-                )
-            }
+                MessageRole.ASSISTANT -> {
+                    AssistantBubble(
+                        message = message,
+                        isDarkTheme = isDarkTheme,
+                        searchQuery = searchQuery,
+                        isCurrentMatch = isCurrentMatch,
+                        onOpenAttachment = onOpenAttachment,
+                        onImageClick = onImageClick,
+                        modifier = modifier,
+                    )
+                }
 
-            MessageRole.SYSTEM -> {
-                SystemBubble(
-                    message = message,
-                    onRespondApproval = onRespondApproval,
-                    modifier = modifier,
-                )
-            }
+                MessageRole.SYSTEM -> {
+                    SystemBubble(
+                        message = message,
+                        onRespondApproval = onRespondApproval,
+                        modifier = modifier,
+                    )
+                }
 
-            MessageRole.TOOL -> {
-                ToolBubble(message, isDarkTheme, modifier)
+                MessageRole.TOOL -> {
+                    ToolBubble(message, isDarkTheme, modifier)
+                }
             }
         }
     }
