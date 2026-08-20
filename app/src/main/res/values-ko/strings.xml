@@ -2,7 +2,7 @@
 
 <resources>
     <string name="chat_terminal_backend_content_description">터미널 백엔드: %1$s</string>
-    <string name="app_name">헤르메스</string>
+    <string name="app_name">Hermes Mobile</string>
 
     <!-- Chat -->
     <string name="chat_send_desc">전송</string>
@@ -14,9 +14,9 @@
     <string name="chat_sudo_title">Sudo 비밀번호 필요</string>
     <string name="chat_sudo_body">에이전트가 계속 진행하려면 sudo 비밀번호가 필요합니다. 화면에 표시되지 않습니다.</string>
     <string name="chat_sudo_password">비밀번호</string>
-    <string name="chat_secret_title">시크릿 필요</string>
-    <string name="chat_secret_body">에이전트가 계속 진행하려면 시크릿 값(토큰 또는 비밀번호)이 필요합니다. 화면에 표시되지 않습니다.</string>
-    <string name="chat_secret_value">시크릿</string>
+    <string name="chat_secret_title">비밀 값 필요</string>
+    <string name="chat_secret_body">에이전트가 계속 진행하려면 비밀 값(토큰 또는 비밀번호)이 필요합니다. 화면에 표시되지 않습니다.</string>
+    <string name="chat_secret_value">비밀 값</string>
     <string name="chat_search_placeholder">메시지 검색…</string>
     <string name="chat_clear_search_desc">지우기</string>
     <string name="chat_prev_match_desc">이전</string>
@@ -63,7 +63,7 @@
     <string name="billing_topup">충전</string>
 
     <!-- Navigation & Drawer -->
-    <string name="nav_drawer_title">⚡ 헤르메스</string>
+    <string name="nav_drawer_title">⚡ Hermes</string>
     <string name="nav_drawer_subtitle">AI 에이전트 제어</string>
     <string name="nav_drawer_section_converse">대화</string>
     <string name="nav_drawer_section_automate">자동화</string>
@@ -187,14 +187,14 @@
     <string name="settings_item_theme">테마</string>
     <string name="settings_sec_chat">채팅</string>
     <string name="settings_item_typing_effect">타이핑 효과</string>
-    <string name="settings_desc_typing_effect">새 메시지를 단어 단위로 애니메이션</string>
+    <string name="settings_desc_typing_effect">새 메시지를 글자 단위로 표시하는 애니메이션</string>
     <string name="settings_item_typing_delay">지연: %1$d ms</string>
     <string name="settings_delay_10ms">10 ms</string>
     <string name="settings_delay_100ms">100 ms</string>
     <string name="settings_action_test_connection">연결 테스트</string>
     <string name="settings_sec_about">정보</string>
     <string name="settings_sec_language">언어</string>
-    <string name="settings_about_app_name">⚡ 헤르메스 모바일</string>
+    <string name="settings_about_app_name">Hermes Mobile</string>
     <string name="settings_about_version">버전</string>
     <string name="settings_about_build">빌드</string>
     <string name="settings_about_debug">디버그</string>
@@ -263,7 +263,7 @@
     <string name="connect_action_show_manual">수동으로 입력</string>
     <string name="connect_placeholder_token">API 토큰</string>
     <string name="connect_server_url_label">서버 URL</string>
-    <string name="connect_placeholder_server_url">https://host:9119/ or http://127.0.0.1:9119/</string>
+    <string name="connect_placeholder_server_url">https://host:9119/ 또는 http://127.0.0.1:9119/</string>
     <string name="connect_error_url_invalid">올바른 서버 URL(https:// 또는 http://)을 입력하세요</string>
     <string name="action_connect">연결</string>
 
@@ -351,11 +351,11 @@
     <string name="system_psutil_warning">CPU/메모리/디스크 정보를 보려면 psutil을 설치하세요.</string>
     <string name="system_version_latest">최신</string>
     <string name="system_version_update_available">업데이트 있음</string>
-    <string name="system_version_behind">%1$d 버전 뒤짐</string>
+    <string name="system_version_behind">최신 버전보다 %1$d개 릴리스 뒤처짐</string>
     <string name="system_action_check_updates">업데이트 확인</string>
     <string name="system_action_update_now">지금 업데이트</string>
     <string name="system_update_confirm_title">Hermes 업데이트?</string>
-    <string name="system_update_confirm_desc">Hermes 업데이트를 실행하고 게이트웨이를 재시작합니다. 다음 재시작 시 적용됩니다.</string>
+    <string name="system_update_confirm_desc">hermes update를 실행하고 게이트웨이를 재시작합니다.</string>
 
     <!-- Portal section -->
     <string name="system_sec_portal">Nous Portal</string>
@@ -369,7 +369,7 @@
     <!-- Curator section -->
     <string name="system_sec_curator">스킬 큐레이터</string>
     <!-- Self-Improvement & Learning Activity -->
-    <string name="system_sec_self_improvement">Self-Improvement &amp;amp; Learning Activity</string>
+    <string name="system_sec_self_improvement">자기 개선 및 학습 활동</string>
     <string name="system_self_improvement_desc">에이전트가 시간의 흐름에 따라 학습한 스킬, 메모리 및 팩트 저장소 업데이트의 시간순 기록입니다.</string>
     <string name="system_self_improvement_no_activity">아직 기록된 자기 개선 이벤트가 없습니다.</string>
     <string name="system_status_active">활성</string>
@@ -464,7 +464,7 @@
     <string name="system_hooks_field_matcher">매처 (선택사항)</string>
     <string name="system_hooks_field_timeout">타임아웃 (초)</string>
     <string name="system_hooks_field_approve">지금 승인 (실행 허용; 설정만 해두고 비활성 상태로 두려면 체크 해제)</string>
-    <string name="system_hooks_warning">셸 훅은 이 호스트에서任意 명령을 실행합니다. 신뢰하는 스크립트만 추가하세요. 다음 게이트웨이/세션 재시작부터 적용됩니다.</string>
+    <string name="system_hooks_warning">셸 훅은 이 호스트에서 임의의 명령을 실행합니다. 신뢰하는 스크립트만 추가하세요. 다음 게이트웨이/세션 재시작 후 적용됩니다.</string>
     <string name="system_hooks_create">훅 생성</string>
 
     <!-- Action log viewer -->
@@ -548,7 +548,7 @@
     <string name="webhooks_field_description">설명</string>
     <string name="webhooks_field_events">이벤트</string>
     <string name="webhooks_field_deliver">전달 대상</string>
-    <string name="webhooks_field_secret">시크릿</string>
+    <string name="webhooks_field_secret">서명 비밀 값</string>
     <string name="webhooks_hint_name">예: github-push</string>
     <string name="webhooks_hint_events">쉼표로 구분 (예: push, pull_request)</string>
     <string name="webhooks_hint_deliver">log, telegram, discord, origin, all…</string>
@@ -782,7 +782,7 @@
     <string name="achievements_search_hint">업적 검색…</string>
     <string name="achievements_stat_unlocked">해제됨</string>
     <string name="achievements_stat_discovered">발견됨</string>
-    <string name="achievements_stat_secret">시크릿</string>
+    <string name="achievements_stat_secret">숨김</string>
     <string name="achievements_stat_total">전체</string>
     <string name="achievements_scan_idle">대기</string>
     <string name="achievements_scan_running">스캔 중…</string>
@@ -793,7 +793,7 @@
     <string name="achievements_filter_all">전체</string>
     <string name="achievements_state_unlocked">해제됨</string>
     <string name="achievements_state_discovered">발견됨</string>
-    <string name="achievements_state_secret">시크릿</string>
+    <string name="achievements_state_secret">숨김</string>
     <string name="achievements_recent_title">최근 해제</string>
     <string name="achievements_count_label">%1$d / %2$d 업적</string>
     <string name="achievements_criteria_show">조건 보기</string>
@@ -849,7 +849,7 @@
     <string name="files_action_delete_named">%1$s 삭제</string>
     <string name="files_dialog_new_folder_title">새 폴더</string>
     <string name="files_new_folder_label">폴더 이름</string>
-    <string name="files_new_folder_placeholder">내-폴더</string>
+    <string name="files_new_folder_placeholder">my-folder</string>
     <string name="files_dialog_delete_title">삭제할까요?</string>
     <string name="files_dialog_delete_message">\"%1$s\"을(를) 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.</string>
     <string name="files_error_read_selected">선택한 파일을 읽을 수 없습니다: %1$s</string>
@@ -907,7 +907,7 @@
     <string name="auth_login_use_profile">%1$s(으)로 접속</string>
 
     <!-- Landing Screen -->
-    <string name="landing_title">헤르메스 모바일</string>
+    <string name="landing_title">Hermes Agent에 오신 것을 환영합니다</string>
     <string name="landing_subtitle">Hermes Agent 제어판</string>
     <string name="landing_action_auth_login">인증 로그인</string>
 
@@ -967,7 +967,7 @@
     <string name="image_viewer_save">기기에 저장</string>
     <string name="image_viewer_share">공유</string>
     <string name="image_viewer_share_title">이미지 공유</string>
-    <string name="image_viewer_saved">다운로드에 이미지 저장됨</string>
+    <string name="image_viewer_saved">이미지를 Downloads 폴더에 저장했습니다</string>
     <string name="image_viewer_save_failed">이미지를 저장할 수 없음</string>
     <string name="image_viewer_load_failed">이미지를 불러올 수 없음: %1$s</string>
     <string name="image_viewer_share_failed">이미지를 공유할 수 없음</string>

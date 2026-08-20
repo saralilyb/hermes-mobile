@@ -9,6 +9,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -18,6 +19,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.ui.settings.SectionCard
@@ -75,8 +80,20 @@ internal fun LanguageSection(
             ) {
                 supportedLanguages().forEach { (code, label) ->
                     DropdownMenuItem(
-                        modifier = Modifier.testTag("language_option_$code"),
+                        modifier =
+                            Modifier
+                                .testTag("language_option_$code")
+                                .semantics {
+                                    role = Role.RadioButton
+                                    selected = code == appLanguage
+                                },
                         text = { Text(label) },
+                        trailingIcon = {
+                            RadioButton(
+                                selected = code == appLanguage,
+                                onClick = null,
+                            )
+                        },
                         onClick = {
                             expanded = false
                             if (code != appLanguage) {

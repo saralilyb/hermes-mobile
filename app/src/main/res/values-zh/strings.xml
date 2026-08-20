@@ -14,9 +14,9 @@
     <string name="chat_sudo_title">需要 Sudo 密码</string>
     <string name="chat_sudo_body">Agent 需要你的 sudo 密码才能继续，密码不会显示。</string>
     <string name="chat_sudo_password">密码</string>
-    <string name="chat_secret_title">需要密钥</string>
-    <string name="chat_secret_body">Agent 需要密钥（令牌或密码）才能继续，内容不会显示。</string>
-    <string name="chat_secret_value">密钥</string>
+    <string name="chat_secret_title">需要机密值</string>
+    <string name="chat_secret_body">Agent 需要机密值（令牌或密码）才能继续，该值不会显示。</string>
+    <string name="chat_secret_value">机密值</string>
     <string name="chat_search_placeholder">搜索消息…</string>
     <string name="chat_clear_search_desc">清除</string>
     <string name="chat_prev_match_desc">上一个匹配</string>
@@ -63,7 +63,7 @@
     <string name="billing_topup">充值</string>
 
     <!-- Navigation & Drawer -->
-    <string name="nav_drawer_title">Hermes</string>
+    <string name="nav_drawer_title">⚡ Hermes</string>
     <string name="nav_drawer_subtitle">AI Agent 控制台</string>
     <string name="nav_drawer_section_converse">对话</string>
     <string name="nav_drawer_section_automate">自动化</string>
@@ -76,7 +76,7 @@
     <string name="screen_cron">定时任务</string>
     <string name="screen_system">系统</string>
     <string name="screen_settings">设置</string>
-    <string name="screen_profiles">配置</string>
+    <string name="screen_profiles">配置档案</string>
     <string name="screen_webhooks">Webhook</string>
     <string name="screen_gateway">网关</string>
     <string name="screen_toolsets">工具集</string>
@@ -211,14 +211,14 @@
     <string name="settings_summary_theme_light">浅色</string>
     <string name="settings_summary_theme_dark">深色</string>
     <string name="action_save">保存</string>
-    <string name="settings_action_add_profile">添加配置</string>
-    <string name="settings_action_edit_profile">编辑配置</string>
-    <string name="settings_title_add_profile">添加连接配置</string>
-    <string name="settings_title_edit_profile">编辑连接配置</string>
-    <string name="settings_field_profile_name">配置名称</string>
+    <string name="settings_action_add_profile">添加配置档案</string>
+    <string name="settings_action_edit_profile">编辑配置档案</string>
+    <string name="settings_title_add_profile">添加连接配置档案</string>
+    <string name="settings_title_edit_profile">编辑连接配置档案</string>
+    <string name="settings_field_profile_name">配置档案名称</string>
     <string name="settings_delete_confirm_title">删除配置？</string>
     <string name="settings_delete_confirm_message">确定要删除"%1$s"吗？此操作无法撤销。</string>
-    <string name="content_desc_delete_profile">删除配置</string>
+    <string name="content_desc_delete_profile">删除配置档案</string>
     <string name="content_desc_hide_token">隐藏令牌</string>
     <string name="content_desc_show_token">显示令牌</string>
     <string name="theme_system">跟随系统</string>
@@ -227,7 +227,7 @@
     <string name="settings_item_use_dynamic_colors">动态取色</string>
     <string name="settings_desc_use_dynamic_colors">从壁纸提取配色（Android 12+）</string>
     <string name="settings_item_theme_preset">预设主题</string>
-    <string name="theme_preset_default">默认</string>
+    <string name="theme_preset_default">默认（Voltage Purple）</string>
     <string name="theme_preset_monochrome">单色</string>
     <string name="theme_preset_gruvbox">Gruvbox</string>
     <string name="theme_preset_catppuccin">Catppuccin</string>
@@ -243,8 +243,8 @@
     <string name="language_korean">韩语</string>
 
     <!-- Connect Screen -->
-    <string name="connect_selected_profile">配置：%1$s</string>
-    <string name="connect_action_select_profile">选择已保存配置</string>
+    <string name="connect_selected_profile">配置档案：%1$s</string>
+    <string name="connect_action_select_profile">选择已保存的配置档案</string>
 
     <!-- Connect Error Messages -->
     <string name="connect_error_token_required">需要填写令牌</string>
@@ -256,14 +256,14 @@
     <string name="connect_error_resolve">无法解析主机名</string>
     <string name="connect_error_connection_failed">连接失败：%1$s</string>
 
-    <string name="connect_save_profile">保存连接配置</string>
-    <string name="connect_profile_name">配置名称</string>
+    <string name="connect_save_profile">保存连接配置档案</string>
+    <string name="connect_profile_name">配置档案名称</string>
     <string name="connect_placeholder_profile_name">例如：本地服务器、远程服务器</string>
     <string name="connect_action_hide_manual">隐藏手动输入</string>
     <string name="connect_action_show_manual">改为手动输入</string>
     <string name="connect_placeholder_token">API 令牌</string>
     <string name="connect_server_url_label">服务器地址</string>
-    <string name="connect_placeholder_server_url">https://主机:9119/ 或 http://127.0.0.1:9119/</string>
+    <string name="connect_placeholder_server_url">https://host:9119/ 或 http://127.0.0.1:9119/</string>
     <string name="connect_error_url_invalid">请输入有效的服务器地址（https:// 或 http://）</string>
     <string name="action_connect">连接</string>
 
@@ -369,7 +369,7 @@
     <!-- Curator section -->
     <string name="system_sec_curator">技能维护器</string>
     <!-- Self-Improvement & Learning Activity -->
-    <string name="system_sec_self_improvement">Self-Improvement &amp;amp; Learning Activity</string>
+    <string name="system_sec_self_improvement">自我改进与学习活动</string>
     <string name="system_self_improvement_desc">按时间顺序记录智能体逐步学习到的技能、记忆和事实存储更新。</string>
     <string name="system_self_improvement_no_activity">尚未记录自我改进事件。</string>
     <string name="system_status_active">运行中</string>
@@ -548,7 +548,7 @@
     <string name="webhooks_field_description">描述</string>
     <string name="webhooks_field_events">事件</string>
     <string name="webhooks_field_deliver">投递到</string>
-    <string name="webhooks_field_secret">密钥</string>
+    <string name="webhooks_field_secret">签名机密值</string>
     <string name="webhooks_hint_name">例如：github-push</string>
     <string name="webhooks_hint_events">逗号分隔（例如 push, pull_request）</string>
     <string name="webhooks_hint_deliver">log、telegram、discord、origin、all…</string>
@@ -563,8 +563,8 @@
     <string name="config_action_save_yaml">保存 YAML</string>
 
     <!-- Profiles Screen -->
-    <string name="profiles_empty_title">没有可用配置</string>
-    <string name="profiles_empty_desc">Hermes 的连接配置将显示在这里。</string>
+    <string name="profiles_empty_title">暂无配置档案</string>
+    <string name="profiles_empty_desc">Hermes 的连接配置档案将显示在这里。</string>
     <string name="profiles_label_model">模型：%1$s</string>
     <string name="profiles_label_provider">提供商：%1$s</string>
     <string name="profiles_label_skills">%1$d 个技能</string>
@@ -575,16 +575,16 @@
     <string name="profiles_action_set_model">设置模型</string>
     <string name="profiles_action_clone">克隆</string>
     <string name="profiles_action_edit_description">编辑描述</string>
-    <string name="profiles_content_desc_active">当前配置</string>
-    <string name="profiles_title_edit_soul">编辑 Soul 配置：%1$s</string>
+    <string name="profiles_content_desc_active">当前配置档案</string>
+    <string name="profiles_title_edit_soul">编辑配置档案 Soul：%1$s</string>
     <string name="profiles_title_set_model">设置模型：%1$s</string>
-    <string name="profiles_title_clone">克隆配置：%1$s</string>
+    <string name="profiles_title_clone">克隆配置档案：%1$s</string>
     <string name="profiles_title_edit_description">编辑描述：%1$s</string>
     <string name="profiles_label_provider_input">提供商</string>
     <string name="profiles_label_model_input">模型名称</string>
-    <string name="profiles_label_new_name_input">新配置名称</string>
+    <string name="profiles_label_new_name_input">新配置档案名称</string>
     <string name="profiles_label_description_input">描述</string>
-    <string name="profiles_description_placeholder">暂无描述。请描述此配置的用途。</string>
+    <string name="profiles_description_placeholder">暂无描述。请说明此配置档案的用途。</string>
     <string name="profiles_builder_step_indicator">第 %1$d 步，共 5 步</string>
     <string name="profiles_builder_step_identity">身份</string>
     <string name="profiles_builder_step_model">模型配置</string>
@@ -593,8 +593,8 @@
     <string name="profiles_builder_step_review">检查与创建</string>
     <string name="profiles_builder_action_back">上一步</string>
     <string name="profiles_builder_action_next">下一步</string>
-    <string name="profiles_builder_action_create">创建配置</string>
-    <string name="profiles_builder_label_profile_name">配置名称</string>
+    <string name="profiles_builder_action_create">创建配置档案</string>
+    <string name="profiles_builder_label_profile_name">配置档案名称</string>
     <string name="profiles_builder_label_description">描述</string>
     <string name="profiles_builder_title_provider">选择提供商（可选）</string>
     <string name="profiles_builder_title_model">选择模型</string>
@@ -615,7 +615,7 @@
     <string name="profiles_builder_mcp_command">命令</string>
     <string name="profiles_builder_mcp_args">参数（逗号分隔）</string>
     <string name="profiles_builder_mcp_sse_url">SSE 地址</string>
-    <string name="profiles_builder_review_name">配置名称</string>
+    <string name="profiles_builder_review_name">配置档案名称</string>
     <string name="profiles_builder_review_description">描述</string>
     <string name="profiles_builder_review_provider">提供商：%1$s</string>
     <string name="profiles_builder_review_model">模型：%1$s</string>
@@ -765,7 +765,7 @@
     <string name="cron_edit_monitor_url">URL</string>
     <string name="cron_edit_monitor_script_field">监控脚本</string>
     <string name="cron_edit_monitor_url_field">监控 URL</string>
-    <string name="cron_edit_monitor_hint">仅当来源输出变化时运行 Agent</string>
+    <string name="cron_edit_monitor_hint">仅当已认证的服务器检测到来源发生变化时，才运行 Agent。</string>
     <string name="cron_edit_hint_schedule">例如 0 9 * * * 或 every 2h</string>
     <string name="cron_edit_hint_deliver">例如 origin、local、all 或 telegram:chat_id</string>
     <string name="cron_edit_hint_skills">每行一个</string>
@@ -884,7 +884,7 @@
     <string name="channels_restart_banner">更改已保存。重启网关后生效。</string>
 
     <!-- Settings -->
-    <string name="settings_saved_profiles">已保存配置（%1$d）</string>
+    <string name="settings_saved_profiles">已保存配置档案（%1$d）</string>
     <string name="settings_logout">退出登录</string>
 
     <!-- Auth Login Screen -->
@@ -903,11 +903,11 @@
     <string name="auth_login_error_unreachable">无法访问 dashboard——检查 IP 和端口</string>
     <string name="auth_login_error_oauth_unsupported">此版本暂不支持 OAuth 登录（Nous Portal）。请将 dashboard 切换到 basic auth 或令牌模式。（issue #639）</string>
     <string name="auth_login_oauth_coming_soon">此 dashboard 使用 OAuth（Nous Portal）登录，该功能即将在 Hermes Mobile 中支持。</string>
-    <string name="auth_login_existing_profiles_title">使用已登录的配置：</string>
+    <string name="auth_login_existing_profiles_title">使用已登录的配置档案：</string>
     <string name="auth_login_use_profile">以 %1$s 身份进入</string>
 
     <!-- Landing Screen -->
-    <string name="landing_title">Hermes Mobile</string>
+    <string name="landing_title">欢迎使用 Hermes Agent</string>
     <string name="landing_subtitle">Hermes Agent 控制面板</string>
     <string name="landing_action_auth_login">认证登录</string>
 

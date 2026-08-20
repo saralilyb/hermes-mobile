@@ -3,6 +3,7 @@ package com.m57.hermescontrol.ui.settings.components
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -35,6 +36,9 @@ class AppearanceSectionTest {
         }
 
         composeTestRule.onNodeWithTag("language_picker").performClick()
+        composeTestRule
+            .onNodeWithTag("language_option_system")
+            .assertIsSelected()
         SUPPORTED_LANGUAGE_CODES.forEach { code ->
             composeTestRule.onNodeWithTag("language_option_$code").assertIsDisplayed()
         }

@@ -56,7 +56,7 @@
     <string name="billing_cancel">キャンセル</string>
     <string name="billing_renews">更新日: %1$s</string>
     <string name="billing_feature_unavailable">このサーバーでは請求機能を利用できません（メソッド非対応）</string>
-    <string name="billing_no_active_plan">有効なプランはありません — 無料プランを利用中です。\'</string>
+    <string name="billing_no_active_plan">有効なプランはありません — 無料プランを利用中です。</string>
     <string name="billing_login_required">プランを確認するにはNous Portalにログインしてください。</string>
     <string name="billing_credits_remaining">残りクレジット: %1$s</string>
     <string name="billing_plan">プラン</string>
@@ -127,7 +127,7 @@
     <string name="chat_relogin_error_empty">ユーザー名とパスワードを入力してください</string>
     <string name="chat_empty_title">チャットを開始できます</string>
     <string name="chat_empty_subtitle">メッセージを送信して会話を始めましょう</string>
-    <string name="chat_new_session_failed">新しいチャットを開始できませんでした。接続を確認して再試行してください。\'</string>
+    <string name="chat_new_session_failed">新しいチャットを開始できませんでした。接続を確認して再試行してください。</string>
     <string name="chat_status_connecting">Hermesに接続中\u2026</string>
     <string name="chat_status_reconnecting">再接続中\u2026</string>
     <string name="chat_status_disconnected">切断済み</string>
@@ -156,7 +156,7 @@
 
     <string name="chat_context_detail_used">コンテキストウィンドウの%1$d%%を使用中</string>
     <string name="chat_context_detail_unknown_title">使用率は報告されていません</string>
-    <string name="chat_context_detail_unknown_body">このセッションのコンテキストエンジンはターンごとのウィンドウ使用率を報告しないため、不正確な数値を表示せずメーターを空欄にしています。以下のセッション合計は正確です。\'</string>
+    <string name="chat_context_detail_unknown_body">このセッションのコンテキストエンジンはターンごとのウィンドウ使用率を報告しないため、不正確な数値を表示せずメーターを空欄にしています。以下のセッション合計は正確です。</string>
     <string name="chat_context_detail_totals">セッション合計</string>
     <string name="chat_context_detail_input">プロンプト（入力）</string>
     <string name="chat_context_detail_output">生成結果（出力）</string>
@@ -187,7 +187,7 @@
     <string name="settings_item_theme">テーマ</string>
     <string name="settings_sec_chat">チャット</string>
     <string name="settings_item_typing_effect">タイピング効果</string>
-    <string name="settings_desc_typing_effect">新しいメッセージを単語ごとにアニメーション表示します</string>
+    <string name="settings_desc_typing_effect">新しいメッセージを文字単位でアニメーション表示します</string>
     <string name="settings_item_typing_delay">遅延: %1$d ms</string>
     <string name="settings_delay_10ms">10 ms</string>
     <string name="settings_delay_100ms">100 ms</string>
@@ -217,7 +217,7 @@
     <string name="settings_title_edit_profile">接続プロファイルを編集</string>
     <string name="settings_field_profile_name">プロファイル名</string>
     <string name="settings_delete_confirm_title">プロファイルを削除しますか？</string>
-    <string name="settings_delete_confirm_message">\"%1$s\"を削除してもよろしいですか？この操作は元に戻せません。\'</string>
+    <string name="settings_delete_confirm_message">「%1$s」を削除してもよろしいですか？この操作は元に戻せません。</string>
     <string name="content_desc_delete_profile">プロファイルを削除</string>
     <string name="content_desc_hide_token">トークンを隠す</string>
     <string name="content_desc_show_token">トークンを表示</string>
@@ -351,7 +351,7 @@
     <string name="system_psutil_warning">CPU / メモリ / ディスクの指標を表示するには、psutil extra をインストールしてください。</string>
     <string name="system_version_latest">最新</string>
     <string name="system_version_update_available">更新あり</string>
-    <string name="system_version_behind">%1$d バージョン遅れ</string>
+    <string name="system_version_behind">最新より%1$dリリース遅れ</string>
     <string name="system_action_check_updates">更新を確認</string>
     <string name="system_action_update_now">今すぐ更新</string>
     <string name="system_update_confirm_title">Hermes を更新しますか？</string>
@@ -394,7 +394,7 @@
     <string name="system_sec_memory">メモリ</string>
     <string name="system_memory_external">外部プロバイダー: %1$s</string>
     <string name="system_memory_builtin">組み込みのみ</string>
-    <string name="system_memory_change_plugins">プラグインで変更</string>
+    <string name="system_memory_change_plugins">プラグインで変更する</string>
     <string name="system_memory_builtin_label">組み込みファイル — MEMORY.md: %1$s · USER.md: %2$s</string>
     <string name="system_memory_reset_memory">MEMORY.md をリセット</string>
     <string name="system_memory_reset_user">USER.md をリセット</string>
@@ -424,7 +424,7 @@
     <string name="system_op_backup_download">バックアップをダウンロード</string>
     <string name="system_sec_backup">バックアップ</string>
     <string name="system_sec_restore">アップロードから復元</string>
-    <string name="system_op_restore_upload">アップロードを復元</string>
+    <string name="system_op_restore_upload">アップロードしたバックアップを復元</string>
     <string name="system_op_restore_path_label">バックアップのパスから復元</string>
     <string name="system_op_restore_path">復元パス</string>
     <string name="system_op_import_confirm_title">Hermes の完全バックアップを復元しますか？</string>
@@ -515,9 +515,9 @@
     <string name="sessions_prune_confirm">整理</string>
     <string name="sessions_fork_indicator">フォークされたセッション、深度 %1$d</string>
     <string name="sessions_delete_title">セッションを削除しますか？</string>
-    <string name="sessions_delete_message">\"%1$s\" を削除してもよろしいですか？この操作は元に戻せません（\'取り消し不可\'）。</string>
+    <string name="sessions_delete_message">「%1$s」を削除してもよろしいですか？この操作は元に戻せません。</string>
     <string name="sessions_bulk_delete_title">セッションを削除しますか？</string>
-    <string name="sessions_bulk_delete_message">%1$d 件のセッションを削除してもよろしいですか？この操作は元に戻せません（\'取り消し不可\'）。</string>
+    <string name="sessions_bulk_delete_message">%1$d件のセッションを削除してもよろしいですか？この操作は元に戻せません。</string>
     <string name="sessions_action_select_all">すべて選択</string>
     <string name="sessions_action_deselect_all">選択解除</string>
     <string name="sessions_action_delete_n">%1$d 件を削除</string>
@@ -584,9 +584,9 @@
     <string name="profiles_label_model_input">モデル名</string>
     <string name="profiles_label_new_name_input">新しいプロファイル名</string>
     <string name="profiles_label_description_input">説明</string>
-    <string name="profiles_description_placeholder">説明がありません。このプロファイルの役割（\'役割\'）を記述してください。</string>
+    <string name="profiles_description_placeholder">説明がありません。このプロファイルの役割を記述してください。</string>
     <string name="profiles_builder_step_indicator">5 ステップ中 %1$d</string>
-    <string name="profiles_builder_step_identity">識別情報</string>
+    <string name="profiles_builder_step_identity">基本情報</string>
     <string name="profiles_builder_step_model">モデル設定</string>
     <string name="profiles_builder_step_skills">スキルの選択</string>
     <string name="profiles_builder_step_mcp">MCP サーバー</string>
@@ -712,7 +712,7 @@
     <string name="mcp_servers_auth_header">ヘッダー</string>
     <string name="mcp_servers_auth_oauth">OAuth</string>
     <string name="mcp_servers_field_bearer_token">Bearer トークン</string>
-    <string name="mcp_servers_action_authorize">認証</string>
+    <string name="mcp_servers_action_authorize">承認</string>
     <string name="mcp_servers_oauth_dialog_title">MCP OAuth フロー</string>
     <string name="mcp_servers_oauth_dialog_status">ステータス: %1$s</string>
     <string name="mcp_servers_oauth_dialog_error">エラー: %1$s</string>
@@ -755,7 +755,7 @@
     <string name="cron_edit_field_workdir">作業ディレクトリ</string>
     <string name="cron_edit_field_no_agent">エージェントなし（スクリプトのみ）</string>
     <string name="cron_edit_field_run_continuity">実行の継続性</string>
-    <string name="cron_edit_hint_run_continuity">各実行にこのジョブ\'の前回の出力を挿入します</string>
+    <string name="cron_edit_hint_run_continuity">実行のたびに、このジョブの前回の出力を引き継ぎます</string>
     <string name="cron_badge_continuity">継続性</string>
     <string name="cron_detail_dispatch_error">ディスパッチエラー</string>
     <string name="cron_badge_dispatch_error">起動失敗</string>
@@ -771,7 +771,7 @@
     <string name="cron_edit_hint_skills">1行に1つ</string>
     <string name="cron_edit_action_save">保存</string>
     <string name="cron_delete_title">ジョブを削除しますか？</string>
-    <string name="cron_delete_message">「%1$s」を削除しますか？この操作は元に戻せません\'。</string>
+    <string name="cron_delete_message">「%1$s」を削除しますか？この操作は元に戻せません。</string>
     <string name="cron_discard_title">変更を破棄しますか？</string>
     <string name="cron_discard_message">未保存の変更があります。破棄しますか？</string>
 
@@ -782,7 +782,7 @@
     <string name="achievements_search_hint">実績を検索…</string>
     <string name="achievements_stat_unlocked">解除済み</string>
     <string name="achievements_stat_discovered">発見済み</string>
-    <string name="achievements_stat_secret">シークレット</string>
+    <string name="achievements_stat_secret">隠し実績</string>
     <string name="achievements_stat_total">合計</string>
     <string name="achievements_scan_idle">待機中</string>
     <string name="achievements_scan_running">スキャン中…</string>
@@ -793,7 +793,7 @@
     <string name="achievements_filter_all">すべて</string>
     <string name="achievements_state_unlocked">解除済み</string>
     <string name="achievements_state_discovered">発見済み</string>
-    <string name="achievements_state_secret">シークレット</string>
+    <string name="achievements_state_secret">隠し実績</string>
     <string name="achievements_recent_title">最近解除した実績</string>
     <string name="achievements_count_label">%2$d件中%1$d件の実績</string>
     <string name="achievements_criteria_show">条件を表示</string>
@@ -904,10 +904,10 @@
     <string name="auth_login_error_oauth_unsupported">OAuthログイン（Nous Portal）は、このバージョンのアプリではまだサポートされていません。ダッシュボードをBasic認証またはトークンモードに切り替えてください。（issue #639）</string>
     <string name="auth_login_oauth_coming_soon">このダッシュボードはOAuth（Nous Portal）ログインを使用しています。Hermes Mobileでは近日対応予定です。</string>
     <string name="auth_login_existing_profiles_title">ログイン済みの既存プロファイルを使用:</string>
-    <string name="auth_login_use_profile">%1$sとして入る</string>
+    <string name="auth_login_use_profile">%1$sとしてログイン</string>
 
     <!-- Landing Screen -->
-    <string name="landing_title">Hermes Mobile</string>
+    <string name="landing_title">Hermes Agentへようこそ</string>
     <string name="landing_subtitle">Hermes Agentのコントロールパネル</string>
     <string name="landing_action_auth_login">認証ログイン</string>
 
@@ -926,7 +926,7 @@
     <string name="providers_pkce_paste_hint">ブラウザーで認証し、認証コード（#区切り文字がある場合は、その前の部分）を下に貼り付けてください。</string>
     <string name="providers_code_label">認証コード</string>
     <string name="providers_device_code_hint">別のデバイスで確認用URLを開いてこのコードを入力し、そのままお待ちください。この画面は自動的にポーリングします。</string>
-    <string name="providers_expires_in">有効期限: %1$s</string>
+    <string name="providers_expires_in">有効期限まであと%1$s</string>
     <string name="providers_flow_success">OAuthの接続に成功しました。</string>
     <string name="providers_action_fix">修正</string>
     <string name="action_dismiss">閉じる</string>
@@ -967,7 +967,7 @@
     <string name="image_viewer_save">デバイスに保存</string>
     <string name="image_viewer_share">共有</string>
     <string name="image_viewer_share_title">画像を共有</string>
-    <string name="image_viewer_saved">画像をダウンロードに保存しました</string>
+    <string name="image_viewer_saved">画像を「Downloads」フォルダーに保存しました</string>
     <string name="image_viewer_save_failed">画像を保存できませんでした</string>
     <string name="image_viewer_load_failed">画像を読み込めませんでした: %1$s</string>
     <string name="image_viewer_share_failed">画像を共有できませんでした</string>

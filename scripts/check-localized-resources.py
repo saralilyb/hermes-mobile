@@ -31,8 +31,18 @@ def strings(path: pathlib.Path) -> dict[str, str]:
     return result
 
 
-def placeholders(value: str) -> collections.Counter[str]:
-    return collections.Counter(FORMAT_ARGUMENT.findall(value))
+def placeholders(value: str) -> list[str]:
+    return [argument for argument in FORMAT_ARGUMENT.findall(value) if argument != "%%"]
+
+
+def placeholders_match(expected_value: str, actual_value: str) -> bool:
+    expected = placeholders(expected_value)
+    actual = placeholders(actual_value)
+    all_arguments = expected + actual
+    has_unindexed = any(not re.match(r"%\d+\$", value) for value in all_arguments)
+    if has_unindexed:
+        return expected == actual
+    return collections.Counter(expected) == collections.Counter(actual)
 
 
 def main() -> int:
@@ -52,10 +62,10 @@ def main() -> int:
         if extra:
             failures.append(f"{locale}: extra keys: {', '.join(extra)}")
         for name in sorted(default.keys() & localized.keys()):
-            expected = placeholders(default[name])
-            actual = placeholders(localized[name])
-            if expected != actual:
-                failures.append(f"{locale}:{name}: placeholders {actual} != {expected}")
+            if not placeholders_match(default[name], localized[name]):
+                failures.append(
+                    f"{locale}:{name}: placeholder order or types do not match default"
+                )
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1

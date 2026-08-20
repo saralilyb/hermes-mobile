@@ -33,6 +33,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -41,9 +42,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.local.AuthSessionState
@@ -163,7 +164,7 @@ fun MainNavigation() {
             ?: serverState.wsAuthParam
     val startScreen = authenticatedStartScreen(token, selectedAuthParam)
 
-    val backStack = remember(startScreen) { NavBackStack(startScreen) }
+    val backStack = key(startScreen) { rememberNavBackStack(startScreen) }
     NavigationController.backStack = backStack
 
     val currentScreen = backStack.lastOrNull() ?: startScreen
