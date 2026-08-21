@@ -3,7 +3,6 @@ package com.m57.hermescontrol.ui.skills
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.platform.app.InstrumentationRegistry
 import com.m57.hermescontrol.R
@@ -34,7 +33,9 @@ class SkillsReloadWiringTest {
             ) { _ -> Text("content") }
         }
 
-        composeRule.onNodeWithTag("refresh_button").performClick()
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.content_desc_refresh))
+            .performClick()
         assertEquals(1, reloads)
         assertEquals(0, hubUpdates)
 
@@ -64,6 +65,7 @@ class SkillsReloadWiringTest {
 
     @Test
     fun hubScreenRefreshRerunsVisibleQueryInsteadOfReloadingInstalledSkills() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val viewModel = mockk<SkillsViewModel>(relaxed = true)
         val state =
             SkillsUiState(
@@ -77,7 +79,9 @@ class SkillsReloadWiringTest {
         composeRule.waitForIdle()
         clearMocks(viewModel, answers = false, recordedCalls = true)
 
-        composeRule.onNodeWithTag("refresh_button").performClick()
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.content_desc_refresh))
+            .performClick()
 
         verify(exactly = 1) { viewModel.searchHub("agents") }
         verify(exactly = 0) { viewModel.loadSkills() }
