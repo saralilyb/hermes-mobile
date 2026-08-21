@@ -58,6 +58,7 @@ class KanbanViewModel(
                 }
             },
             onError = { errorMsg ->
+                if (generation != boardLoadGeneration) return@safeLaunchLoad
                 _uiState.update {
                     it.copy(
                         isLoading = false,

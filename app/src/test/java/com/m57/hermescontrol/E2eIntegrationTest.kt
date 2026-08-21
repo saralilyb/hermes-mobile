@@ -1423,6 +1423,43 @@ class E2eIntegrationTest {
         }
 
     @Test
+    fun testKanbanStaleBoardListFailureCannotOverrideNewSelection() =
+        runTest {
+            val first = KanbanBoard("board-1", "Backlog", null)
+            val second = KanbanBoard("board-2", "Active", null)
+            val staleListStarted = CompletableDeferred<Unit>()
+            val staleListResult = CompletableDeferred<Response<KanbanBoardsResponse>>()
+            var listLoadCount = 0
+            coEvery { mockApiService.getKanbanBoards() } coAnswers {
+                listLoadCount += 1
+                if (listLoadCount == 1) {
+                    Response.success(KanbanBoardsResponse(listOf(first, second), "board-1"))
+                } else {
+                    staleListStarted.complete(Unit)
+                    staleListResult.await()
+                }
+            }
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+            coEvery { mockApiService.switchKanbanBoard("board-2") } returns Response.success(Unit)
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.loadBoards()
+            runCurrent()
+            staleListStarted.await()
+            viewModel.selectBoard(second)
+            runCurrent()
+            staleListResult.complete(Response.error(500, "stale".toResponseBody()))
+            advanceUntilIdle()
+
+            assertEquals("board-2", viewModel.uiState.value.selectedBoard?.id)
+            assertNull(viewModel.uiState.value.errorMessage)
+            coVerify(exactly = 1) { mockApiService.switchKanbanBoard("board-2") }
+        }
+
+    @Test
     fun testModelOptionsSelection_success() =
         runTest {
             val provider = ModelProvider("ollama", "Ollama", false, true, listOf("llama3"), 1, null, true, null, null)
