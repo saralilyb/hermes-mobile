@@ -58,6 +58,7 @@ fun ChatMessageList(
     lastAnimatedMessageId: String?,
     onLastAnimatedMessageIdChange: (String?) -> Unit,
     viewModel: ChatViewModel,
+    openingAttachmentPath: String? = null,
     clarifyRequest: ClarifyUi? = null,
     onRespondClarify: ((String) -> Unit)? = null,
     onDismissClarify: (() -> Unit)? = null,
@@ -121,6 +122,7 @@ fun ChatMessageList(
                         isCurrentMatch = isCurrentMatch,
                         onRespondApproval = viewModel::respondToApproval,
                         onOpenAttachment = viewModel::openAttachment,
+                        openingAttachmentPath = openingAttachmentPath,
                         onImageClick = onImageClick,
                     )
                 }
@@ -142,6 +144,7 @@ fun ChatMessageList(
                             searchQuery = "",
                             isCurrentMatch = false,
                             onOpenAttachment = viewModel::openAttachment,
+                            openingAttachmentPath = openingAttachmentPath,
                             onImageClick = onImageClick,
                         )
                     }

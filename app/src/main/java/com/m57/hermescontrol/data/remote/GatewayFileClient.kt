@@ -1,58 +1,46 @@
 package com.m57.hermescontrol.data.remote
 
+import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.local.AuthSessionState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.ResponseBody
-import java.io.ByteArrayOutputStream
+import retrofit2.Response
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.net.URLConnection
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.util.UUID
 import java.util.regex.Pattern
+import kotlin.coroutines.coroutineContext
 
-/**
- * Client for the gateway's managed-files download endpoint
- * (`GET /api/files/download?path=<enc>`), which streams the raw
- * bytes of any file that lives on the *gateway* host (images, audio, video,
- * CSV, PDF, arbitrary attachments).
- *
- * This is the mobile equivalent of the desktop app's
- * `mediaExternalUrl()` (`apps/desktop/src/lib/media.ts`): a gateway-local
- * path is fetched through [ApiClient]'s authenticated Retrofit service. This
- * keeps credentials in the Bearer header or dashboard cookie, never the URL.
- *
- * Server-side guards still apply: path resolution (`_resolve_managed_path`), a
- * sensitive-path denylist (403), and a size cap
- * (`_MANAGED_FILE_MAX_BYTES`, 413).
- *
- * Mobile-only, backend untouched.
- */
+/** Authenticated, profile-safe access to gateway-managed files. */
 object GatewayFileClient {
-    /**
-     * Strip surrounding quotes/backticks and require an absolute host path or
-     * `~/...`. Tilde paths stay unexpanded so the gateway, not Android, resolves
-     * the gateway user's home directory.
-     */
+    internal const val CACHE_TTL_MS = 10 * 60 * 1000L
+    internal const val MAX_CACHE_BYTES = 256L * 1024L * 1024L
+    internal const val MAX_CACHE_FILES = 64
+
+    // A fixed stripe set avoids both duplicate same-key downloads and an
+    // unbounded process-lifetime map of hashed gateway paths.
+    private val keyLocks = Array(64) { Mutex() }
+
     internal fun normalizePath(raw: String): String? {
-        val trimmed =
-            raw
-                .trim()
-                .removeSurrounding("`")
-                .removeSurrounding("\"")
-                .removeSurrounding("'")
+        val trimmed = raw.trim().removeSurrounding("`").removeSurrounding("\"").removeSurrounding("'")
         if (trimmed == "~" || trimmed.startsWith("~/")) return trimmed
-        if (!trimmed.startsWith("/") &&
-            !Pattern.compile("^[A-Za-z]:[/\\\\]").matcher(trimmed).find()
-        ) {
-            return null
-        }
+        if (!trimmed.startsWith("/") && !Pattern.compile("^[A-Za-z]:[/\\\\]").matcher(trimmed).find()) return null
         return trimmed
     }
 
-    /** Map an HTTP status to a non-success result; `null` means "let the
-     * caller treat the body as a successful file." */
     internal fun classifyStatus(code: Int): GatewayFileResult? =
         when (code) {
             401 -> GatewayFileResult.Unauthorized
@@ -62,110 +50,224 @@ object GatewayFileClient {
             else -> null
         }
 
-    /** Fetch through the current authenticated Retrofit service. */
-    suspend fun fetch(path: String): GatewayFileResult = fetch(path, ApiClient.hermesApi)
+    /** Snapshot the complete authentication boundary before starting IO. */
+    internal fun currentScope(): MediaCacheScope {
+        val gated = AuthManager.isGatedMode()
+        return MediaCacheScope(
+            profileId = AuthManager.getSelectedProfileId() ?: AuthManager.DEFAULT_PROFILE_ID,
+            canonicalEndpoint = AuthManager.endpointForBuild().baseUrl.toString(),
+            authMode = if (gated) "gated-cookie" else "direct-token",
+            credentialFingerprint =
+                fingerprint(
+                    if (gated) AuthManager.getSessionCookie().orEmpty() else AuthManager.getToken().orEmpty(),
+                ),
+        )
+    }
 
-    /** Fetch through an explicit service for deterministic tests. */
+    suspend fun fetch(
+        path: String,
+        cacheDir: File,
+    ): GatewayFileResult = fetch(path, ApiClient.hermesApi, GatewayMediaCache(cacheDir), currentScope())
+
     internal suspend fun fetch(
         path: String,
         service: HermesApiService,
+        cache: GatewayMediaCache,
+        scope: MediaCacheScope,
     ): GatewayFileResult =
         withContext(Dispatchers.IO) {
-            fetchOnIo(path, service)
+            val normalized =
+                normalizePath(path)
+                    ?: return@withContext GatewayFileResult.Failure(
+                        IllegalArgumentException("not an absolute gateway path"),
+                    )
+            val key = cache.key(scope, normalized)
+            val lock = keyLocks[(key.hashCode() and Int.MAX_VALUE) % keyLocks.size]
+            lock.withLock {
+                cache.fresh(key)?.let { cached ->
+                    return@withLock GatewayFileResult.Success(
+                        GatewayFile(fileNameFromPath(normalized), mimeFor(normalized), cached),
+                    )
+                }
+                fetchNetwork(normalized, service, cache, key)
+            }
         }
 
-    private suspend fun fetchOnIo(
+    private suspend fun fetchNetwork(
         path: String,
         service: HermesApiService,
+        cache: GatewayMediaCache,
+        key: String,
     ): GatewayFileResult {
-        val normalized =
-            normalizePath(path)
-                ?: return GatewayFileResult.Failure(
-                    IllegalArgumentException("not an absolute gateway path: $path"),
-                )
+        var response: Response<ResponseBody>? = null
         return try {
-            val response = service.downloadManagedFile(normalized)
+            response = service.downloadManagedFile(path)
             classifyStatus(response.code())?.let {
                 response.errorBody()?.close()
-                if (it is GatewayFileResult.Unauthorized) {
-                    AuthSessionState.requireSignIn()
-                }
+                if (it is GatewayFileResult.Unauthorized) AuthSessionState.requireSignIn()
                 return it
             }
             if (!response.isSuccessful) {
                 response.errorBody()?.close()
                 return GatewayFileResult.Failure(IOException("HTTP ${response.code()}"))
             }
-            val body =
-                response.body()
-                    ?: return GatewayFileResult.Failure(IOException("Empty response body"))
-            val name =
-                response.headers()["Content-Disposition"]?.let { parseFilename(it) }
-                    ?: fileNameFromPath(normalized)
+            val body = response.body() ?: return GatewayFileResult.Failure(IOException("Empty response body"))
+            val name = response.headers()["Content-Disposition"]?.let(::parseFilename) ?: fileNameFromPath(path)
             val mime =
-                response.headers()["Content-Type"]
-                    ?.substringBefore(';')
-                    ?.trim()
-                    ?.takeIf { it.isNotBlank() }
-                    ?: "application/octet-stream"
-            val bytes = body.readBytesLimited() ?: return GatewayFileResult.TooLarge
-            GatewayFileResult.Success(GatewayFile(name, mime, bytes))
+                response.headers()["Content-Type"]?.substringBefore(';')?.trim()?.takeIf(String::isNotBlank)
+                    ?: mimeFor(path)
+            val file = cache.write(key, body)
+            GatewayFileResult.Success(GatewayFile(name, mime, file))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
             GatewayFileResult.Failure(e)
+        } finally {
+            response?.body()?.close()
+            response?.errorBody()?.close()
         }
     }
 
-    /** Best-effort filename pull from a `Content-Disposition: ...; filename="x"`
-     * or `filename*=UTF-8''<pct-enc>` header. The captured value is URL-decoded
-     * so `filename*=UTF-8''a%20b.png` yields `a b.png`. */
+    internal suspend fun copyChunked(
+        input: java.io.InputStream,
+        output: java.io.OutputStream,
+    ) {
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            coroutineContext.ensureActive()
+            val count = input.read(buffer)
+            if (count < 0) break
+            output.write(buffer, 0, count)
+        }
+    }
+
     internal fun parseFilename(header: String): String? {
-        val m = FILENAME_RE.find(header) ?: return null
-        val raw = m.groupValues[1].takeIf { it.isNotBlank() } ?: return null
+        val match = FILENAME_RE.find(header) ?: return null
+        val raw = match.groupValues[1].takeIf(String::isNotBlank) ?: return null
         return runCatching { URLDecoder.decode(raw, StandardCharsets.UTF_8.name()) }.getOrDefault(raw)
     }
 
     private fun fileNameFromPath(path: String): String =
-        path
-            .split('/', '\\')
-            .lastOrNull()
-            ?.takeIf { it.isNotBlank() } ?: "file"
+        path.split('/', '\\').lastOrNull()?.takeIf(String::isNotBlank) ?: "file"
+
+    private fun mimeFor(path: String): String =
+        URLConnection.guessContentTypeFromName(fileNameFromPath(path)) ?: "application/octet-stream"
+
+    internal fun fingerprint(value: String): String = sha256(value).take(24)
+
+    internal fun sha256(value: String): String =
+        MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8)).joinToString("") {
+            "%02x".format(it)
+        }
 
     private val FILENAME_RE = Regex("""filename\*?=(?:UTF-8'')?"?([^";]+)"?""", RegexOption.IGNORE_CASE)
 }
 
-internal const val MAX_IN_MEMORY_MEDIA_BYTES = 25L * 1024L * 1024L
+data class MediaCacheScope(
+    val profileId: String,
+    val canonicalEndpoint: String,
+    val authMode: String,
+    val credentialFingerprint: String,
+)
 
-internal fun ResponseBody.readBytesLimited(maxBytes: Long = MAX_IN_MEMORY_MEDIA_BYTES): ByteArray? {
-    val declaredLength = contentLength()
-    if (declaredLength > maxBytes) {
-        close()
-        return null
-    }
+/** Small deterministic cache seam; all artifacts live below a hashed auth scope. */
+internal class GatewayMediaCache(
+    private val root: File,
+    private val now: () -> Long = System::currentTimeMillis,
+    private val maxBytes: Long = GatewayFileClient.MAX_CACHE_BYTES,
+    private val maxFiles: Int = GatewayFileClient.MAX_CACHE_FILES,
+) {
+    fun key(
+        scope: MediaCacheScope,
+        path: String,
+    ): String =
+        GatewayFileClient.sha256(
+            listOf(
+                scope.profileId,
+                scope.canonicalEndpoint,
+                scope.authMode,
+                scope.credentialFingerprint,
+                path,
+            ).joinToString("\u0000"),
+        )
 
-    val initialCapacity =
-        declaredLength
-            .takeIf { it in 1..maxBytes }
-            ?.toInt()
-            ?: DEFAULT_BUFFER_SIZE
-    val output = ByteArrayOutputStream(initialCapacity)
-    byteStream().use { input ->
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-        var total = 0L
-        while (true) {
-            val count = input.read(buffer)
-            if (count < 0) break
-            total += count
-            if (total > maxBytes) return null
-            output.write(buffer, 0, count)
+    fun fresh(key: String): File? =
+        target(key).takeIf { it.isFile && now() - it.lastModified() < GatewayFileClient.CACHE_TTL_MS }
+
+    suspend fun write(
+        key: String,
+        body: ResponseBody,
+    ): File {
+        root.mkdirs()
+        val target = target(key)
+        val temp = File(root, ".$key.tmp-${UUID.randomUUID()}")
+        try {
+            body.byteStream().use {
+                    input ->
+                temp.outputStream().use { output -> GatewayFileClient.copyChunked(input, output) }
+            }
+            moveAtomically(temp, target)
+            evict(target)
+            return target
+        } catch (e: CancellationException) {
+            temp.delete()
+            throw e
+        } catch (e: Throwable) {
+            temp.delete()
+            throw e
         }
     }
-    return output.toByteArray()
+
+    private fun target(key: String) = File(root, "$key.media")
+
+    private fun moveAtomically(
+        source: File,
+        target: File,
+    ) {
+        try {
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+
+    private fun evict(protected: File) {
+        root.listFiles()?.filter { it.isFile && !it.name.startsWith(".") }?.sortedWith(
+            compareBy<File> { it.lastModified() }.thenBy { it.name },
+        )?.let { files ->
+            var bytes = files.sumOf(File::length)
+            var count = files.size
+            files.forEach { file ->
+                if (file != protected && (bytes > maxBytes || count > maxFiles)) {
+                    val removedBytes = file.length()
+                    if (file.delete()) {
+                        bytes -= removedBytes
+                        count--
+                    }
+                }
+            }
+        }
+        val staleTempCutoff = now() - GatewayFileClient.CACHE_TTL_MS
+        root.listFiles()
+            ?.filter { it.isFile && it.name.startsWith(".") && it.lastModified() < staleTempCutoff }
+            ?.forEach(File::delete)
+    }
 }
 
+data class GatewayFile(val name: String, val mimeType: String, val cacheFile: File)
+
+internal const val MAX_IN_MEMORY_MEDIA_BYTES = 25L * 1024L * 1024L
+
+internal fun ResponseBody.readBytesLimited(maxBytes: Long = MAX_IN_MEMORY_MEDIA_BYTES): ByteArray? =
+    byteStream().use { it.readBytesLimited(maxBytes) }
+
 internal fun InputStream.readBytesLimited(maxBytes: Long = MAX_IN_MEMORY_MEDIA_BYTES): ByteArray? {
-    val output = ByteArrayOutputStream(DEFAULT_BUFFER_SIZE)
+    val output = java.io.ByteArrayOutputStream(DEFAULT_BUFFER_SIZE)
     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
     var total = 0L
     while (true) {
@@ -178,41 +280,16 @@ internal fun InputStream.readBytesLimited(maxBytes: Long = MAX_IN_MEMORY_MEDIA_B
     return output.toByteArray()
 }
 
-/** A file fetched from the gateway. */
-data class GatewayFile(
-    val name: String,
-    val mimeType: String,
-    val bytes: ByteArray,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is GatewayFile) return false
-        return name == other.name && mimeType == other.mimeType && bytes.contentEquals(other.bytes)
-    }
-
-    override fun hashCode(): Int {
-        var r = name.hashCode()
-        r = 31 * r + mimeType.hashCode()
-        r = 31 * r + bytes.contentHashCode()
-        return r
-    }
-}
-
-/** Outcome of [GatewayFileClient.fetch]. */
 sealed interface GatewayFileResult {
-    data class Success(
-        val file: GatewayFile,
-    ) : GatewayFileResult
+    data class Success(val file: GatewayFile) : GatewayFileResult
 
-    data object NotFound : GatewayFileResult // 404 — file missing on gateway
+    data object NotFound : GatewayFileResult
 
-    data object Forbidden : GatewayFileResult // 403 — sensitive path denied
+    data object Forbidden : GatewayFileResult
 
-    data object TooLarge : GatewayFileResult // 413 — exceeds managed-file cap
+    data object TooLarge : GatewayFileResult
 
-    data object Unauthorized : GatewayFileResult // 401 — bad/expired token
+    data object Unauthorized : GatewayFileResult
 
-    data class Failure(
-        val throwable: Throwable,
-    ) : GatewayFileResult // network / unexpected
+    data class Failure(val throwable: Throwable) : GatewayFileResult
 }

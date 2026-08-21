@@ -516,30 +516,19 @@ private fun openManagedFile(
     context: android.content.Context,
     scope: CoroutineScope,
 ) {
-    viewModel.downloadFile(entry) { result ->
+    viewModel.downloadFile(entry, File(context.cacheDir, "gateway_media")) { result ->
         when (result) {
             is com.m57.hermescontrol.data.remote.NetworkResult.Success -> {
                 val data = result.data
-                val bytes = data.bytes
-                if (bytes == null) {
-                    viewModel.showToast(FilesUiText(R.string.files_error_decode))
-                    return@downloadFile
-                }
                 scope.launch {
                     val intent =
                         runCatching {
                             withContext(Dispatchers.IO) {
-                                val safeName =
-                                    entry.name
-                                        .replace(Regex("[^A-Za-z0-9._-]"), "_")
-                                        .takeIf { it.isNotBlank() } ?: "file"
-                                val file = File(context.cacheDir, "hermes_files_$safeName")
-                                file.writeBytes(bytes)
                                 val uri =
                                     FileProvider.getUriForFile(
                                         context,
                                         "${context.packageName}.fileprovider",
-                                        file,
+                                        data.cacheFile,
                                     )
                                 Intent(Intent.ACTION_VIEW).apply {
                                     setDataAndType(uri, data.mimeType)

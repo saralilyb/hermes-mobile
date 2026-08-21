@@ -61,7 +61,7 @@ object ImageBytesResolver {
         withContext(Dispatchers.IO) {
             runCatching {
                 when {
-                    gatewayPath != null -> fetchGatewayPath(gatewayPath, fallbackMime)
+                    gatewayPath != null -> fetchGatewayPath(context, gatewayPath, fallbackMime)
                     model.startsWith("data:") -> decodeDataUrl(model, fallbackMime)
                     model.startsWith("content://") -> readContentUri(context, model, fallbackMime)
                     model.startsWith("https://") || model.startsWith("http://") -> fetchHttp(model, fallbackMime)
@@ -74,13 +74,17 @@ object ImageBytesResolver {
         }
 
     private suspend fun fetchGatewayPath(
+        context: Context,
         path: String,
         fallbackMime: String,
     ): Result =
-        when (val result = GatewayFileClient.fetch(path)) {
+        when (val result = GatewayFileClient.fetch(path, java.io.File(context.cacheDir, "gateway_media"))) {
             is GatewayFileResult.Success -> {
                 val mime = result.file.mimeType.ifBlank { fallbackMime }
-                Result.Bytes(result.file.bytes, mime, extensionForMime(mime))
+                val bytes =
+                    result.file.cacheFile.inputStream().use { it.readBytesLimited() }
+                        ?: return Result.Error("Gateway image is too large")
+                Result.Bytes(bytes, mime, extensionForMime(mime))
             }
 
             GatewayFileResult.NotFound -> Result.Error("Image not found on gateway")

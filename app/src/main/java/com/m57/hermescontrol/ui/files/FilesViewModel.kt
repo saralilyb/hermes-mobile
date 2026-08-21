@@ -58,23 +58,8 @@ data class FilesUiText(
 data class DownloadedFile(
     val name: String,
     val mimeType: String,
-    val bytes: ByteArray?,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is DownloadedFile) return false
-        return name == other.name &&
-            mimeType == other.mimeType &&
-            (bytes?.contentEquals(other.bytes) == true)
-    }
-
-    override fun hashCode(): Int {
-        var r = name.hashCode()
-        r = 31 * r + mimeType.hashCode()
-        r = 31 * r + (bytes?.contentHashCode() ?: 0)
-        return r
-    }
-}
+    val cacheFile: java.io.File,
+)
 
 /** Map a successful [NetworkResult] to a new value; pass failures through. */
 inline fun <T, R> NetworkResult<T>.map(transform: (T) -> R): NetworkResult<R> =
@@ -264,18 +249,19 @@ class FilesViewModel(
     // ── Read / open (authenticated bounded stream) ──────────────────────────
     fun downloadFile(
         entry: ManagedFileEntry,
+        cacheDir: java.io.File,
         onResult: (NetworkResult<DownloadedFile>) -> Unit,
     ) {
         _uiState.update { it.copy(openingPath = entry.path) }
         viewModelScope.launch {
             val result =
-                when (val download = GatewayFileClient.fetch(entry.path)) {
+                when (val download = GatewayFileClient.fetch(entry.path, cacheDir)) {
                     is GatewayFileResult.Success ->
                         NetworkResult.Success(
                             DownloadedFile(
                                 name = entry.name,
                                 mimeType = download.file.mimeType,
-                                bytes = download.file.bytes,
+                                cacheFile = download.file.cacheFile,
                             ),
                         )
 

@@ -2837,8 +2837,15 @@ class ChatViewModelTest {
             mockkObject(GatewayFileClient)
             val bytes = "hello".toByteArray()
             coEvery {
-                GatewayFileClient.fetch(any())
-            } returns GatewayFileResult.Success(GatewayFile("note.txt", "text/plain", bytes))
+                GatewayFileClient.fetch(any(), any())
+            } returns
+                GatewayFileResult.Success(
+                    GatewayFile(
+                        "note.txt",
+                        "text/plain",
+                        java.io.File(cacheDir, "note.txt").apply { writeBytes(bytes) },
+                    ),
+                )
 
             val intentSlot = slot<Intent>()
             mockkConstructor(Intent::class)
@@ -2865,7 +2872,7 @@ class ChatViewModelTest {
             viewModel.openAttachment(attachment)
             advanceUntilIdle()
 
-            coVerify { GatewayFileClient.fetch(any()) }
+            coVerify { GatewayFileClient.fetch(any(), any()) }
             verify { app.startActivity(any()) }
             verify { intentSlot.captured.setDataAndType(any(), eq("text/plain")) }
             verify { intentSlot.captured.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -2876,9 +2883,17 @@ class ChatViewModelTest {
     @Test
     fun `openAttachment GATEWAY not-found surfaces openError`() =
         runTest {
+            val cacheDir =
+                java.io.File(
+                    System.getProperty("java.io.tmpdir"),
+                    "hermes_open_missing_test_${System.nanoTime()}",
+                ).apply { mkdirs() }
+            every { app.cacheDir } returns cacheDir
+            every { app.getApplicationContext() } returns app
+            every { app.applicationContext } returns app
             mockkObject(GatewayFileClient)
             coEvery {
-                GatewayFileClient.fetch(any())
+                GatewayFileClient.fetch(any(), any())
             } returns GatewayFileResult.NotFound
             every {
                 app.getString(R.string.attachment_error_not_found, "missing.pdf")
@@ -2899,6 +2914,7 @@ class ChatViewModelTest {
 
             assertNotNull(viewModel.uiState.value.openError)
             assertTrue(viewModel.uiState.value.openError!!.contains("missing.pdf"))
+            cacheDir.deleteRecursively()
         }
 
     // ── session.create liveness ──────────────────────────────────────────

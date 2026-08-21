@@ -31,6 +31,10 @@ import org.junit.jupiter.api.Test
 class ApiClientTest {
     private lateinit var mockWebServer: MockWebServer
 
+    companion object {
+        private val cookieJar = buildFakePersistentCookieJar()
+    }
+
     @BeforeEach
     fun setUp() {
         mockWebServer = MockWebServer()
@@ -42,7 +46,8 @@ class ApiClientTest {
         // Issue #470: ApiClient builds through OkHttpProvider, which resolves
         // the shared CookieManager.cookieJar. Inject a fake jar so the test
         // can build clients without app context.
-        CookieManager.setJarForTest(buildFakePersistentCookieJar())
+        cookieJar.clearAll()
+        CookieManager.setJarForTest(cookieJar)
 
         // Point AuthManager at our MockWebServer
         every { AuthManager.baseUrl() } returns mockWebServer.url("/").toString()
@@ -167,6 +172,47 @@ class ApiClientTest {
 
             assertTrue(response.isSuccessful)
             assertNull(mockWebServer.takeRequest().getHeader("Authorization"))
+        }
+
+    @Test
+    fun managedFileDownloadUsesDirectBearerAuthentication() =
+        runTest {
+            every { AuthManager.getToken() } returns "media-token"
+            every { AuthManager.getSessionCookie() } returns null
+            ApiClient.rebuild()
+            mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("media"))
+
+            ApiClient.hermesApi.downloadManagedFile("/private/photo.png").body()?.close()
+
+            val request = mockWebServer.takeRequest()
+            assertEquals("/api/files/download?path=%2Fprivate%2Fphoto.png", request.path)
+            assertEquals("Bearer media-token", request.getHeader("Authorization"))
+            assertNull(request.getHeader("Cookie"))
+        }
+
+    @Test
+    fun managedFileDownloadUsesGatedCookieWithoutBearerAuthentication() =
+        runTest {
+            every { AuthManager.getToken() } returns "stale-token"
+            every { AuthManager.isGatedMode() } returns true
+            CookieManager.setSessionCookie(
+                "cookie-secret",
+                ServerEndpoint.parse(
+                    mockWebServer.url("/").toString(),
+                    CleartextPolicy.ALLOW_WITH_WARNING,
+                ),
+            )
+            assertEquals("cookie-secret", cookieJar.getSessionCookieValue())
+            assertEquals(1, cookieJar.loadForRequest(mockWebServer.url("/")).size)
+            ApiClient.rebuild()
+            mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("media"))
+
+            ApiClient.hermesApi.downloadManagedFile("/private/photo.png").body()?.close()
+
+            val request = mockWebServer.takeRequest()
+            assertEquals("/api/files/download?path=%2Fprivate%2Fphoto.png", request.path)
+            assertNull(request.getHeader("Authorization"))
+            assertEquals("hermes_session_at=cookie-secret", request.getHeader("Cookie"))
         }
 
     @Test
