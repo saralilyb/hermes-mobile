@@ -48,6 +48,7 @@ class ConnectViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ConnectUiState())
     val uiState: StateFlow<ConnectUiState> = _uiState.asStateFlow()
+    private var statusGeneration = 0L
 
     init {
         loadSavedValues()
@@ -112,10 +113,12 @@ class ConnectViewModel(
     }
 
     fun onTokenChange(value: String) {
+        statusGeneration += 1
         _uiState.update { it.copy(token = value.trim(), errorMessage = null, status = null) }
     }
 
     fun onBaseUrlChange(value: String) {
+        statusGeneration += 1
         val trimmed = value.trim()
         val warning =
             runCatching {
@@ -126,6 +129,7 @@ class ConnectViewModel(
 
     /** Probe only the persisted selected profile, using its normal cookie-or-token client. */
     fun loadStatus() {
+        val generation = ++statusGeneration
         _uiState.update { it.copy(status = null) }
         val state = _uiState.value
         val profile = state.selectedProfile ?: return
@@ -145,7 +149,8 @@ class ConnectViewModel(
             val current = _uiState.value
             val currentFingerprint =
                 listOf(current.selectedProfile?.id.orEmpty(), current.baseUrl, current.token, current.authMode)
-            if (result is NetworkResult.Success && fingerprint == currentFingerprint &&
+            if (generation == statusGeneration && result is NetworkResult.Success &&
+                fingerprint == currentFingerprint &&
                 (result.data.memory != null || result.data.disk != null)
             ) {
                 _uiState.update { it.copy(status = result.data) }
@@ -166,7 +171,8 @@ class ConnectViewModel(
             return
         }
 
-        _uiState.update { it.copy(isConnecting = true, errorMessage = null) }
+        val generation = ++statusGeneration
+        _uiState.update { it.copy(isConnecting = true, errorMessage = null, status = null) }
 
         viewModelScope.launch {
             val result =
@@ -225,13 +231,21 @@ class ConnectViewModel(
                         AuthManager.setProfileToken(AuthManager.DEFAULT_PROFILE_ID, state.token)
                     }
                     ApiClient.rebuild()
+                    val current = _uiState.value
+                    val statusMatchesRequest =
+                        generation == statusGeneration &&
+                            current.baseUrl == state.baseUrl &&
+                            current.token == state.token
                     _uiState.update {
                         it.copy(
                             isConnecting = false,
                             connectionSuccess = true,
                             errorMessage = null,
                             authMode = "token",
-                            status = result.data.takeIf { status -> status.memory != null || status.disk != null },
+                            status =
+                                result.data.takeIf { status ->
+                                    statusMatchesRequest && (status.memory != null || status.disk != null)
+                                },
                         )
                     }
                 }

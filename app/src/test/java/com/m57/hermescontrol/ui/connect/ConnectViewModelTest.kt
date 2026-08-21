@@ -10,11 +10,13 @@ import com.m57.hermescontrol.data.remote.CleartextPolicy
 import com.m57.hermescontrol.data.remote.HermesApiService
 import com.m57.hermescontrol.data.remote.ServerEndpoint
 import io.mockk.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -128,6 +130,73 @@ class ConnectViewModelTest {
             advanceUntilIdle()
             assertEquals("critical", viewModel.uiState.value.status?.memory?.pressure)
             viewModel.onTokenChange("different-token")
+            assertNull(viewModel.uiState.value.status)
+        }
+
+    @Test
+    fun `newer status probe wins for unchanged profile fingerprint`() =
+        runTest {
+            val profile =
+                ConnectionProfile(
+                    id = "profile",
+                    name = "Profile",
+                    baseUrl = "https://127.0.0.1:9119/",
+                    wsAuthParam = "token",
+                )
+            val firstStarted = CompletableDeferred<Unit>()
+            val firstResult = CompletableDeferred<Response<StatusResponse>>()
+            var callCount = 0
+            every { AuthManager.getConnectionProfiles() } returns listOf(profile)
+            every { AuthManager.getSelectedProfileId() } returns "profile"
+            every { AuthManager.getProfileToken("profile") } returns "profile-token"
+            every { AuthManager.getToken() } returns "profile-token"
+            coEvery { mockApiService.getStatus() } coAnswers {
+                callCount += 1
+                if (callCount == 1) {
+                    firstStarted.complete(Unit)
+                    firstResult.await()
+                } else {
+                    Response.success(StatusResponse())
+                }
+            }
+
+            val viewModel = ConnectViewModel(mockApp, testDispatcher)
+            runCurrent()
+            firstStarted.await()
+            viewModel.loadStatus()
+            runCurrent()
+            firstResult.complete(
+                Response.success(
+                    StatusResponse(
+                        memory = com.m57.hermescontrol.data.model.MemoryPressureStatus("critical"),
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertNull(viewModel.uiState.value.status)
+        }
+
+    @Test
+    fun `credential edit prevents stale connect response from restoring pressure`() =
+        runTest {
+            val response = CompletableDeferred<Response<StatusResponse>>()
+            coEvery { mockApiService.getStatus() } coAnswers { response.await() }
+            val viewModel = ConnectViewModel(mockApp, testDispatcher)
+            viewModel.onTokenChange("old-token")
+            viewModel.connect()
+            runCurrent()
+            viewModel.onTokenChange("new-token")
+            response.complete(
+                Response.success(
+                    StatusResponse(
+                        memory = com.m57.hermescontrol.data.model.MemoryPressureStatus("critical"),
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("new-token", viewModel.uiState.value.token)
             assertNull(viewModel.uiState.value.status)
         }
 

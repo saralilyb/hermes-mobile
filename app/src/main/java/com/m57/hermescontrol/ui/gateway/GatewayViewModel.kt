@@ -34,27 +34,30 @@ class GatewayViewModel(
     val uiState: StateFlow<GatewayUiState> = _uiState.asStateFlow()
 
     private var profileId: String? = null
+    private var statusGeneration = 0L
 
     fun onProfileChanged(newProfileId: String) {
         if (profileId == newProfileId) return
+        statusGeneration += 1
         profileId = newProfileId
         _uiState.value = GatewayUiState()
         loadStatus()
     }
 
     fun loadStatus() {
+        val generation = ++statusGeneration
         val requestedProfileId = profileId
         safeLaunchLoad(
             ioDispatcher = ioDispatcher,
             apiCall = { safeApiCall { ApiClient.hermesApi.getStatus() } },
             onStart = { _uiState.update { it.copy(isLoading = true, errorMessage = null, status = null) } },
             onSuccess = { data ->
-                if (profileId == requestedProfileId) {
+                if (profileId == requestedProfileId && generation == statusGeneration) {
                     _uiState.update { it.copy(isLoading = false, status = data) }
                 }
             },
             onError = { errorMsg ->
-                if (profileId == requestedProfileId) {
+                if (profileId == requestedProfileId && generation == statusGeneration) {
                     _uiState.update {
                         it.copy(
                             isLoading = false,

@@ -485,6 +485,24 @@ class ModelSerializationTest {
     }
 
     @Test
+    fun testStatusResponseDeserialization_malformedPressureBlocksDegradeToNull() {
+        val response =
+            json.decodeFromString<StatusResponse>(
+                """
+                {
+                    "version": "1.0.0",
+                    "memory": "not-an-object",
+                    "disk": {"pressure": "critical", "free_mb": "not-a-number"}
+                }
+                """.trimIndent(),
+            )
+
+        assertEquals("1.0.0", response.version)
+        assertNull(response.memory)
+        assertNull(response.disk)
+    }
+
+    @Test
     fun testStatusResponseDeserialization_typeMismatchInGatewayPlatforms() {
         val jsonStr =
             """

@@ -9,11 +9,13 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -124,6 +126,33 @@ class GatewayViewModelTest {
             viewModel.onProfileChanged("new")
             assertNull(viewModel.uiState.value.status)
             advanceUntilIdle()
+            assertNull(viewModel.uiState.value.status?.memory)
+        }
+
+    @Test
+    fun `newer same-profile refresh wins over older response`() =
+        runTest {
+            val firstStarted = CompletableDeferred<Unit>()
+            val firstResult = CompletableDeferred<Response<StatusResponse>>()
+            var callCount = 0
+            coEvery { mockApi.getStatus() } coAnswers {
+                callCount += 1
+                if (callCount == 1) {
+                    firstStarted.complete(Unit)
+                    firstResult.await()
+                } else {
+                    Response.success(StatusResponse())
+                }
+            }
+            val viewModel = GatewayViewModel(ioDispatcher = testDispatcher)
+            viewModel.onProfileChanged("profile")
+            runCurrent()
+            firstStarted.await()
+            viewModel.loadStatus()
+            runCurrent()
+            firstResult.complete(Response.success(StatusResponse(memory = MemoryPressureStatus("critical"))))
+            advanceUntilIdle()
+
             assertNull(viewModel.uiState.value.status?.memory)
         }
 }

@@ -1,5 +1,12 @@
 package com.m57.hermescontrol.data.model
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.nullable
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.decodeFromJsonElement
 
 @Serializable
 data class StatusResponse(
@@ -8,7 +15,9 @@ data class StatusResponse(
     val active_sessions: Int? = null,
     val auth_required: Boolean? = null,
     val gateway_platforms: Map<String, PlatformStatus?>? = null,
+    @Serializable(with = NullableMemoryPressureStatusSerializer::class)
     val memory: MemoryPressureStatus? = null,
+    @Serializable(with = NullableDiskPressureStatusSerializer::class)
     val disk: DiskPressureStatus? = null,
 )
 
@@ -49,3 +58,39 @@ data class DiskPressureStatus(
     val free_mb: Int? = null,
     val used_percent: Double? = null,
 )
+
+object NullableMemoryPressureStatusSerializer : KSerializer<MemoryPressureStatus?> {
+    private val delegate = MemoryPressureStatus.serializer().nullable
+    override val descriptor: SerialDescriptor = delegate.descriptor
+
+    override fun deserialize(decoder: Decoder): MemoryPressureStatus? {
+        if (decoder !is JsonDecoder) return delegate.deserialize(decoder)
+        val element = decoder.decodeJsonElement()
+        return runCatching {
+            decoder.json.decodeFromJsonElement(MemoryPressureStatus.serializer(), element)
+        }.getOrNull()
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: MemoryPressureStatus?,
+    ) = delegate.serialize(encoder, value)
+}
+
+object NullableDiskPressureStatusSerializer : KSerializer<DiskPressureStatus?> {
+    private val delegate = DiskPressureStatus.serializer().nullable
+    override val descriptor: SerialDescriptor = delegate.descriptor
+
+    override fun deserialize(decoder: Decoder): DiskPressureStatus? {
+        if (decoder !is JsonDecoder) return delegate.deserialize(decoder)
+        val element = decoder.decodeJsonElement()
+        return runCatching {
+            decoder.json.decodeFromJsonElement(DiskPressureStatus.serializer(), element)
+        }.getOrNull()
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: DiskPressureStatus?,
+    ) = delegate.serialize(encoder, value)
+}
