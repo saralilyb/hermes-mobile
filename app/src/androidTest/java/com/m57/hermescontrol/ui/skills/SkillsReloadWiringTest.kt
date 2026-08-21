@@ -1,0 +1,58 @@
+package com.m57.hermescontrol.ui.skills
+
+import androidx.compose.material3.Text
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
+import androidx.test.platform.app.InstrumentationRegistry
+import com.m57.hermescontrol.R
+import org.junit.Assert.assertEquals
+import org.junit.Rule
+import org.junit.Test
+
+class SkillsReloadWiringTest {
+    @get:Rule
+    val composeRule = createComposeRule()
+
+    @Test
+    fun toolbarReloadAndHubUpdateInvokeDistinctCallbacks() {
+        var reloads = 0
+        var hubUpdates = 0
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        composeRule.setContent {
+            SkillsScaffold(
+                isRefreshing = false,
+                onReload = { reloads++ },
+                onUpdateFromHub = { hubUpdates++ },
+            ) { _ -> Text("content") }
+        }
+
+        composeRule.onNodeWithTag("refresh_button").performClick()
+        assertEquals(1, reloads)
+        assertEquals(0, hubUpdates)
+
+        composeRule.onNodeWithContentDescription(
+            context.getString(R.string.content_desc_update_skills_hub),
+        ).performClick()
+        assertEquals(1, reloads)
+        assertEquals(1, hubUpdates)
+    }
+
+    @Test
+    fun hubModeOmitsInstalledSkillsUpdateAction() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        composeRule.setContent {
+            SkillsScaffold(
+                isRefreshing = false,
+                onReload = {},
+                onUpdateFromHub = null,
+            ) { _ -> Text("content") }
+        }
+
+        composeRule
+            .onNodeWithContentDescription(
+                context.getString(R.string.content_desc_update_skills_hub),
+            ).assertDoesNotExist()
+    }
+}

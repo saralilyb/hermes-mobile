@@ -1241,6 +1241,87 @@ class E2eIntegrationTest {
         }
 
     @Test
+    fun testKanbanReloadingCurrentBoardDoesNotSwitch() =
+        runTest {
+            val board = KanbanBoard("board-1", "Backlog", null)
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(board), "board-1"))
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.selectBoard(board)
+            advanceUntilIdle()
+
+            coVerify(exactly = 0) { mockApiService.switchKanbanBoard(any()) }
+            coVerify(exactly = 2) { mockApiService.getKanbanBoard() }
+        }
+
+    @Test
+    fun testKanbanSelectingDifferentBoardSwitchesOnce() =
+        runTest {
+            val first = KanbanBoard("board-1", "Backlog", null)
+            val second = KanbanBoard("board-2", "Active", null)
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(first, second), "board-1"))
+            coEvery { mockApiService.switchKanbanBoard("board-2") } returns Response.success(Unit)
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.selectBoard(second)
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { mockApiService.switchKanbanBoard("board-2") }
+            assertEquals("board-2", viewModel.uiState.value.selectedBoard?.id)
+        }
+
+    @Test
+    fun testKanbanWithoutServerCurrentBoardSelectsFirstBoardOnce() =
+        runTest {
+            val board = KanbanBoard("board-1", "Backlog", null)
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(board), null))
+            coEvery { mockApiService.switchKanbanBoard("board-1") } returns Response.success(Unit)
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { mockApiService.switchKanbanBoard("board-1") }
+            coVerify(exactly = 1) { mockApiService.getKanbanBoard() }
+            assertEquals("board-1", viewModel.uiState.value.selectedBoard?.id)
+        }
+
+    @Test
+    fun testKanbanTaskCreationReloadsWithoutSwitch() =
+        runTest {
+            val board = KanbanBoard("board-1", "Backlog", null)
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(board), "board-1"))
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+            coEvery { mockApiService.createKanbanTask("board-1", any()) } returns
+                Response.success(KanbanTask("task-1", "Task", null, "todo", null))
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.createTask("Task", null, "todo")
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { mockApiService.createKanbanTask("board-1", any()) }
+            coVerify(exactly = 0) { mockApiService.switchKanbanBoard(any()) }
+            coVerify(exactly = 2) { mockApiService.getKanbanBoard() }
+        }
+
+    @Test
     fun testModelOptionsSelection_success() =
         runTest {
             val provider = ModelProvider("ollama", "Ollama", false, true, listOf("llama3"), 1, null, true, null, null)
