@@ -79,6 +79,35 @@ object ApiClient {
         return tempRetrofit.create(HermesApiService::class.java)
     }
 
+    /** Build a media service bound to one endpoint/auth-mode/token snapshot. */
+    internal fun createMediaService(
+        endpoint: ServerEndpoint,
+        gated: Boolean,
+        token: String?,
+    ): HermesApiService {
+        val auth =
+            Interceptor { chain ->
+                val request = chain.request()
+                if (gated || token.isNullOrBlank()) {
+                    chain.proceed(request)
+                } else {
+                    chain.proceed(request.newBuilder().addHeader("Authorization", "Bearer $token").build())
+                }
+            }
+        val client =
+            OkHttpProvider.base.newBuilder()
+                .addInterceptor(auth)
+                .addInterceptor(ProfileScopeInterceptor)
+                .authenticator(TokenRefreshAuthenticator)
+                .build()
+        return Retrofit.Builder()
+            .baseUrl(endpoint.baseUrl)
+            .client(client)
+            .addConverterFactory(OkHttpProvider.json.asConverterFactory("application/json".toMediaType()))
+            .build()
+            .create(HermesApiService::class.java)
+    }
+
     // ── Internal ─────────────────────────────────────────────────────────
 
     private fun buildService(): HermesApiService {

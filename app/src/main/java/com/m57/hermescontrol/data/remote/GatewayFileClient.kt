@@ -16,7 +16,6 @@ import java.io.InputStream
 import java.net.URLConnection
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
@@ -50,30 +49,54 @@ object GatewayFileClient {
             else -> null
         }
 
-    /** Snapshot the complete authentication boundary before starting IO. */
-    internal fun currentScope(): MediaCacheScope {
-        val gated = AuthManager.isGatedMode()
-        return MediaCacheScope(
-            profileId = AuthManager.getSelectedProfileId() ?: AuthManager.DEFAULT_PROFILE_ID,
-            canonicalEndpoint = AuthManager.endpointForBuild().baseUrl.toString(),
-            authMode = if (gated) "gated-cookie" else "direct-token",
-            credentialFingerprint =
-                fingerprint(
-                    if (gated) AuthManager.getSessionCookie().orEmpty() else AuthManager.getToken().orEmpty(),
-                ),
-        )
-    }
+    /** Atomically capture cache identity and a service bound to the same auth boundary. */
+    internal fun currentContext(): MediaRequestContext =
+        synchronized(AuthManager) {
+            val gated = AuthManager.isGatedMode()
+            val endpoint = AuthManager.endpointForBuild()
+            val credential = if (gated) AuthManager.getSessionCookie().orEmpty() else AuthManager.getToken().orEmpty()
+            val scope =
+                MediaCacheScope(
+                    profileId = AuthManager.getSelectedProfileId() ?: AuthManager.DEFAULT_PROFILE_ID,
+                    canonicalEndpoint = endpoint.baseUrl.toString(),
+                    authMode = if (gated) "gated-cookie" else "direct-token",
+                    credentialFingerprint = fingerprint(credential),
+                )
+            MediaRequestContext(
+                scope,
+                ApiClient.createMediaService(endpoint, gated, credential.takeUnless { gated }),
+                ::currentScope,
+            )
+        }
+
+    internal fun currentScope(): MediaCacheScope =
+        synchronized(AuthManager) {
+            val gated = AuthManager.isGatedMode()
+            MediaCacheScope(
+                profileId = AuthManager.getSelectedProfileId() ?: AuthManager.DEFAULT_PROFILE_ID,
+                canonicalEndpoint = AuthManager.endpointForBuild().baseUrl.toString(),
+                authMode = if (gated) "gated-cookie" else "direct-token",
+                credentialFingerprint =
+                    fingerprint(
+                        if (gated) AuthManager.getSessionCookie().orEmpty() else AuthManager.getToken().orEmpty(),
+                    ),
+            )
+        }
 
     suspend fun fetch(
         path: String,
         cacheDir: File,
-    ): GatewayFileResult = fetch(path, ApiClient.hermesApi, GatewayMediaCache(cacheDir), currentScope())
+    ): GatewayFileResult {
+        val context = currentContext()
+        return fetch(path, context.service, GatewayMediaCache(cacheDir), context.scope, context::isCurrent)
+    }
 
     internal suspend fun fetch(
         path: String,
         service: HermesApiService,
         cache: GatewayMediaCache,
         scope: MediaCacheScope,
+        canPublish: () -> Boolean = { true },
     ): GatewayFileResult =
         withContext(Dispatchers.IO) {
             val normalized =
@@ -89,7 +112,7 @@ object GatewayFileClient {
                         GatewayFile(fileNameFromPath(normalized), mimeFor(normalized), cached),
                     )
                 }
-                fetchNetwork(normalized, service, cache, key)
+                fetchNetwork(normalized, service, cache, key, canPublish)
             }
         }
 
@@ -98,6 +121,7 @@ object GatewayFileClient {
         service: HermesApiService,
         cache: GatewayMediaCache,
         key: String,
+        canPublish: () -> Boolean,
     ): GatewayFileResult {
         var response: Response<ResponseBody>? = null
         return try {
@@ -116,8 +140,10 @@ object GatewayFileClient {
             val mime =
                 response.headers()["Content-Type"]?.substringBefore(';')?.trim()?.takeIf(String::isNotBlank)
                     ?: mimeFor(path)
-            val file = cache.write(key, body)
+            val file = cache.write(key, body, canPublish)
             GatewayFileResult.Success(GatewayFile(name, mime, file))
+        } catch (_: CacheTooLargeException) {
+            GatewayFileResult.TooLarge
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -170,12 +196,32 @@ data class MediaCacheScope(
     val credentialFingerprint: String,
 )
 
+internal data class MediaRequestContext(
+    val scope: MediaCacheScope,
+    val service: HermesApiService,
+    val currentScope: () -> MediaCacheScope,
+) {
+    fun isCurrent(): Boolean = currentScope() == scope
+}
+
+internal class CacheTooLargeException : IOException("Media exceeds cache capacity")
+
+internal class StaleMediaBoundaryException : IOException("Media authentication boundary changed")
+
 /** Small deterministic cache seam; all artifacts live below a hashed auth scope. */
 internal class GatewayMediaCache(
     private val root: File,
     private val now: () -> Long = System::currentTimeMillis,
     private val maxBytes: Long = GatewayFileClient.MAX_CACHE_BYTES,
     private val maxFiles: Int = GatewayFileClient.MAX_CACHE_FILES,
+    private val atomicMover: (File, File) -> Unit = { source, target ->
+        Files.move(
+            source.toPath(),
+            target.toPath(),
+            StandardCopyOption.ATOMIC_MOVE,
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+    },
 ) {
     fun key(
         scope: MediaCacheScope,
@@ -197,6 +243,7 @@ internal class GatewayMediaCache(
     suspend fun write(
         key: String,
         body: ResponseBody,
+        canPublish: () -> Boolean = { true },
     ): File {
         root.mkdirs()
         val target = target(key)
@@ -204,9 +251,10 @@ internal class GatewayMediaCache(
         try {
             body.byteStream().use {
                     input ->
-                temp.outputStream().use { output -> GatewayFileClient.copyChunked(input, output) }
+                temp.outputStream().use { output -> copyBounded(input, output) }
             }
-            moveAtomically(temp, target)
+            if (!canPublish()) throw StaleMediaBoundaryException()
+            atomicMover(temp, target)
             evict(target)
             return target
         } catch (e: CancellationException) {
@@ -220,19 +268,19 @@ internal class GatewayMediaCache(
 
     private fun target(key: String) = File(root, "$key.media")
 
-    private fun moveAtomically(
-        source: File,
-        target: File,
+    private suspend fun copyBounded(
+        input: InputStream,
+        output: java.io.OutputStream,
     ) {
-        try {
-            Files.move(
-                source.toPath(),
-                target.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        val buffer = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+            coroutineContext.ensureActive()
+            val count = input.read(buffer)
+            if (count < 0) break
+            total += count
+            if (total > maxBytes) throw CacheTooLargeException()
+            output.write(buffer, 0, count)
         }
     }
 

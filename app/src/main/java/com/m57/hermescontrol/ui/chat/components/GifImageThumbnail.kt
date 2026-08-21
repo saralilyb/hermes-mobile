@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,6 +46,7 @@ fun GifImageThumbnail(
     isGif: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    gatewayFetcher: suspend (String, java.io.File) -> GatewayFileResult = GatewayFileClient::fetch,
 ) {
     val context = LocalContext.current
     val playDescription = stringResource(R.string.gif_action_play)
@@ -65,7 +67,7 @@ fun GifImageThumbnail(
             return@LaunchedEffect
         }
         resolvedModel =
-            when (val result = GatewayFileClient.fetch(gatewayPath, java.io.File(context.cacheDir, "gateway_media"))) {
+            when (val result = gatewayFetcher(gatewayPath, java.io.File(context.cacheDir, "gateway_media"))) {
                 is GatewayFileResult.Success -> result.file.cacheFile
                 else -> null
             }
@@ -117,7 +119,8 @@ fun GifImageThumbnail(
                 modifier =
                     Modifier
                         .align(Alignment.Center)
-                        .size(28.dp),
+                        .size(28.dp)
+                        .testTag("gateway-media-loading"),
             )
         }
 

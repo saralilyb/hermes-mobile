@@ -12,6 +12,8 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.buffer
+import okio.source
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -150,6 +152,96 @@ class GatewayFileClientTest {
             gate.complete(Unit)
             job.join()
             assertTrue(job.isCancelled)
+        }
+
+    @Test
+    fun `oversized single file is rejected without replacing target`() =
+        runTest {
+            val dir = tempDir()
+            val cache = GatewayMediaCache(dir, maxBytes = 4)
+            val key = cache.key(scope, "/large")
+            cache.write(key, "good".toResponseBody())
+            val target = cache.fresh(key)!!
+            target.setLastModified(0)
+            val service = mockk<HermesApiService>()
+            coEvery { service.downloadManagedFile(any()) } returns Response.success("oversized".toResponseBody())
+
+            assertEquals(GatewayFileResult.TooLarge, GatewayFileClient.fetch("/large", service, cache, scope))
+            assertEquals("good", target.readText())
+            assertTrue(dir.listFiles().orEmpty().filter { !it.name.startsWith(".") }.sumOf(File::length) <= 4)
+            assertFalse(dir.listFiles().orEmpty().any { it.name.startsWith(".") })
+        }
+
+    @Test
+    fun `stale boundary after download does not publish`() =
+        runTest {
+            val dir = tempDir()
+            val cache = GatewayMediaCache(dir)
+            val service = mockk<HermesApiService>()
+            coEvery { service.downloadManagedFile(any()) } returns Response.success("new".toResponseBody())
+
+            val result = GatewayFileClient.fetch("/stale", service, cache, scope) { false }
+
+            assertTrue(result is GatewayFileResult.Failure)
+            assertTrue(dir.listFiles().orEmpty().isEmpty())
+        }
+
+    @Test
+    fun `atomic move failure preserves prior target and removes temp`() =
+        runTest {
+            val dir = tempDir()
+            val normal = GatewayMediaCache(dir)
+            val key = normal.key(scope, "/atomic")
+            normal.write(key, "old".toResponseBody())
+            val target = normal.fresh(key)!!
+            target.setLastModified(0)
+            val failing = GatewayMediaCache(dir, atomicMover = { _, _ -> throw IOException("atomic unavailable") })
+
+            runCatching { failing.write(key, "new".toResponseBody()) }
+
+            assertEquals("old", target.readText())
+            assertFalse(dir.listFiles().orEmpty().any { it.name.startsWith(".") })
+        }
+
+    @Test
+    fun `cancelling cache write mid-stream removes temp and preserves target`() =
+        runTest {
+            val dir = tempDir()
+            val cache = GatewayMediaCache(dir)
+            val key = cache.key(scope, "/cancel")
+            cache.write(key, "old".toResponseBody())
+            val target = cache.fresh(key)!!
+            val gate = CompletableDeferred<Unit>()
+            val body =
+                object : okhttp3.ResponseBody() {
+                    override fun contentType() = null
+
+                    override fun contentLength() = -1L
+
+                    override fun source(): okio.BufferedSource =
+                        object : ByteArrayInputStream(ByteArray(200_000)) {
+                            var reads = 0
+
+                            override fun read(
+                                b: ByteArray,
+                                off: Int,
+                                len: Int,
+                            ): Int {
+                                reads++
+                                if (reads == 2) kotlinx.coroutines.runBlocking { gate.await() }
+                                return super.read(b, off, len)
+                            }
+                        }.source().buffer()
+                }
+            val job = launch(Dispatchers.Default) { cache.write(key, body) }
+            while (!dir.listFiles().orEmpty().any { it.name.startsWith(".") }) kotlinx.coroutines.yield()
+            job.cancel()
+            gate.complete(Unit)
+            job.join()
+
+            assertTrue(job.isCancelled)
+            assertEquals("old", target.readText())
+            assertFalse(dir.listFiles().orEmpty().any { it.name.startsWith(".") })
         }
 
     @Test
