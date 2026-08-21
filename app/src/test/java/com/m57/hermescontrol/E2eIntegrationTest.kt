@@ -59,6 +59,7 @@ import com.m57.hermescontrol.ui.sessions.SessionsViewModel
 import com.m57.hermescontrol.ui.skills.SkillsViewModel
 import com.m57.hermescontrol.ui.system.SystemViewModel
 import io.mockk.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.*
@@ -1238,6 +1239,304 @@ class E2eIntegrationTest {
                 viewModel.uiState.value.tasks[0]
                     .status,
             )
+        }
+
+    @Test
+    fun testKanbanReloadingCurrentBoardDoesNotSwitch() =
+        runTest {
+            val board = KanbanBoard("board-1", "Backlog", null)
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(board), "board-1"))
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.selectBoard(board)
+            advanceUntilIdle()
+
+            coVerify(exactly = 0) { mockApiService.switchKanbanBoard(any()) }
+            coVerify(exactly = 2) { mockApiService.getKanbanBoard() }
+        }
+
+    @Test
+    fun testKanbanSelectingDifferentBoardSwitchesOnce() =
+        runTest {
+            val first = KanbanBoard("board-1", "Backlog", null)
+            val second = KanbanBoard("board-2", "Active", null)
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(first, second), "board-1"))
+            coEvery { mockApiService.switchKanbanBoard("board-2") } returns Response.success(Unit)
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.selectBoard(second)
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { mockApiService.switchKanbanBoard("board-2") }
+            assertEquals("board-2", viewModel.uiState.value.selectedBoard?.id)
+        }
+
+    @Test
+    fun testKanbanWithoutServerCurrentBoardSelectsFirstBoardOnce() =
+        runTest {
+            val board = KanbanBoard("board-1", "Backlog", null)
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(board), null))
+            coEvery { mockApiService.switchKanbanBoard("board-1") } returns Response.success(Unit)
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { mockApiService.switchKanbanBoard("board-1") }
+            coVerify(exactly = 1) { mockApiService.getKanbanBoard() }
+            assertEquals("board-1", viewModel.uiState.value.selectedBoard?.id)
+        }
+
+    @Test
+    fun testKanbanTaskCreationReloadsWithoutSwitch() =
+        runTest {
+            val board = KanbanBoard("board-1", "Backlog", null)
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(board), "board-1"))
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+            coEvery { mockApiService.createKanbanTask("board-1", any()) } returns
+                Response.success(KanbanTask("task-1", "Task", null, "todo", null))
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.createTask("Task", null, "todo")
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { mockApiService.createKanbanTask("board-1", any()) }
+            coVerify(exactly = 0) { mockApiService.switchKanbanBoard(any()) }
+            coVerify(exactly = 2) { mockApiService.getKanbanBoard() }
+        }
+
+    @Test
+    fun testKanbanTaskCompletionDoesNotRestoreBoardSelectedAtRequestStart() =
+        runTest {
+            val first = KanbanBoard("board-1", "Backlog", null)
+            val second = KanbanBoard("board-2", "Active", null)
+            val createStarted = CompletableDeferred<Unit>()
+            val createResult = CompletableDeferred<Response<KanbanTask>>()
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(first, second), "board-1"))
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+            coEvery { mockApiService.switchKanbanBoard("board-2") } returns Response.success(Unit)
+            coEvery { mockApiService.createKanbanTask("board-1", any()) } coAnswers {
+                createStarted.complete(Unit)
+                createResult.await()
+            }
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.createTask("Task", null, "todo")
+            runCurrent()
+            createStarted.await()
+            viewModel.selectBoard(second)
+            runCurrent()
+            createResult.complete(Response.success(KanbanTask("task-1", "Task", null, "todo", null)))
+            advanceUntilIdle()
+
+            assertEquals("board-2", viewModel.uiState.value.selectedBoard?.id)
+            coVerify(exactly = 1) { mockApiService.switchKanbanBoard("board-2") }
+            coVerify(exactly = 2) { mockApiService.getKanbanBoard() }
+        }
+
+    @Test
+    fun testKanbanStaleTaskReloadCannotOverwriteNewBoard() =
+        runTest {
+            val first = KanbanBoard("board-1", "Backlog", null)
+            val second = KanbanBoard("board-2", "Active", null)
+            val staleReloadStarted = CompletableDeferred<Unit>()
+            val staleReloadResult = CompletableDeferred<Response<KanbanBoardResponse>>()
+            var loadCount = 0
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(first, second), "board-1"))
+            coEvery { mockApiService.getKanbanBoard() } coAnswers {
+                loadCount += 1
+                when (loadCount) {
+                    1 -> Response.success(KanbanBoardResponse(emptyList(), null, null))
+                    2 -> {
+                        staleReloadStarted.complete(Unit)
+                        staleReloadResult.await()
+                    }
+
+                    else ->
+                        Response.success(
+                            KanbanBoardResponse(
+                                listOf(
+                                    KanbanColumn(
+                                        "active",
+                                        listOf(KanbanTask("new-task", "New", null, "active", null)),
+                                    ),
+                                ),
+                                null,
+                                null,
+                            ),
+                        )
+                }
+            }
+            coEvery { mockApiService.createKanbanTask("board-1", any()) } returns
+                Response.success(KanbanTask("created", "Created", null, "todo", null))
+            coEvery { mockApiService.switchKanbanBoard("board-2") } returns Response.success(Unit)
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.createTask("Created", null, "todo")
+            runCurrent()
+            staleReloadStarted.await()
+            viewModel.selectBoard(second)
+            runCurrent()
+            staleReloadResult.complete(
+                Response.success(
+                    KanbanBoardResponse(
+                        listOf(
+                            KanbanColumn(
+                                "todo",
+                                listOf(KanbanTask("stale-task", "Stale", null, "todo", null)),
+                            ),
+                        ),
+                        null,
+                        null,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("board-2", viewModel.uiState.value.selectedBoard?.id)
+            assertEquals(listOf("new-task"), viewModel.uiState.value.tasks.map { it.id })
+        }
+
+    @Test
+    fun testKanbanStaleBoardListFailureCannotOverrideNewSelection() =
+        runTest {
+            val first = KanbanBoard("board-1", "Backlog", null)
+            val second = KanbanBoard("board-2", "Active", null)
+            val staleListStarted = CompletableDeferred<Unit>()
+            val staleListResult = CompletableDeferred<Response<KanbanBoardsResponse>>()
+            var listLoadCount = 0
+            coEvery { mockApiService.getKanbanBoards() } coAnswers {
+                listLoadCount += 1
+                if (listLoadCount == 1) {
+                    Response.success(KanbanBoardsResponse(listOf(first, second), "board-1"))
+                } else {
+                    staleListStarted.complete(Unit)
+                    staleListResult.await()
+                }
+            }
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+            coEvery { mockApiService.switchKanbanBoard("board-2") } returns Response.success(Unit)
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.loadBoards()
+            runCurrent()
+            staleListStarted.await()
+            viewModel.selectBoard(second)
+            runCurrent()
+            staleListResult.complete(Response.error(500, "stale".toResponseBody()))
+            advanceUntilIdle()
+
+            assertEquals("board-2", viewModel.uiState.value.selectedBoard?.id)
+            assertNull(viewModel.uiState.value.errorMessage)
+            coVerify(exactly = 1) { mockApiService.switchKanbanBoard("board-2") }
+        }
+
+    @Test
+    fun testKanbanStaleBoardDetailFailureCannotOverrideNewBoard() =
+        runTest {
+            val first = KanbanBoard("board-1", "Backlog", null)
+            val second = KanbanBoard("board-2", "Active", null)
+            val staleReloadStarted = CompletableDeferred<Unit>()
+            val staleReloadResult = CompletableDeferred<Response<KanbanBoardResponse>>()
+            var loadCount = 0
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(first, second), "board-1"))
+            coEvery { mockApiService.getKanbanBoard() } coAnswers {
+                loadCount += 1
+                when (loadCount) {
+                    1 -> Response.success(KanbanBoardResponse(emptyList(), null, null))
+                    2 -> {
+                        staleReloadStarted.complete(Unit)
+                        staleReloadResult.await()
+                    }
+
+                    else -> Response.success(KanbanBoardResponse(emptyList(), null, null))
+                }
+            }
+            coEvery { mockApiService.createKanbanTask("board-1", any()) } returns
+                Response.success(KanbanTask("created", "Created", null, "todo", null))
+            coEvery { mockApiService.switchKanbanBoard("board-2") } returns Response.success(Unit)
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.createTask("Created", null, "todo")
+            runCurrent()
+            staleReloadStarted.await()
+            viewModel.selectBoard(second)
+            runCurrent()
+            staleReloadResult.complete(Response.error(500, "stale".toResponseBody()))
+            advanceUntilIdle()
+
+            assertEquals("board-2", viewModel.uiState.value.selectedBoard?.id)
+            assertNull(viewModel.uiState.value.errorMessage)
+        }
+
+    @Test
+    fun testKanbanStaleSwitchFailureCannotOverrideNewSelection() =
+        runTest {
+            val first = KanbanBoard("board-1", "Backlog", null)
+            val second = KanbanBoard("board-2", "Active", null)
+            val third = KanbanBoard("board-3", "Done", null)
+            val staleSwitchStarted = CompletableDeferred<Unit>()
+            val staleSwitchResult = CompletableDeferred<Response<Unit>>()
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(first, second, third), "board-1"))
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+            coEvery { mockApiService.switchKanbanBoard(any()) } coAnswers {
+                val boardId = firstArg<String>()
+                when (boardId) {
+                    "board-2" -> {
+                        staleSwitchStarted.complete(Unit)
+                        staleSwitchResult.await()
+                    }
+
+                    "board-3" -> Response.success(Unit)
+                    else -> error("unexpected board")
+                }
+            }
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.selectBoard(second)
+            runCurrent()
+            staleSwitchStarted.await()
+            viewModel.selectBoard(third)
+            runCurrent()
+            staleSwitchResult.complete(Response.error(500, "stale".toResponseBody()))
+            advanceUntilIdle()
+
+            assertEquals("board-3", viewModel.uiState.value.selectedBoard?.id)
+            assertNull(viewModel.uiState.value.errorMessage)
         }
 
     @Test

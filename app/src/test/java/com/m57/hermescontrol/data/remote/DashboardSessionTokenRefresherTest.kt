@@ -5,14 +5,20 @@ import io.mockk.every
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
 import io.mockk.verify
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.util.concurrent.Executors
+import kotlin.coroutines.CoroutineContext
 
 class DashboardSessionTokenRefresherTest {
     private lateinit var server: MockWebServer
@@ -43,6 +49,54 @@ class DashboardSessionTokenRefresherTest {
 
         assertEquals("new-token", token)
         assertEquals("/", server.takeRequest().path)
+    }
+
+    @Test
+    fun fetchExecutesAndReadsBodyOnProvidedDispatcher() {
+        val threads = mutableListOf<String>()
+        val client =
+            OkHttpClient.Builder()
+                .addNetworkInterceptor { chain ->
+                    threads += Thread.currentThread().name
+                    chain.proceed(chain.request())
+                }.build()
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""<script>window.__HERMES_SESSION_TOKEN__ = "io-token";</script>"""),
+        )
+        val executor = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "token-refresh-io") }
+        executor.asCoroutineDispatcher().use { dispatcher ->
+            assertEquals(
+                "io-token",
+                DashboardSessionTokenRefresher.fetch(server.url("/").toString(), client, dispatcher),
+            )
+        }
+        executor.shutdownNow()
+
+        assertEquals(1, threads.size)
+        assert(threads.single().startsWith("token-refresh-io"))
+    }
+
+    @Test
+    fun fetchDoesNotSwallowCancellation() {
+        val cancelledDispatcher =
+            object : CoroutineDispatcher() {
+                override fun dispatch(
+                    context: CoroutineContext,
+                    block: Runnable,
+                ) {
+                    throw CancellationException("cancelled")
+                }
+            }
+
+        assertThrows(CancellationException::class.java) {
+            DashboardSessionTokenRefresher.fetch(
+                server.url("/").toString(),
+                OkHttpClient(),
+                cancelledDispatcher,
+            )
+        }
     }
 
     @Test

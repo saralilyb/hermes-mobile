@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -102,20 +101,22 @@ fun SkillsScreen(
         viewModel.loadSkills()
     }
 
-    HermesScaffold(
+    SkillsScaffold(
         modifier = modifier,
-        title = { Text(stringResource(R.string.skills_screen_title)) },
-        navigationIcon = NavIcon.Menu(onOpen = onOpenDrawer),
-        actions = {
-            if (state.viewMode == SkillsViewMode.INSTALLED) {
-                IconButton(onClick = { viewModel.updateSkillsFromHub() }) {
-                    Icon(
-                        imageVector = Icons.Filled.Refresh,
-                        contentDescription = stringResource(R.string.content_desc_update_skills_hub),
-                    )
-                }
+        isRefreshing = state.isLoading,
+        onReload = {
+            when (state.viewMode) {
+                SkillsViewMode.INSTALLED -> viewModel.loadSkills()
+                SkillsViewMode.HUB -> viewModel.searchHub(state.hubQuery)
             }
         },
+        onUpdateFromHub =
+            if (state.viewMode == SkillsViewMode.INSTALLED) {
+                viewModel::updateSkillsFromHub
+            } else {
+                null
+            },
+        onOpenDrawer = onOpenDrawer,
     ) { padding ->
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -209,6 +210,35 @@ fun SkillsScreen(
     ToastEffect(
         toastMessage = state.toastMessage,
         onClearToast = viewModel::clearToast,
+    )
+}
+
+@Composable
+internal fun SkillsScaffold(
+    modifier: Modifier = Modifier,
+    isRefreshing: Boolean,
+    onReload: () -> Unit,
+    onUpdateFromHub: (() -> Unit)?,
+    onOpenDrawer: () -> Unit = {},
+    content: @Composable (PaddingValues) -> Unit,
+) {
+    HermesScaffold(
+        modifier = modifier,
+        title = { Text(stringResource(R.string.skills_screen_title)) },
+        navigationIcon = NavIcon.Menu(onOpen = onOpenDrawer),
+        isRefreshing = isRefreshing,
+        onRefresh = onReload,
+        actions = {
+            if (onUpdateFromHub != null) {
+                IconButton(onClick = onUpdateFromHub) {
+                    Icon(
+                        imageVector = Icons.Filled.CloudDownload,
+                        contentDescription = stringResource(R.string.content_desc_update_skills_hub),
+                    )
+                }
+            }
+        },
+        content = content,
     )
 }
 
