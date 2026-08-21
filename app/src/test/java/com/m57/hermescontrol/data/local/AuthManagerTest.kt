@@ -582,6 +582,70 @@ class AuthManagerTest {
     }
 
     @Test
+    fun refreshedTokenIsRejectedWhenCapturedExplicitDefaultProfileIsDeleted() {
+        val original =
+            ConnectionProfile(
+                AuthManager.DEFAULT_PROFILE_ID,
+                "Default",
+                baseUrl = AuthManager.getBaseUrl(),
+                wsAuthParam = "token",
+            )
+        AuthManager.saveConnectionProfiles(listOf(original))
+        every { mockPrefs.getString("token_${AuthManager.DEFAULT_PROFILE_ID}", null) } returns "default-token-old"
+        AuthManager.setSelectedProfileId(AuthManager.DEFAULT_PROFILE_ID)
+        val captured = AuthManager.credentialBoundary()
+        assertTrue(captured.profileBacked)
+
+        AuthManager.saveConnectionProfiles(emptyList())
+        val accepted = AuthManager.commitRefreshedToken(captured, "orphaned-default-token")
+
+        assertFalse(accepted)
+        verify(exactly = 0) {
+            mockEditor.putString("token_${AuthManager.DEFAULT_PROFILE_ID}", "orphaned-default-token")
+        }
+        assertEquals("default-token-old", AuthManager.tokenFlow.value)
+    }
+
+    @Test
+    fun refreshedTokenForLegacyDefaultBoundaryIsAcceptedWhileBoundaryIsUnchanged() {
+        AuthManager.saveConnectionProfiles(emptyList())
+        val captured = AuthManager.credentialBoundary()
+        assertFalse(captured.profileBacked)
+
+        val accepted = AuthManager.commitRefreshedToken(captured, "legacy-token-refreshed")
+
+        assertTrue(accepted)
+        verify {
+            mockEditor.putString("token_${AuthManager.DEFAULT_PROFILE_ID}", "legacy-token-refreshed")
+        }
+        assertEquals("legacy-token-refreshed", AuthManager.tokenFlow.value)
+    }
+
+    @Test
+    fun refreshedTokenForLegacyDefaultBoundaryIsRejectedWhenDefaultProfileAppears() {
+        AuthManager.saveConnectionProfiles(emptyList())
+        val captured = AuthManager.credentialBoundary()
+        assertFalse(captured.profileBacked)
+        AuthManager.saveConnectionProfiles(
+            listOf(
+                ConnectionProfile(
+                    AuthManager.DEFAULT_PROFILE_ID,
+                    "Default",
+                    baseUrl = captured.endpoint.baseUrl.toString(),
+                    wsAuthParam = if (captured.gated) "ticket" else "token",
+                ),
+            ),
+        )
+
+        val accepted = AuthManager.commitRefreshedToken(captured, "stale-legacy-token")
+
+        assertFalse(accepted)
+        verify(exactly = 0) {
+            mockEditor.putString("token_${AuthManager.DEFAULT_PROFILE_ID}", "stale-legacy-token")
+        }
+    }
+
+    @Test
     fun refreshedTokenPublicationIsAtomicWithProfileSwitch() {
         assertTokenFlowPublicationSerialized(refresh = true)
     }

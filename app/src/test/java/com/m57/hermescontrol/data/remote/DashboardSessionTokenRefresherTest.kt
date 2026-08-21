@@ -136,6 +136,7 @@ class DashboardSessionTokenRefresherTest {
         val boundary =
             AuthManager.CredentialBoundary(
                 profileId = "profile-a",
+                profileBacked = true,
                 endpoint = ServerEndpoint.parseForBuild(server.url("/").toString()),
                 gated = false,
                 token = "old-token",
@@ -171,6 +172,7 @@ class DashboardSessionTokenRefresherTest {
         every { AuthManager.credentialBoundary() } returns
             AuthManager.CredentialBoundary(
                 profileId = "profile-a",
+                profileBacked = true,
                 endpoint = ServerEndpoint.parseForBuild(server.url("/").toString()),
                 gated = false,
                 token = "old-token",

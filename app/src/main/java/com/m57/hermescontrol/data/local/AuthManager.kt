@@ -402,6 +402,7 @@ object AuthManager {
 
     internal data class CredentialBoundary(
         val profileId: String,
+        val profileBacked: Boolean,
         val endpoint: ServerEndpoint,
         val gated: Boolean,
         val token: String?,
@@ -416,6 +417,7 @@ object AuthManager {
                 ?.copy(token = selectedId?.let(::getProfileToken))
                 ?: CredentialBoundary(
                     profileId = profileId,
+                    profileBacked = false,
                     endpoint = ServerEndpoint.parseForBuild(state.resolvedBaseUrl),
                     gated = state.wsAuthParam == "ticket",
                     token = selectedId?.let(::getProfileToken),
@@ -458,6 +460,7 @@ object AuthManager {
                 ?: "token"
         return CredentialBoundary(
             profileId = profileId,
+            profileBacked = profile != null,
             endpoint = ServerEndpoint.parseForBuild(endpoint),
             gated = mode == "ticket",
             token = null,
@@ -467,6 +470,7 @@ object AuthManager {
     private fun CredentialBoundary?.matches(other: CredentialBoundary): Boolean =
         this != null &&
             profileId == other.profileId &&
+            profileBacked == other.profileBacked &&
             endpoint.baseUrl == other.endpoint.baseUrl &&
             gated == other.gated
 
