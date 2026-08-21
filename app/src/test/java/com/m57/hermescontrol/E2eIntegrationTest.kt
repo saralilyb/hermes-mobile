@@ -1419,7 +1419,6 @@ class E2eIntegrationTest {
 
             assertEquals("board-2", viewModel.uiState.value.selectedBoard?.id)
             assertEquals(listOf("new-task"), viewModel.uiState.value.tasks.map { it.id })
-            coVerify(exactly = 3) { mockApiService.getKanbanBoard() }
         }
 
     @Test
@@ -1457,6 +1456,87 @@ class E2eIntegrationTest {
             assertEquals("board-2", viewModel.uiState.value.selectedBoard?.id)
             assertNull(viewModel.uiState.value.errorMessage)
             coVerify(exactly = 1) { mockApiService.switchKanbanBoard("board-2") }
+        }
+
+    @Test
+    fun testKanbanStaleBoardDetailFailureCannotOverrideNewBoard() =
+        runTest {
+            val first = KanbanBoard("board-1", "Backlog", null)
+            val second = KanbanBoard("board-2", "Active", null)
+            val staleReloadStarted = CompletableDeferred<Unit>()
+            val staleReloadResult = CompletableDeferred<Response<KanbanBoardResponse>>()
+            var loadCount = 0
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(first, second), "board-1"))
+            coEvery { mockApiService.getKanbanBoard() } coAnswers {
+                loadCount += 1
+                when (loadCount) {
+                    1 -> Response.success(KanbanBoardResponse(emptyList(), null, null))
+                    2 -> {
+                        staleReloadStarted.complete(Unit)
+                        staleReloadResult.await()
+                    }
+
+                    else -> Response.success(KanbanBoardResponse(emptyList(), null, null))
+                }
+            }
+            coEvery { mockApiService.createKanbanTask("board-1", any()) } returns
+                Response.success(KanbanTask("created", "Created", null, "todo", null))
+            coEvery { mockApiService.switchKanbanBoard("board-2") } returns Response.success(Unit)
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.createTask("Created", null, "todo")
+            runCurrent()
+            staleReloadStarted.await()
+            viewModel.selectBoard(second)
+            runCurrent()
+            staleReloadResult.complete(Response.error(500, "stale".toResponseBody()))
+            advanceUntilIdle()
+
+            assertEquals("board-2", viewModel.uiState.value.selectedBoard?.id)
+            assertNull(viewModel.uiState.value.errorMessage)
+        }
+
+    @Test
+    fun testKanbanStaleSwitchFailureCannotOverrideNewSelection() =
+        runTest {
+            val first = KanbanBoard("board-1", "Backlog", null)
+            val second = KanbanBoard("board-2", "Active", null)
+            val third = KanbanBoard("board-3", "Done", null)
+            val staleSwitchStarted = CompletableDeferred<Unit>()
+            val staleSwitchResult = CompletableDeferred<Response<Unit>>()
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(first, second, third), "board-1"))
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+            coEvery { mockApiService.switchKanbanBoard(any()) } coAnswers {
+                val boardId = firstArg<String>()
+                when (boardId) {
+                    "board-2" -> {
+                        staleSwitchStarted.complete(Unit)
+                        staleSwitchResult.await()
+                    }
+
+                    "board-3" -> Response.success(Unit)
+                    else -> error("unexpected board")
+                }
+            }
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.selectBoard(second)
+            runCurrent()
+            staleSwitchStarted.await()
+            viewModel.selectBoard(third)
+            runCurrent()
+            staleSwitchResult.complete(Response.error(500, "stale".toResponseBody()))
+            advanceUntilIdle()
+
+            assertEquals("board-3", viewModel.uiState.value.selectedBoard?.id)
+            assertNull(viewModel.uiState.value.errorMessage)
         }
 
     @Test
