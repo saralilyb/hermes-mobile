@@ -11,12 +11,14 @@ import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.config.resolveBaseUrl
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.local.AuthSessionState
+import com.m57.hermescontrol.data.model.StatusResponse
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.CleartextPolicy
 import com.m57.hermescontrol.data.remote.NetworkError
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.ServerEndpoint
 import com.m57.hermescontrol.data.remote.safeApiCall
+import com.m57.hermescontrol.ui.common.reconcilePressureStatus
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +39,8 @@ data class ConnectUiState(
     val saveProfile: Boolean = false,
     val profiles: List<ConnectionProfile> = emptyList(),
     val selectedProfile: ConnectionProfile? = null,
+    val authMode: String = "token",
+    val status: StatusResponse? = null,
 )
 
 class ConnectViewModel(
@@ -45,6 +49,7 @@ class ConnectViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ConnectUiState())
     val uiState: StateFlow<ConnectUiState> = _uiState.asStateFlow()
+    private var statusGeneration = 0L
 
     init {
         loadSavedValues()
@@ -70,8 +75,11 @@ class ConnectViewModel(
                 profiles = profiles,
                 selectedProfile = selectedProfile,
                 profileName = selectedProfile?.name ?: "",
+                authMode = selectedProfile?.wsAuthParam?.takeIf(String::isNotBlank) ?: AuthManager.getWsAuthParam(),
+                status = null,
             )
         }
+        loadStatus()
     }
 
     fun onProfileNameChange(value: String) {
@@ -97,21 +105,68 @@ class ConnectViewModel(
                 baseUrl = endpoint.baseUrl.toString(),
                 transportWarning = endpoint.securityWarning,
                 token = token,
+                authMode = profile.wsAuthParam?.takeIf(String::isNotBlank) ?: AuthManager.getWsAuthParam(),
+                status = null,
             )
         }
+        ApiClient.rebuild()
+        loadStatus()
     }
 
     fun onTokenChange(value: String) {
-        _uiState.update { it.copy(token = value.trim(), errorMessage = null) }
+        statusGeneration += 1
+        _uiState.update { it.copy(token = value.trim(), errorMessage = null, status = null) }
     }
 
     fun onBaseUrlChange(value: String) {
+        statusGeneration += 1
         val trimmed = value.trim()
         val warning =
             runCatching {
                 ServerEndpoint.parse(trimmed, CleartextPolicy.ALLOW_WITH_WARNING).securityWarning
             }.getOrNull()
-        _uiState.update { it.copy(baseUrl = trimmed, transportWarning = warning, errorMessage = null) }
+        _uiState.update { it.copy(baseUrl = trimmed, transportWarning = warning, errorMessage = null, status = null) }
+    }
+
+    /** Probe only the persisted selected profile, using its normal cookie-or-token client. */
+    fun loadStatus() {
+        val generation = ++statusGeneration
+        val state = _uiState.value
+        val profile = state.selectedProfile ?: return
+        val selectedId = AuthManager.getSelectedProfileId() ?: return
+        val expectedUrl = profile.resolveBaseUrl(AuthManager.getBaseUrl())
+        val expectedToken = AuthManager.getProfileToken(profile.id).orEmpty()
+        val expectedMode = profile.wsAuthParam?.takeIf(String::isNotBlank) ?: AuthManager.getWsAuthParam()
+        if (profile.id != selectedId || state.baseUrl != expectedUrl || state.authMode != expectedMode ||
+            (expectedMode != "ticket" && state.token != expectedToken)
+        ) {
+            return
+        }
+        val fingerprint = listOf(profile.id, state.baseUrl, state.token, state.authMode)
+        viewModelScope.launch {
+            val result =
+                withContext(ioDispatcher) { safeApiCall(reportAuthExpiry = false) { ApiClient.hermesApi.getStatus() } }
+            val current = _uiState.value
+            val currentFingerprint =
+                listOf(current.selectedProfile?.id.orEmpty(), current.baseUrl, current.token, current.authMode)
+            if (generation != statusGeneration || fingerprint != currentFingerprint) return@launch
+            when (result) {
+                is NetworkResult.Success -> {
+                    _uiState.update { currentState ->
+                        currentState.copy(
+                            status =
+                                if (result.data.memory == null && result.data.disk == null) {
+                                    null
+                                } else {
+                                    reconcilePressureStatus(currentState.status, result.data)
+                                },
+                        )
+                    }
+                }
+
+                is NetworkResult.Failure -> _uiState.update { it.copy(status = null) }
+            }
+        }
     }
 
     fun connect() {
@@ -127,7 +182,15 @@ class ConnectViewModel(
             return
         }
 
-        _uiState.update { it.copy(isConnecting = true, errorMessage = null) }
+        val generation = ++statusGeneration
+        val requestFingerprint =
+            listOf(
+                state.selectedProfile?.id.orEmpty(),
+                state.baseUrl,
+                state.token,
+                state.authMode,
+            )
+        _uiState.update { it.copy(isConnecting = true, errorMessage = null, status = null) }
 
         viewModelScope.launch {
             val result =
@@ -135,6 +198,15 @@ class ConnectViewModel(
                     val tempApi = ApiClient.createTempService(endpoint.baseUrl.toString(), state.token)
                     safeApiCall(reportAuthExpiry = false) { tempApi.getStatus() }
                 }
+            val current = _uiState.value
+            val currentFingerprint =
+                listOf(
+                    current.selectedProfile?.id.orEmpty(),
+                    current.baseUrl,
+                    current.token,
+                    current.authMode,
+                )
+            if (generation != statusGeneration || requestFingerprint != currentFingerprint) return@launch
             when (result) {
                 is NetworkResult.Success -> {
                     // Persist credentials to the selected (Default) profile upon successful verification.
@@ -187,7 +259,16 @@ class ConnectViewModel(
                     }
                     ApiClient.rebuild()
                     _uiState.update {
-                        it.copy(isConnecting = false, connectionSuccess = true, errorMessage = null)
+                        it.copy(
+                            isConnecting = false,
+                            connectionSuccess = true,
+                            errorMessage = null,
+                            authMode = "token",
+                            status =
+                                result.data.takeIf { status ->
+                                    status.memory != null || status.disk != null
+                                },
+                        )
                     }
                 }
 
@@ -288,7 +369,7 @@ class ConnectViewModel(
                                 }
                             }
                         }
-                    _uiState.update { it.copy(isConnecting = false, errorMessage = msg) }
+                    _uiState.update { it.copy(isConnecting = false, errorMessage = msg, status = null) }
                 }
             }
         }

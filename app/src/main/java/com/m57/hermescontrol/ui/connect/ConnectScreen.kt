@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.m57.hermescontrol.R
+import com.m57.hermescontrol.ui.common.PressureBanner
 
 @Composable
 fun ConnectScreen(
@@ -189,6 +190,8 @@ fun ConnectScreen(
                         )
                     }
                 }
+
+                ConnectPressureAdvisory(state.status)
 
                 // Profile Save Options prior to connecting
                 Row(
@@ -321,4 +324,9 @@ fun ConnectScreen(
             }
         }
     }
+}
+
+@Composable
+internal fun ConnectPressureAdvisory(status: com.m57.hermescontrol.data.model.StatusResponse?) {
+    status?.let { PressureBanner(memory = it.memory, disk = it.disk) }
 }

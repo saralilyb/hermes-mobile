@@ -728,6 +728,14 @@
     <string name="gateway_action_stop">停止</string>
     <string name="gateway_action_restart">再起動</string>
     <string name="gateway_sec_active_platforms">アクティブなプラットフォーム</string>
+    <string name="pressure_banner_disk_critical">エージェントホストのディスクがほぼ満杯です — 新しいメッセージ、メモリ、設定を保存できない可能性があります</string>
+    <string name="pressure_banner_disk_elevated">エージェントホストのディスク容量が少なくなっています — 古いセッションの削除またはストレージの拡張をご検討ください</string>
+    <string name="pressure_banner_disk_free_suffix"> · 空き %1$d MB</string>
+    <string name="pressure_banner_memory_critical">エージェントホストのメモリがほぼ不足しており、再起動する可能性があります</string>
+    <string name="pressure_banner_memory_oom">エージェントが予期せず再起動しました — メモリ不足が原因の可能性があります</string>
+    <string name="pressure_banner_memory_elevated">エージェントホストのメモリが不足しています</string>
+    <string name="pressure_banner_severity_error">ホストのリソース逼迫（重大）</string>
+    <string name="pressure_banner_severity_warning">ホストのリソース逼迫に関する警告</string>
 
     <!-- CronJobs Screen -->
     <string name="cron_empty_title">cron ジョブなし</string>
