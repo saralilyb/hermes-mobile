@@ -26,6 +26,7 @@ private const val LAYOUT_WAIT_TIMEOUT_MS = 1_000L
 internal data class ChatScrollPosition(
     val atBottom: Boolean,
     val lastScrolledBackward: Boolean,
+    val isScrollInProgress: Boolean,
 )
 
 internal data class ChatLayoutBoundary(
@@ -65,6 +66,7 @@ private class LazyListChatScrollableState(
             ChatScrollPosition(
                 atBottom = state.isAtBottom(bottomPixelTolerance),
                 lastScrolledBackward = state.lastScrolledBackward,
+                isScrollInProgress = state.isScrollInProgress,
             )
         }.distinctUntilChanged()
 
@@ -139,7 +141,11 @@ class ChatScrollController internal constructor(
                 if (position.atBottom) {
                     isFollowingBottom = true
                     pendingCount = 0
-                } else if (programmaticScrolls == 0 && position.lastScrolledBackward) {
+                } else if (
+                    programmaticScrolls == 0 &&
+                    position.isScrollInProgress &&
+                    position.lastScrolledBackward
+                ) {
                     isFollowingBottom = false
                     invalidateTailFollow()
                 }

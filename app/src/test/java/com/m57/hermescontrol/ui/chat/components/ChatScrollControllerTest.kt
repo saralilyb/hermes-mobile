@@ -49,7 +49,11 @@ class ChatScrollControllerTest {
             runCurrent()
 
             state.positionDuringNextScroll =
-                ChatScrollPosition(atBottom = false, lastScrolledBackward = true)
+                ChatScrollPosition(
+                    atBottom = false,
+                    lastScrolledBackward = true,
+                    isScrollInProgress = true,
+                )
             controller.jumpToBottom(animated = true, listItemCount = 2)
             runCurrent()
 
@@ -68,7 +72,7 @@ class ChatScrollControllerTest {
             controller.observeUserScrollPosition()
             runCurrent()
 
-            state.publishPosition(atBottom = false, lastScrolledBackward = true)
+            state.publishPosition(atBottom = false, lastScrolledBackward = true, isScrollInProgress = true)
             runCurrent()
             assertFalse(controller.isFollowingBottom)
 
@@ -107,13 +111,38 @@ class ChatScrollControllerTest {
             runCurrent()
             assertEquals(listOf(false), state.scrollCalls)
 
-            state.publishPosition(atBottom = false, lastScrolledBackward = true)
+            state.publishPosition(atBottom = false, lastScrolledBackward = true, isScrollInProgress = true)
             runCurrent()
             state.publishLayout(totalItemsCount = 2)
             runCurrent()
 
             assertFalse(controller.isFollowingBottom)
             assertEquals(listOf(false), state.scrollCalls)
+        }
+
+    @Test
+    fun staleBackwardDirectionDuringLayoutWaitKeepsDelayedTailScroll() =
+        runTest {
+            val state = FakeChatScrollableState(totalItemsCount = 1)
+            val controller = ChatScrollController(state, backgroundScope, bottomPixelTolerance = 8)
+            controller.observeUserScrollPosition()
+            runCurrent()
+
+            controller.onTailChanged(tailKey = "tail", messageCount = 2, listItemCount = 2)
+            runCurrent()
+            assertEquals(listOf(false), state.scrollCalls)
+
+            state.publishPosition(
+                atBottom = false,
+                lastScrolledBackward = true,
+                isScrollInProgress = false,
+            )
+            runCurrent()
+            state.publishLayout(totalItemsCount = 2)
+            runCurrent()
+
+            assertTrue(controller.isFollowingBottom)
+            assertEquals(listOf(false, false), state.scrollCalls)
         }
 
     @Test
@@ -221,7 +250,13 @@ private class FakeChatScrollableState(
     override val firstVisibleItemScrollOffset: Int = 0
 
     init {
-        positions.tryEmit(ChatScrollPosition(atBottom = true, lastScrolledBackward = false))
+        positions.tryEmit(
+            ChatScrollPosition(
+                atBottom = true,
+                lastScrolledBackward = false,
+                isScrollInProgress = false,
+            ),
+        )
     }
 
     override fun positions(bottomPixelTolerance: Int): Flow<ChatScrollPosition> = positions
@@ -264,7 +299,8 @@ private class FakeChatScrollableState(
     fun publishPosition(
         atBottom: Boolean,
         lastScrolledBackward: Boolean,
+        isScrollInProgress: Boolean = false,
     ) {
-        positions.tryEmit(ChatScrollPosition(atBottom, lastScrolledBackward))
+        positions.tryEmit(ChatScrollPosition(atBottom, lastScrolledBackward, isScrollInProgress))
     }
 }
