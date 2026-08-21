@@ -208,7 +208,7 @@
       "upstream_commit": "90c1e8dc5f3a04a4df8c34927ebd33b0396bf03a",
       "disposition": "accepted",
       "reason": "downstream-adaptation",
-      "downstream_commit": "351bddbc5f4200dbceb9d9767ebd7aba19611980"
+      "downstream_commit": "9ab4e65e8131367688cd34027a6d79ab958eadb1"
     }
   ]
 }
