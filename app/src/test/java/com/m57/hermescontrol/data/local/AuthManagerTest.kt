@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.remote.CookieManager
+import com.m57.hermescontrol.data.remote.GatewayFileClient
 import com.m57.hermescontrol.data.security.SecretStore
 import io.mockk.every
 import io.mockk.mockk
@@ -18,6 +19,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 class TestContext(
     private val tempDir: java.io.File,
@@ -460,6 +464,53 @@ class AuthManagerTest {
         every { mockPrefs.getString("token_prof-a", null) } returns "token-for-a"
         AuthManager.setSelectedProfileId("prof-a") // Required to clear token cache
         assertEquals("token-for-a", AuthManager.getToken())
+    }
+
+    @Test
+    fun mediaCredentialSnapshotWaitsForCompleteProfileTransition() {
+        val profileA = ConnectionProfile("prof-a", "A", baseUrl = "https://same.example.test/", wsAuthParam = "token")
+        val profileB = ConnectionProfile("prof-b", "B", baseUrl = "https://same.example.test/", wsAuthParam = "token")
+        AuthManager.saveConnectionProfiles(listOf(profileA, profileB))
+        every { mockPrefs.getString("token_prof-a", null) } returns "token-a"
+        val blockTokenB = AtomicBoolean(false)
+        val tokenReadStarted = CountDownLatch(1)
+        val releaseTokenRead = CountDownLatch(1)
+        every { mockPrefs.getString("token_prof-b", null) } answers {
+            if (blockTokenB.get()) {
+                tokenReadStarted.countDown()
+                check(releaseTokenRead.await(5, TimeUnit.SECONDS))
+            }
+            "token-b"
+        }
+
+        AuthManager.setSelectedProfileId("prof-b")
+        val expectedNew = GatewayFileClient.currentContext().scope
+        AuthManager.setSelectedProfileId("prof-a")
+        val expectedOld = GatewayFileClient.currentContext().scope
+        assertEquals("prof-a", CookieManager.currentServerOrNull())
+
+        blockTokenB.set(true)
+        val transition = Thread { AuthManager.setSelectedProfileId("prof-b") }.apply { start() }
+        try {
+            assertTrue(tokenReadStarted.await(5, TimeUnit.SECONDS))
+            var captured: com.m57.hermescontrol.data.remote.MediaCacheScope? = null
+            val snapshotFinished = CountDownLatch(1)
+            Thread {
+                captured = GatewayFileClient.currentContext().scope
+                snapshotFinished.countDown()
+            }.start()
+            assertTrue(!snapshotFinished.await(100, TimeUnit.MILLISECONDS))
+            releaseTokenRead.countDown()
+            transition.join(5_000)
+            assertTrue(snapshotFinished.await(5, TimeUnit.SECONDS))
+
+            assertTrue(captured == expectedOld || captured == expectedNew)
+            assertEquals(expectedNew, captured)
+            assertEquals("prof-b", CookieManager.currentServerOrNull())
+        } finally {
+            releaseTokenRead.countDown()
+            transition.join(5_000)
+        }
     }
 
     @Test

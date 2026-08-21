@@ -248,9 +248,11 @@ class ConnectViewModel(
                             } else {
                                 currentProfiles + targetProfile
                             }
-                        AuthManager.saveConnectionProfiles(updatedProfiles)
-                        AuthManager.setSelectedProfileId(targetProfile.id)
-                        AuthManager.setProfileToken(targetProfile.id, state.token)
+                        AuthManager.saveConnectionProfilesAndSelect(
+                            updatedProfiles,
+                            targetProfile.id,
+                            state.token,
+                        )
                     } else {
                         // No explicit profile name — store the connection on the default profile.
                         AuthManager.ensureDefaultSelected()

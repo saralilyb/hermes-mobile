@@ -52,8 +52,9 @@ object GatewayFileClient {
     /** Atomically capture cache identity and a service bound to the same auth boundary. */
     internal fun currentContext(): MediaRequestContext =
         synchronized(AuthManager) {
-            val gated = AuthManager.isGatedMode()
-            val endpoint = AuthManager.endpointForBuild()
+            val boundary = AuthManager.credentialBoundary()
+            val gated = boundary.gated
+            val endpoint = boundary.endpoint
             val cookieHeader =
                 if (gated && CookieManager.isInitialized()) {
                     CookieManager.cookieJar.loadForRequest(
@@ -62,10 +63,10 @@ object GatewayFileClient {
                 } else {
                     ""
                 }
-            val credential = if (gated) cookieHeader else AuthManager.getToken().orEmpty()
+            val credential = if (gated) cookieHeader else boundary.token.orEmpty()
             val scope =
                 MediaCacheScope(
-                    profileId = AuthManager.getSelectedProfileId() ?: AuthManager.DEFAULT_PROFILE_ID,
+                    profileId = boundary.profileId,
                     canonicalEndpoint = endpoint.baseUrl.toString(),
                     authMode = if (gated) "gated-cookie" else "direct-token",
                     credentialFingerprint = fingerprint(credential),
@@ -84,10 +85,11 @@ object GatewayFileClient {
 
     internal fun currentScope(): MediaCacheScope =
         synchronized(AuthManager) {
-            val gated = AuthManager.isGatedMode()
-            val endpoint = AuthManager.endpointForBuild()
+            val boundary = AuthManager.credentialBoundary()
+            val gated = boundary.gated
+            val endpoint = boundary.endpoint
             MediaCacheScope(
-                profileId = AuthManager.getSelectedProfileId() ?: AuthManager.DEFAULT_PROFILE_ID,
+                profileId = boundary.profileId,
                 canonicalEndpoint = endpoint.baseUrl.toString(),
                 authMode = if (gated) "gated-cookie" else "direct-token",
                 credentialFingerprint =
@@ -96,7 +98,7 @@ object GatewayFileClient {
                             CookieManager.cookieJar.loadForRequest(endpoint.baseUrl)
                                 .joinToString("; ") { "${it.name}=${it.value}" }
                         } else {
-                            AuthManager.getToken().orEmpty()
+                            boundary.token.orEmpty()
                         },
                     ),
             )

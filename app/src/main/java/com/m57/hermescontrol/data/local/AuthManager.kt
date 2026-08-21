@@ -112,13 +112,14 @@ object AuthManager {
 
             scope.launch {
                 store.stateFlow.collect { state ->
-                    _selectedProfileIdFlow.value =
-                        state.selectedProfileId?.takeIf(String::isNotBlank) ?: DEFAULT_PROFILE_ID
+                    synchronized(AuthManager) {
+                        val latestProfileId = store.getLatestState().selectedProfileId
+                        _selectedProfileIdFlow.value = normalizedProfileId(latestProfileId)
+                        syncCookieStoreForProfile(latestProfileId)
+                    }
                     _themePreferenceFlow.value = state.themePreference
                     _useDynamicColorsFlow.value = state.useDynamicColors
                     _themePresetFlow.value = state.themePreset
-                    // B7 (Jul 08 2026, kanban t_470): keep cookie scope aligned with active profile.
-                    syncCookieStoreForProfile(state.selectedProfileId)
                 }
             }
         }
@@ -129,19 +130,21 @@ object AuthManager {
         secureStorage ?: throw IllegalStateException("AuthManager not initialized. Call init(context) first.")
 
     fun setWsAuthParam(param: String) {
-        val selectedId = getSelectedProfileId()
-        serverStore.update { state ->
-            state.copy(
-                wsAuthParam = param,
-                connectionProfiles =
-                    state.connectionProfiles.map { profile ->
-                        if (profile.id == selectedId) {
-                            profile.copy(wsAuthParam = param)
-                        } else {
-                            profile
-                        }
-                    },
-            )
+        synchronized(this) {
+            val selectedId = getSelectedProfileId()
+            serverStore.update { state ->
+                state.copy(
+                    wsAuthParam = param,
+                    connectionProfiles =
+                        state.connectionProfiles.map { profile ->
+                            if (profile.id == selectedId) {
+                                profile.copy(wsAuthParam = param)
+                            } else {
+                                profile
+                            }
+                        },
+                )
+            }
         }
     }
 
@@ -220,7 +223,40 @@ object AuthManager {
     fun getConnectionProfiles(): List<ConnectionProfile> = serverStore.getLatestState().connectionProfiles
 
     fun saveConnectionProfiles(profiles: List<ConnectionProfile>) {
-        serverStore.update { it.copy(connectionProfiles = profiles) }
+        synchronized(this) { serverStore.update { it.copy(connectionProfiles = profiles) } }
+    }
+
+    fun saveConnectionProfilesAndToken(
+        profiles: List<ConnectionProfile>,
+        profileId: String,
+        token: String?,
+    ) {
+        var publish = false
+        synchronized(this) {
+            serverStore.update { it.copy(connectionProfiles = profiles) }
+            requireSecureStorage().putString(SecureStorage.authKey("token_$profileId"), token)
+            if (getSelectedProfileId() == profileId) {
+                cachedToken = token
+                tokenInitialized = true
+                publish = true
+            }
+        }
+        if (publish) _tokenFlow.value = token
+    }
+
+    fun saveConnectionProfilesAndSelect(
+        profiles: List<ConnectionProfile>,
+        profileId: String,
+        token: String?,
+    ) {
+        synchronized(this) {
+            serverStore.update { it.copy(connectionProfiles = profiles, selectedProfileId = profileId) }
+            requireSecureStorage().putString(SecureStorage.authKey("token_$profileId"), token)
+            cachedToken = token
+            tokenInitialized = true
+            syncCookieStoreForProfile(profileId)
+        }
+        _tokenFlow.value = token
     }
 
     /**
@@ -354,14 +390,40 @@ object AuthManager {
     }
 
     fun setSelectedProfileId(id: String?) {
-        serverStore.update { it.copy(selectedProfileId = id) }
-        synchronized(this) {
-            tokenInitialized = false
-        }
-        _tokenFlow.value = getToken()
-        // B7 (Jul 08 2026, kanban t_470): keep cookie scope aligned with active profile.
-        syncCookieStoreForProfile(id)
+        val token =
+            synchronized(this) {
+                serverStore.update { it.copy(selectedProfileId = id) }
+                cachedToken = null
+                tokenInitialized = false
+                syncCookieStoreForProfile(id)
+                id?.takeIf(String::isNotBlank)?.let(::getProfileToken)
+            }
+        _tokenFlow.value = token
     }
+
+    internal data class CredentialBoundary(
+        val profileId: String,
+        val endpoint: ServerEndpoint,
+        val gated: Boolean,
+        val token: String?,
+    )
+
+    internal fun credentialBoundary(): CredentialBoundary =
+        synchronized(this) {
+            val state = serverStore.getLatestState()
+            val selectedId = state.selectedProfileId?.takeIf(String::isNotBlank)
+            val profile = state.connectionProfiles.firstOrNull { it.id == selectedId }
+            val mode =
+                profile?.wsAuthParam?.takeIf(String::isNotBlank)
+                    ?: state.wsAuthParam.takeIf(String::isNotBlank)
+                    ?: "token"
+            CredentialBoundary(
+                profileId = selectedId ?: DEFAULT_PROFILE_ID,
+                endpoint = ServerEndpoint.parseForBuild(state.resolvedBaseUrl),
+                gated = mode == "ticket",
+                token = selectedId?.let(::getProfileToken),
+            )
+        }
 
     private fun normalizedProfileId(profileId: String?): String =
         profileId?.takeIf { it.isNotBlank() } ?: DEFAULT_PROFILE_ID
@@ -459,28 +521,30 @@ object AuthManager {
                 baseUrl,
                 CleartextPolicy.ALLOW_WITH_WARNING,
             ).baseUrl.toString()
-        val selectedId =
-            getSelectedProfileId() ?: run {
-                ensureDefaultSelected()
-                DEFAULT_PROFILE_ID
-            }
-        serverStore.update { state ->
-            val profiles =
-                state.connectionProfiles.map { profile ->
-                    if (profile.id == selectedId) {
-                        profile.copy(
-                            host = "",
-                            port = 0,
-                            baseUrl = normalized,
-                        )
-                    } else {
-                        profile
-                    }
+        synchronized(this) {
+            val selectedId =
+                getSelectedProfileId() ?: run {
+                    ensureDefaultSelected()
+                    DEFAULT_PROFILE_ID
                 }
-            state.copy(
-                baseUrl = normalized,
-                connectionProfiles = profiles,
-            )
+            serverStore.update { state ->
+                val profiles =
+                    state.connectionProfiles.map { profile ->
+                        if (profile.id == selectedId) {
+                            profile.copy(
+                                host = "",
+                                port = 0,
+                                baseUrl = normalized,
+                            )
+                        } else {
+                            profile
+                        }
+                    }
+                state.copy(
+                    baseUrl = normalized,
+                    connectionProfiles = profiles,
+                )
+            }
         }
     }
 
