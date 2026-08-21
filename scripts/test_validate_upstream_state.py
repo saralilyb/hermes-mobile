@@ -37,7 +37,7 @@ def state(version: int = 2) -> dict:
             {"commit": D, "disposition": "deferred", "reason": "product-scope"},
         ],
     }
-    if version == 2:
+    if version >= 2:
         data["resolutions"] = []
     return data
 
@@ -70,6 +70,10 @@ class SchemaTests(unittest.TestCase):
         loaded = self.load(state())
         self.assertEqual(validator.validate_resolutions(loaded), [])
 
+    def test_v3_empty_resolutions(self) -> None:
+        loaded = self.load(state(3))
+        self.assertEqual(validator.validate_resolutions(loaded), [])
+
     def test_v1_rejects_resolutions_key(self) -> None:
         data = state(1)
         data["resolutions"] = []
@@ -80,6 +84,18 @@ class SchemaTests(unittest.TestCase):
         data = state()
         data["schema_version"] = True
         with self.assertRaisesRegex(validator.ValidationError, "must be an integer"):
+            self.load(data)
+
+    def test_unsupported_schema_version_is_rejected(self) -> None:
+        data = state(3)
+        data["schema_version"] = 4
+        with self.assertRaisesRegex(validator.ValidationError, "unsupported"):
+            self.load(data)
+
+    def test_v3_root_keys_remain_strict(self) -> None:
+        data = state(3)
+        data["unexpected"] = True
+        with self.assertRaisesRegex(validator.ValidationError, "root keys"):
             self.load(data)
 
     def test_cli_summary_reports_raw_resolved_and_unresolved_deferred(self) -> None:
@@ -99,8 +115,8 @@ class SchemaTests(unittest.TestCase):
 
 
 class ResolutionTests(unittest.TestCase):
-    def validate(self, resolutions: list[dict]) -> list[dict]:
-        data = state()
+    def validate(self, resolutions: list[dict], version: int = 2) -> list[dict]:
+        data = state(version)
         data["resolutions"] = resolutions
         validator.validate_entries(data)
         return validator.validate_resolutions(data)
@@ -143,9 +159,26 @@ class ResolutionTests(unittest.TestCase):
         with self.assertRaisesRegex(validator.ValidationError, "existing entry"):
             self.validate([resolution("f" * 40)])
 
-    def test_out_of_order(self) -> None:
+    def test_v2_rejects_out_of_entry_order(self) -> None:
         with self.assertRaisesRegex(validator.ValidationError, "original entry order"):
             self.validate([resolution(D), resolution(C)])
+
+    def test_v3_accepts_out_of_entry_order(self) -> None:
+        resolutions = [resolution(D), resolution(C)]
+        self.assertEqual(self.validate(resolutions, version=3), resolutions)
+
+    def test_v3_preserves_duplicate_reference_and_type_checks(self) -> None:
+        cases = (
+            ([resolution(), resolution()], "exactly once"),
+            ([resolution("f" * 40)], "existing entry"),
+            ([resolution(reason=[])], "reason is invalid"),
+        )
+        for resolutions, message in cases:
+            with (
+                self.subTest(message=message),
+                self.assertRaisesRegex(validator.ValidationError, message),
+            ):
+                self.validate(resolutions, version=3)
 
     def test_bad_reason(self) -> None:
         with self.assertRaisesRegex(validator.ValidationError, "reason is invalid"):
@@ -195,7 +228,7 @@ class GitResolutionTests(unittest.TestCase):
     def run_validation(
         self, git_side_effect, *, check_branch_base=True, old=None
     ) -> None:
-        data = state()
+        data = state(3 if old else 2)
         data["resolutions"] = [resolution()]
         commits = validator.validate_entries(data)
         resolutions = validator.validate_resolutions(data)
@@ -253,10 +286,30 @@ class GitResolutionTests(unittest.TestCase):
             self.run_validation(fake)
 
     def test_previous_resolution_mutation(self) -> None:
-        old = state()
+        old = state(3)
         old["resolutions"] = [resolution(reason="feature-review")]
         with self.assertRaisesRegex(validator.ValidationError, "previous resolutions"):
             self.run_validation(self.normal_git, old=old)
+
+    def test_v2_to_v3_upgrade_preserves_resolution_prefix(self) -> None:
+        old = state(2)
+        old["resolutions"] = [resolution()]
+        self.run_validation(self.normal_git, old=old)
+
+    def test_v2_to_v3_upgrade_rejects_resolution_mutation(self) -> None:
+        old = state(2)
+        old["resolutions"] = [resolution(reason="feature-review")]
+        with self.assertRaisesRegex(validator.ValidationError, "previous resolutions"):
+            self.run_validation(self.normal_git, old=old)
+
+    def test_v3_new_resolution_must_postdate_branch_base(self) -> None:
+        def fake(*args: str) -> str:
+            if args == ("merge-base", "--is-ancestor", A, E):
+                raise validator.ValidationError("predates")
+            return self.normal_git(*args)
+
+        with self.assertRaisesRegex(validator.ValidationError, "after fork_base"):
+            self.run_validation(fake, old=state(2))
 
     def test_existing_resolution_may_predate_new_branch_base(self) -> None:
         old = state()

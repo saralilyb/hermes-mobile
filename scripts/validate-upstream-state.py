@@ -20,6 +20,7 @@ ROOT_KEYS_V1 = {
     "entries",
 }
 ROOT_KEYS_V2 = ROOT_KEYS_V1 | {"resolutions"}
+ROOT_KEYS_V3 = ROOT_KEYS_V2
 ENTRY_KEYS = {"commit", "disposition", "reason"}
 RESOLUTION_KEYS = {"upstream_commit", "disposition", "reason", "downstream_commit"}
 DISPOSITIONS = {"accepted", "deferred", "excluded", "partial"}
@@ -72,7 +73,7 @@ def load_state(path: Path) -> dict[str, Any]:
     version = data.get("schema_version")
     if type(version) is not int:
         raise ValidationError("schema_version must be an integer")
-    expected_keys = {1: ROOT_KEYS_V1, 2: ROOT_KEYS_V2}.get(version)
+    expected_keys = {1: ROOT_KEYS_V1, 2: ROOT_KEYS_V2, 3: ROOT_KEYS_V3}.get(version)
     if expected_keys is None:
         raise ValidationError("unsupported schema_version")
     if set(data) != expected_keys:
@@ -174,7 +175,7 @@ def validate_resolutions(data: dict[str, Any]) -> list[dict[str, Any]]:
 
     if len(upstream_commits) != len(set(upstream_commits)):
         raise ValidationError("each resolved upstream_commit must appear exactly once")
-    if positions != sorted(positions):
+    if data["schema_version"] == 2 and positions != sorted(positions):
         raise ValidationError("resolutions must follow original entry order")
     return resolutions
 
