@@ -2508,7 +2508,10 @@ private fun InlineAttachment(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (isOpening) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp).testTag("attachment_opening_${attachment.gatewayPath}"),
+                        strokeWidth = 2.dp,
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 Icon(

@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.core.content.ContextCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
+import com.m57.hermescontrol.data.model.Attachment
 import com.m57.hermescontrol.data.ws.ConnectionStatus
 import io.mockk.every
 import io.mockk.mockk
@@ -159,6 +160,49 @@ class ChatScreenTest {
 
         composeTestRule.onNodeWithTag("chat_bubble_user").assertIsDisplayed()
         composeTestRule.onNodeWithTag("system_timeline_event").assertDoesNotExist()
+    }
+
+    @Test
+    fun openingAttachmentPath_marksOnlyMatchingAttachment_andClearsWithParentState() {
+        val path = "/gateway/report.pdf"
+        val state =
+            MutableStateFlow(
+                ChatUiState(
+                    connectionStatus = ConnectionStatus.CONNECTED,
+                    isSessionReady = true,
+                    messages =
+                        listOf(
+                            ChatMessage(
+                                role = MessageRole.ASSISTANT,
+                                content = "files",
+                                attachments =
+                                    listOf(
+                                        Attachment(path, "report.pdf", "application/pdf", gatewayPath = path),
+                                        Attachment(
+                                            "/gateway/other.txt",
+                                            "other.txt",
+                                            "text/plain",
+                                            gatewayPath = "/gateway/other.txt",
+                                        ),
+                                    ),
+                            ),
+                        ),
+                    openingAttachmentPath = path,
+                ),
+            )
+        val mockViewModel = mockk<ChatViewModel>(relaxed = true)
+        every { mockViewModel.uiState } returns state.asStateFlow()
+        every { mockViewModel.streamingState } returns MutableStateFlow(StreamingState()).asStateFlow()
+
+        composeTestRule.setContent {
+            ChatScreen(onOpenDrawer = {}, sessionId = "session", viewModel = mockViewModel)
+        }
+
+        composeTestRule.onNodeWithTag("attachment_opening_$path").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("attachment_opening_/gateway/other.txt").assertDoesNotExist()
+        state.value = state.value.copy(openingAttachmentPath = null)
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("attachment_opening_$path").assertDoesNotExist()
     }
 
     @Test

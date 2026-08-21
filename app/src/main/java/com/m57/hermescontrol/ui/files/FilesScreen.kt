@@ -85,6 +85,7 @@ fun FilesScreen(
     modifier: Modifier = Modifier,
     onOpenDrawer: (() -> Unit)? = null,
     viewModel: FilesViewModel = viewModel { FilesViewModel() },
+    launchDownloadedFile: ((DownloadedFile) -> Unit)? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -279,7 +280,7 @@ fun FilesScreen(
                                     if (entry.isDirectory) {
                                         viewModel.navigateTo(entry)
                                     } else {
-                                        openManagedFile(entry, viewModel, context, scope)
+                                        openManagedFile(entry, viewModel, context, scope, launchDownloadedFile)
                                     }
                                 },
                                 onDelete = { viewModel.requestDelete(entry) },
@@ -515,11 +516,16 @@ private fun openManagedFile(
     viewModel: FilesViewModel,
     context: android.content.Context,
     scope: CoroutineScope,
+    launchDownloadedFile: ((DownloadedFile) -> Unit)? = null,
 ) {
     viewModel.downloadFile(entry, File(context.cacheDir, "gateway_media")) { result ->
         when (result) {
             is com.m57.hermescontrol.data.remote.NetworkResult.Success -> {
                 val data = result.data
+                if (launchDownloadedFile != null) {
+                    launchDownloadedFile(data)
+                    return@downloadFile
+                }
                 scope.launch {
                     val intent =
                         runCatching {

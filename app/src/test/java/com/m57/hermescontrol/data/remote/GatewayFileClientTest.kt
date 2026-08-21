@@ -204,6 +204,33 @@ class GatewayFileClientTest {
         }
 
     @Test
+    fun `transition from atomic move callback removes published stale target`() =
+        runTest {
+            val dir = tempDir()
+            var current = true
+            val cache =
+                GatewayMediaCache(
+                    dir,
+                    atomicMover = { source, target ->
+                        java.nio.file.Files.move(
+                            source.toPath(),
+                            target.toPath(),
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        )
+                        current = false
+                    },
+                )
+            val service = mockk<HermesApiService>()
+            coEvery { service.downloadManagedFile(any()) } returns Response.success("old-scope".toResponseBody())
+
+            val result = GatewayFileClient.fetch("/transition", service, cache, scope) { current }
+
+            assertTrue(result is GatewayFileResult.Failure)
+            assertTrue(dir.listFiles().orEmpty().isEmpty())
+        }
+
+    @Test
     fun `cancelling cache write mid-stream removes temp and preserves target`() =
         runTest {
             val dir = tempDir()

@@ -4,6 +4,8 @@ package com.m57.hermescontrol.data.remote
 
 import com.m57.hermescontrol.BuildConfig
 import com.m57.hermescontrol.data.local.AuthManager
+import okhttp3.Authenticator
+import okhttp3.CookieJar
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.logging.HttpLoggingInterceptor
@@ -84,6 +86,7 @@ object ApiClient {
         endpoint: ServerEndpoint,
         gated: Boolean,
         token: String?,
+        cookieHeader: String? = null,
     ): HermesApiService {
         val auth =
             Interceptor { chain ->
@@ -94,11 +97,27 @@ object ApiClient {
                     chain.proceed(request.newBuilder().addHeader("Authorization", "Bearer $token").build())
                 }
             }
+        val cookie =
+            Interceptor { chain ->
+                val request = chain.request()
+                if (!gated || cookieHeader.isNullOrBlank()) {
+                    chain.proceed(request)
+                } else {
+                    chain.proceed(request.newBuilder().header("Cookie", cookieHeader).build())
+                }
+            }
         val client =
             OkHttpProvider.base.newBuilder()
+                // newBuilder retains the base client's live credential behavior;
+                // strip it while preserving dispatcher, TLS and pinning state.
+                .apply {
+                    interceptors().clear()
+                    networkInterceptors().clear()
+                }
+                .cookieJar(CookieJar.NO_COOKIES)
                 .addInterceptor(auth)
-                .addInterceptor(ProfileScopeInterceptor)
-                .authenticator(TokenRefreshAuthenticator)
+                .addInterceptor(cookie)
+                .authenticator(Authenticator.NONE)
                 .build()
         return Retrofit.Builder()
             .baseUrl(endpoint.baseUrl)

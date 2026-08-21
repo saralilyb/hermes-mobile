@@ -54,7 +54,15 @@ object GatewayFileClient {
         synchronized(AuthManager) {
             val gated = AuthManager.isGatedMode()
             val endpoint = AuthManager.endpointForBuild()
-            val credential = if (gated) AuthManager.getSessionCookie().orEmpty() else AuthManager.getToken().orEmpty()
+            val cookieHeader =
+                if (gated && CookieManager.isInitialized()) {
+                    CookieManager.cookieJar.loadForRequest(
+                        endpoint.baseUrl,
+                    ).joinToString("; ") { "${it.name}=${it.value}" }
+                } else {
+                    ""
+                }
+            val credential = if (gated) cookieHeader else AuthManager.getToken().orEmpty()
             val scope =
                 MediaCacheScope(
                     profileId = AuthManager.getSelectedProfileId() ?: AuthManager.DEFAULT_PROFILE_ID,
@@ -64,7 +72,12 @@ object GatewayFileClient {
                 )
             MediaRequestContext(
                 scope,
-                ApiClient.createMediaService(endpoint, gated, credential.takeUnless { gated }),
+                ApiClient.createMediaService(
+                    endpoint,
+                    gated,
+                    credential.takeUnless { gated },
+                    cookieHeader.takeIf { gated },
+                ),
                 ::currentScope,
             )
         }
@@ -72,13 +85,19 @@ object GatewayFileClient {
     internal fun currentScope(): MediaCacheScope =
         synchronized(AuthManager) {
             val gated = AuthManager.isGatedMode()
+            val endpoint = AuthManager.endpointForBuild()
             MediaCacheScope(
                 profileId = AuthManager.getSelectedProfileId() ?: AuthManager.DEFAULT_PROFILE_ID,
-                canonicalEndpoint = AuthManager.endpointForBuild().baseUrl.toString(),
+                canonicalEndpoint = endpoint.baseUrl.toString(),
                 authMode = if (gated) "gated-cookie" else "direct-token",
                 credentialFingerprint =
                     fingerprint(
-                        if (gated) AuthManager.getSessionCookie().orEmpty() else AuthManager.getToken().orEmpty(),
+                        if (gated && CookieManager.isInitialized()) {
+                            CookieManager.cookieJar.loadForRequest(endpoint.baseUrl)
+                                .joinToString("; ") { "${it.name}=${it.value}" }
+                        } else {
+                            AuthManager.getToken().orEmpty()
+                        },
                     ),
             )
         }
@@ -253,8 +272,11 @@ internal class GatewayMediaCache(
                     input ->
                 temp.outputStream().use { output -> copyBounded(input, output) }
             }
-            if (!canPublish()) throw StaleMediaBoundaryException()
             atomicMover(temp, target)
+            if (!canPublish()) {
+                target.delete()
+                throw StaleMediaBoundaryException()
+            }
             evict(target)
             return target
         } catch (e: CancellationException) {
