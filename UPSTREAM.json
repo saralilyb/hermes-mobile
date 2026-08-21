@@ -1,8 +1,8 @@
 {
   "schema_version": 3,
-  "fork_base": "cce58b6aa6ca7f5802bd53b21cf30422ea43310a",
+  "fork_base": "1265ed80260c64e8546784cce26ee4b20f7c034d",
   "review_start_exclusive": "daf33dcb4c8f7fdafc890acfffc2fbb04569f004",
-  "reviewed_through": "bb4ca6bfa97c3ab333ccfa6cc4c1a2597392f379",
+  "reviewed_through": "f6b771b84cd53e0d41a9f725f771bc1b182eedb9",
   "entries": [
     {
       "commit": "3c0f281276dd695f09cf38a43fa379f843483646",
@@ -165,6 +165,46 @@
       "commit": "bb4ca6bfa97c3ab333ccfa6cc4c1a2597392f379",
       "disposition": "deferred",
       "reason": "toolchain-validation"
+    },
+    {
+      "commit": "59bcbdfe3c1bbc1ae2432a09303e78944a0bcbe5",
+      "disposition": "deferred",
+      "reason": "toolchain-validation"
+    },
+    {
+      "commit": "fad49b7b66620cdc3fbac82cf9a63792b2e22ef0",
+      "disposition": "partial",
+      "reason": "downstream-adaptation",
+      "scope": [
+        "app/src/androidTest/java/com/m57/hermescontrol/ui/chat/components/SubagentInspectionSheetAccessibilityTest.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/components/StickySubagentBar.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/components/SubagentInspectionSheet.kt",
+        "app/src/main/res/values-ja/strings.xml",
+        "app/src/main/res/values-ko/strings.xml",
+        "app/src/main/res/values-zh/strings.xml",
+        "app/src/main/res/values/strings.xml",
+        "app/src/test/java/com/m57/hermescontrol/ui/chat/components/StickySubagentBarTest.kt"
+      ]
+    },
+    {
+      "commit": "4549410a45ae29c6cedd96aa1a1d1c6b4104eb8b",
+      "disposition": "partial",
+      "reason": "downstream-adaptation",
+      "scope": [
+        "app/src/main/java/com/m57/hermescontrol/data/ws/WsEvent.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/ChatBubble.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/ChatViewModel.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/ChatWsEventReducer.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/ToolSchemaRegistry.kt",
+        "app/src/test/java/com/m57/hermescontrol/ui/chat/SlashCommandDispatchRpcTest.kt",
+        "app/src/test/java/com/m57/hermescontrol/ui/chat/ToolBubbleParsingTest.kt",
+        "app/src/test/java/com/m57/hermescontrol/ui/chat/ToolSchemaRegistryTest.kt"
+      ]
+    },
+    {
+      "commit": "f6b771b84cd53e0d41a9f725f771bc1b182eedb9",
+      "disposition": "excluded",
+      "reason": "downstream-conflict"
     }
   ],
   "resolutions": [

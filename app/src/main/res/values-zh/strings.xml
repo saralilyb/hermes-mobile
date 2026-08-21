@@ -997,4 +997,19 @@
     <string name="timeline_marker_internal_notification">系统通知</string>
     <string name="timeline_marker_max_iterations">已达到工具调用上限</string>
     <string name="timeline_marker_system_notice">系统提示</string>
+    <string name="task_progress_count">任务 %1$d/%2$d</string>
+    <plurals name="task_progress_agents">
+        <item quantity="one">%1$d 个代理</item>
+        <item quantity="other">%1$d 个代理</item>
+    </plurals>
+    <plurals name="task_progress_agent_running">
+        <item quantity="one">%1$d 个代理正在运行</item>
+        <item quantity="other">%1$d 个代理正在运行</item>
+    </plurals>
+    <string name="task_progress_open_details">打开任务详情</string>
+    <string name="subagent_status_pending">待处理</string>
+    <string name="subagent_status_running">运行中</string>
+    <string name="subagent_status_completed">已完成</string>
+    <string name="subagent_status_cancelled">已取消</string>
+    <string name="subagent_status_failed">失败</string>
 </resources>
