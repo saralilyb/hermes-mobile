@@ -1356,6 +1356,73 @@ class E2eIntegrationTest {
         }
 
     @Test
+    fun testKanbanStaleTaskReloadCannotOverwriteNewBoard() =
+        runTest {
+            val first = KanbanBoard("board-1", "Backlog", null)
+            val second = KanbanBoard("board-2", "Active", null)
+            val staleReloadStarted = CompletableDeferred<Unit>()
+            val staleReloadResult = CompletableDeferred<Response<KanbanBoardResponse>>()
+            var loadCount = 0
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(first, second), "board-1"))
+            coEvery { mockApiService.getKanbanBoard() } coAnswers {
+                loadCount += 1
+                when (loadCount) {
+                    1 -> Response.success(KanbanBoardResponse(emptyList(), null, null))
+                    2 -> {
+                        staleReloadStarted.complete(Unit)
+                        staleReloadResult.await()
+                    }
+
+                    else ->
+                        Response.success(
+                            KanbanBoardResponse(
+                                listOf(
+                                    KanbanColumn(
+                                        "active",
+                                        listOf(KanbanTask("new-task", "New", null, "active", null)),
+                                    ),
+                                ),
+                                null,
+                                null,
+                            ),
+                        )
+                }
+            }
+            coEvery { mockApiService.createKanbanTask("board-1", any()) } returns
+                Response.success(KanbanTask("created", "Created", null, "todo", null))
+            coEvery { mockApiService.switchKanbanBoard("board-2") } returns Response.success(Unit)
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.createTask("Created", null, "todo")
+            runCurrent()
+            staleReloadStarted.await()
+            viewModel.selectBoard(second)
+            runCurrent()
+            staleReloadResult.complete(
+                Response.success(
+                    KanbanBoardResponse(
+                        listOf(
+                            KanbanColumn(
+                                "todo",
+                                listOf(KanbanTask("stale-task", "Stale", null, "todo", null)),
+                            ),
+                        ),
+                        null,
+                        null,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("board-2", viewModel.uiState.value.selectedBoard?.id)
+            assertEquals(listOf("new-task"), viewModel.uiState.value.tasks.map { it.id })
+            coVerify(exactly = 3) { mockApiService.getKanbanBoard() }
+        }
+
+    @Test
     fun testModelOptionsSelection_success() =
         runTest {
             val provider = ModelProvider("ollama", "Ollama", false, true, listOf("llama3"), 1, null, true, null, null)
