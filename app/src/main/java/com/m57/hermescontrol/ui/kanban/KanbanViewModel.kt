@@ -143,7 +143,9 @@ class KanbanViewModel(
             when (result) {
                 is NetworkResult.Success -> {
                     _uiState.update { it.copy(toastMessage = "Task created successfully") }
-                    reloadBoard(board)
+                    if (_uiState.value.selectedBoard?.id == board.id) {
+                        reloadBoard(board)
+                    }
                 }
 
                 is NetworkResult.Failure -> {

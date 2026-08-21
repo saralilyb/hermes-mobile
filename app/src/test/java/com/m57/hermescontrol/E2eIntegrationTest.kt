@@ -59,6 +59,7 @@ import com.m57.hermescontrol.ui.sessions.SessionsViewModel
 import com.m57.hermescontrol.ui.skills.SkillsViewModel
 import com.m57.hermescontrol.ui.system.SystemViewModel
 import io.mockk.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.*
@@ -1318,6 +1319,39 @@ class E2eIntegrationTest {
 
             coVerify(exactly = 1) { mockApiService.createKanbanTask("board-1", any()) }
             coVerify(exactly = 0) { mockApiService.switchKanbanBoard(any()) }
+            coVerify(exactly = 2) { mockApiService.getKanbanBoard() }
+        }
+
+    @Test
+    fun testKanbanTaskCompletionDoesNotRestoreBoardSelectedAtRequestStart() =
+        runTest {
+            val first = KanbanBoard("board-1", "Backlog", null)
+            val second = KanbanBoard("board-2", "Active", null)
+            val createStarted = CompletableDeferred<Unit>()
+            val createResult = CompletableDeferred<Response<KanbanTask>>()
+            coEvery { mockApiService.getKanbanBoards() } returns
+                Response.success(KanbanBoardsResponse(listOf(first, second), "board-1"))
+            coEvery { mockApiService.getKanbanBoard() } returns
+                Response.success(KanbanBoardResponse(emptyList(), null, null))
+            coEvery { mockApiService.switchKanbanBoard("board-2") } returns Response.success(Unit)
+            coEvery { mockApiService.createKanbanTask("board-1", any()) } coAnswers {
+                createStarted.complete(Unit)
+                createResult.await()
+            }
+
+            val viewModel = KanbanViewModel(ioDispatcher = testDispatcher)
+            viewModel.loadBoards()
+            advanceUntilIdle()
+            viewModel.createTask("Task", null, "todo")
+            runCurrent()
+            createStarted.await()
+            viewModel.selectBoard(second)
+            runCurrent()
+            createResult.complete(Response.success(KanbanTask("task-1", "Task", null, "todo", null)))
+            advanceUntilIdle()
+
+            assertEquals("board-2", viewModel.uiState.value.selectedBoard?.id)
+            coVerify(exactly = 1) { mockApiService.switchKanbanBoard("board-2") }
             coVerify(exactly = 2) { mockApiService.getKanbanBoard() }
         }
 

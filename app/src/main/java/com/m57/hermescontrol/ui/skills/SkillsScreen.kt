@@ -104,7 +104,12 @@ fun SkillsScreen(
     SkillsScaffold(
         modifier = modifier,
         isRefreshing = state.isLoading,
-        onReload = viewModel::loadSkills,
+        onReload = {
+            when (state.viewMode) {
+                SkillsViewMode.INSTALLED -> viewModel.loadSkills()
+                SkillsViewMode.HUB -> viewModel.searchHub(state.hubQuery)
+            }
+        },
         onUpdateFromHub =
             if (state.viewMode == SkillsViewMode.INSTALLED) {
                 viewModel::updateSkillsFromHub

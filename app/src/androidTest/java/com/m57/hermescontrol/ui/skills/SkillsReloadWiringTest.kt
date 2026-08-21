@@ -7,6 +7,12 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.platform.app.InstrumentationRegistry
 import com.m57.hermescontrol.R
+import io.mockk.clearMocks
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -54,5 +60,26 @@ class SkillsReloadWiringTest {
             .onNodeWithContentDescription(
                 context.getString(R.string.content_desc_update_skills_hub),
             ).assertDoesNotExist()
+    }
+
+    @Test
+    fun hubScreenRefreshRerunsVisibleQueryInsteadOfReloadingInstalledSkills() {
+        val viewModel = mockk<SkillsViewModel>(relaxed = true)
+        val state =
+            SkillsUiState(
+                viewMode = SkillsViewMode.HUB,
+                hubQuery = "agents",
+            )
+        every { viewModel.uiState } returns MutableStateFlow(state).asStateFlow()
+        composeRule.setContent {
+            SkillsScreen(viewModel = viewModel)
+        }
+        composeRule.waitForIdle()
+        clearMocks(viewModel, answers = false, recordedCalls = true)
+
+        composeRule.onNodeWithTag("refresh_button").performClick()
+
+        verify(exactly = 1) { viewModel.searchHub("agents") }
+        verify(exactly = 0) { viewModel.loadSkills() }
     }
 }
