@@ -226,19 +226,19 @@
       "upstream_commit": "b653903fa8375bdad7f31fa48eeead4112c6615d",
       "disposition": "accepted",
       "reason": "downstream-adaptation",
-      "downstream_commit": "25be687b2b2f6c07a7e73095b91149aab5971ff9"
+      "downstream_commit": "5f93b35d4b5cd9e2b5305a3a3f44fd48704b6136"
     },
     {
       "upstream_commit": "d8be45b8fcc551aa611fcca208d0d4fce39587bb",
       "disposition": "accepted",
       "reason": "downstream-adaptation",
-      "downstream_commit": "25be687b2b2f6c07a7e73095b91149aab5971ff9"
+      "downstream_commit": "5f93b35d4b5cd9e2b5305a3a3f44fd48704b6136"
     },
     {
       "upstream_commit": "75023a2bf0d65cbfbe3204d0970c5995840797b6",
       "disposition": "accepted",
       "reason": "downstream-adaptation",
-      "downstream_commit": "25be687b2b2f6c07a7e73095b91149aab5971ff9"
+      "downstream_commit": "5f93b35d4b5cd9e2b5305a3a3f44fd48704b6136"
     }
   ]
 }
