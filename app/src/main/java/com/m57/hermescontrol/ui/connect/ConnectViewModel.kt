@@ -11,6 +11,7 @@ import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.config.resolveBaseUrl
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.local.AuthSessionState
+import com.m57.hermescontrol.data.model.StatusResponse
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.CleartextPolicy
 import com.m57.hermescontrol.data.remote.NetworkError
@@ -37,6 +38,8 @@ data class ConnectUiState(
     val saveProfile: Boolean = false,
     val profiles: List<ConnectionProfile> = emptyList(),
     val selectedProfile: ConnectionProfile? = null,
+    val authMode: String = "token",
+    val status: StatusResponse? = null,
 )
 
 class ConnectViewModel(
@@ -70,8 +73,11 @@ class ConnectViewModel(
                 profiles = profiles,
                 selectedProfile = selectedProfile,
                 profileName = selectedProfile?.name ?: "",
+                authMode = selectedProfile?.wsAuthParam?.takeIf(String::isNotBlank) ?: AuthManager.getWsAuthParam(),
+                status = null,
             )
         }
+        loadStatus()
     }
 
     fun onProfileNameChange(value: String) {
@@ -97,12 +103,16 @@ class ConnectViewModel(
                 baseUrl = endpoint.baseUrl.toString(),
                 transportWarning = endpoint.securityWarning,
                 token = token,
+                authMode = profile.wsAuthParam?.takeIf(String::isNotBlank) ?: AuthManager.getWsAuthParam(),
+                status = null,
             )
         }
+        ApiClient.rebuild()
+        loadStatus()
     }
 
     fun onTokenChange(value: String) {
-        _uiState.update { it.copy(token = value.trim(), errorMessage = null) }
+        _uiState.update { it.copy(token = value.trim(), errorMessage = null, status = null) }
     }
 
     fun onBaseUrlChange(value: String) {
@@ -111,7 +121,36 @@ class ConnectViewModel(
             runCatching {
                 ServerEndpoint.parse(trimmed, CleartextPolicy.ALLOW_WITH_WARNING).securityWarning
             }.getOrNull()
-        _uiState.update { it.copy(baseUrl = trimmed, transportWarning = warning, errorMessage = null) }
+        _uiState.update { it.copy(baseUrl = trimmed, transportWarning = warning, errorMessage = null, status = null) }
+    }
+
+    /** Probe only the persisted selected profile, using its normal cookie-or-token client. */
+    fun loadStatus() {
+        _uiState.update { it.copy(status = null) }
+        val state = _uiState.value
+        val profile = state.selectedProfile ?: return
+        val selectedId = AuthManager.getSelectedProfileId() ?: return
+        val expectedUrl = profile.resolveBaseUrl(AuthManager.getBaseUrl())
+        val expectedToken = AuthManager.getProfileToken(profile.id).orEmpty()
+        val expectedMode = profile.wsAuthParam?.takeIf(String::isNotBlank) ?: AuthManager.getWsAuthParam()
+        if (profile.id != selectedId || state.baseUrl != expectedUrl || state.authMode != expectedMode ||
+            (expectedMode != "ticket" && state.token != expectedToken)
+        ) {
+            return
+        }
+        val fingerprint = listOf(profile.id, state.baseUrl, state.token, state.authMode)
+        viewModelScope.launch {
+            val result =
+                withContext(ioDispatcher) { safeApiCall(reportAuthExpiry = false) { ApiClient.hermesApi.getStatus() } }
+            val current = _uiState.value
+            val currentFingerprint =
+                listOf(current.selectedProfile?.id.orEmpty(), current.baseUrl, current.token, current.authMode)
+            if (result is NetworkResult.Success && fingerprint == currentFingerprint &&
+                (result.data.memory != null || result.data.disk != null)
+            ) {
+                _uiState.update { it.copy(status = result.data) }
+            }
+        }
     }
 
     fun connect() {
@@ -187,7 +226,13 @@ class ConnectViewModel(
                     }
                     ApiClient.rebuild()
                     _uiState.update {
-                        it.copy(isConnecting = false, connectionSuccess = true, errorMessage = null)
+                        it.copy(
+                            isConnecting = false,
+                            connectionSuccess = true,
+                            errorMessage = null,
+                            authMode = "token",
+                            status = result.data.takeIf { status -> status.memory != null || status.disk != null },
+                        )
                     }
                 }
 
@@ -288,7 +333,7 @@ class ConnectViewModel(
                                 }
                             }
                         }
-                    _uiState.update { it.copy(isConnecting = false, errorMessage = msg) }
+                    _uiState.update { it.copy(isConnecting = false, errorMessage = msg, status = null) }
                 }
             }
         }

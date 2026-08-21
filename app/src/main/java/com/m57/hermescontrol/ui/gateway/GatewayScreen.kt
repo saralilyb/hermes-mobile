@@ -35,10 +35,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.m57.hermescontrol.R
+import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
 import com.m57.hermescontrol.ui.common.ErrorState
 import com.m57.hermescontrol.ui.common.HermesScaffold
 import com.m57.hermescontrol.ui.common.NavIcon
+import com.m57.hermescontrol.ui.common.PressureBanner
 import com.m57.hermescontrol.ui.common.SkeletonListState
 import com.m57.hermescontrol.ui.common.ToastEffect
 
@@ -51,9 +53,10 @@ fun GatewayScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val statusColors = LocalHermesStatusColors.current
+    val profileId by AuthManager.selectedProfileIdFlow.collectAsStateWithLifecycle()
 
-    LaunchedEffect(Unit) {
-        viewModel.loadStatus()
+    LaunchedEffect(profileId) {
+        viewModel.onProfileChanged(profileId)
     }
 
     ToastEffect(toastMessage = state.toastMessage, onClearToast = viewModel::clearToast)
@@ -107,6 +110,8 @@ fun GatewayScreen(
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
                             val isRunning = status?.gateway_running == true
+
+                            GatewayPressureAdvisory(status)
 
                             // Status Overview Card
                             Card(
@@ -294,4 +299,9 @@ fun GatewayScreen(
             }
         }
     }
+}
+
+@Composable
+internal fun GatewayPressureAdvisory(status: com.m57.hermescontrol.data.model.StatusResponse?) {
+    status?.let { PressureBanner(memory = it.memory, disk = it.disk) }
 }

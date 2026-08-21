@@ -728,6 +728,14 @@
     <string name="gateway_action_stop">停止</string>
     <string name="gateway_action_restart">重启</string>
     <string name="gateway_sec_active_platforms">活动平台</string>
+    <string name="pressure_banner_disk_critical">代理主机的磁盘空间即将耗尽 — 新消息、记忆和设置可能无法保存</string>
+    <string name="pressure_banner_disk_elevated">代理主机的磁盘空间正在减少 — 请考虑清理旧会话或扩充存储空间</string>
+    <string name="pressure_banner_disk_free_suffix"> · 剩余 %1$d MB</string>
+    <string name="pressure_banner_memory_critical">代理主机的内存即将耗尽，可能会重启</string>
+    <string name="pressure_banner_memory_oom">代理意外重启 — 很可能是由于内存耗尽</string>
+    <string name="pressure_banner_memory_elevated">代理主机的可用内存不足</string>
+    <string name="pressure_banner_severity_error">主机资源压力严重</string>
+    <string name="pressure_banner_severity_warning">主机资源压力警告</string>
 
     <!-- CronJobs Screen -->
     <string name="cron_empty_title">没有定时任务</string>

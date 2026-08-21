@@ -70,6 +70,7 @@ class ConnectViewModelTest {
         every { AuthManager.setProfileToken(any(), any()) } returns Unit
         every { AuthManager.getSelectedProfileId() } returns null
         every { AuthManager.setSelectedProfileId(any()) } returns Unit
+        every { AuthManager.getWsAuthParam() } returns "token"
         every { AuthManager.ensureDefaultSelected() } returns Unit
 
         // Mock Application string resources
@@ -111,6 +112,24 @@ class ConnectViewModelTest {
         assertEquals("new-token", viewModel.uiState.value.token)
         assertNull(viewModel.uiState.value.errorMessage)
     }
+
+    @Test
+    fun `credential edit clears pressure returned by successful connect`() =
+        runTest {
+            val viewModel = ConnectViewModel(mockApp, testDispatcher)
+            viewModel.onTokenChange("valid-token")
+            coEvery { mockApiService.getStatus() } returns
+                Response.success(
+                    StatusResponse(
+                        memory = com.m57.hermescontrol.data.model.MemoryPressureStatus("critical"),
+                    ),
+                )
+            viewModel.connect()
+            advanceUntilIdle()
+            assertEquals("critical", viewModel.uiState.value.status?.memory?.pressure)
+            viewModel.onTokenChange("different-token")
+            assertNull(viewModel.uiState.value.status)
+        }
 
     @Test
     fun testConnect_blankToken_showsError() {

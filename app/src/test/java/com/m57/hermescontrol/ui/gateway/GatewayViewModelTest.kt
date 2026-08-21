@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.ui.gateway
 
+import com.m57.hermescontrol.data.model.MemoryPressureStatus
 import com.m57.hermescontrol.data.model.StatusResponse
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.HermesApiService
@@ -108,5 +109,21 @@ class GatewayViewModelTest {
                 viewModel.uiState.value.errorMessage
                     ?.contains("Network timeout") == true,
             )
+        }
+
+    @Test
+    fun `profile change clears stale pressure`() =
+        runTest {
+            coEvery { mockApi.getStatus() } returns
+                Response.success(StatusResponse(memory = MemoryPressureStatus("critical"))) andThen
+                Response.success(StatusResponse())
+            val viewModel = GatewayViewModel(ioDispatcher = testDispatcher)
+            viewModel.onProfileChanged("old")
+            advanceUntilIdle()
+            assertEquals("critical", viewModel.uiState.value.status?.memory?.pressure)
+            viewModel.onProfileChanged("new")
+            assertNull(viewModel.uiState.value.status)
+            advanceUntilIdle()
+            assertNull(viewModel.uiState.value.status?.memory)
         }
 }

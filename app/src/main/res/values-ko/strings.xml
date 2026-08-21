@@ -728,6 +728,14 @@
     <string name="gateway_action_stop">중지</string>
     <string name="gateway_action_restart">재시작</string>
     <string name="gateway_sec_active_platforms">활성 플랫폼</string>
+    <string name="pressure_banner_disk_critical">에이전트 호스트의 디스크가 거의 가득 찼습니다 — 새 메시지, 메모리 및 설정을 저장하지 못할 수 있습니다</string>
+    <string name="pressure_banner_disk_elevated">에이전트 호스트의 디스크 공간이 부족해지고 있습니다 — 이전 세션을 정리하거나 저장 공간을 확장해 주세요</string>
+    <string name="pressure_banner_disk_free_suffix"> · %1$d MB 남음</string>
+    <string name="pressure_banner_memory_critical">에이전트 호스트의 메모리가 거의 소진되어 재시작될 수 있습니다</string>
+    <string name="pressure_banner_memory_oom">에이전트가 예기치 않게 재시작되었습니다 — 메모리 부족이 원인일 가능성이 큽니다</string>
+    <string name="pressure_banner_memory_elevated">에이전트 호스트의 메모리가 부족합니다</string>
+    <string name="pressure_banner_severity_error">호스트 리소스 압박 심각</string>
+    <string name="pressure_banner_severity_warning">호스트 리소스 압박 경고</string>
 
     <!-- CronJobs Screen -->
     <string name="cron_empty_title">크론 작업 없음</string>
