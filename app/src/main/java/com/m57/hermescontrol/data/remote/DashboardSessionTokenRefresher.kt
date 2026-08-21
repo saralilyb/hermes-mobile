@@ -18,9 +18,9 @@ internal object DashboardSessionTokenRefresher {
     @Synchronized
     fun refresh(): String? =
         try {
-            val token = fetch(AuthManager.baseUrl(), OkHttpProvider.probe) ?: return null
-            AuthManager.setToken(token)
-            token
+            val boundary = AuthManager.credentialBoundary()
+            val token = fetch(boundary.endpoint.baseUrl.toString(), OkHttpProvider.probe) ?: return null
+            token.takeIf { AuthManager.commitRefreshedToken(boundary, it) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

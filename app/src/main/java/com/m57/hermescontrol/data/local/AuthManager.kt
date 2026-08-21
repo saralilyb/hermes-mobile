@@ -7,7 +7,9 @@ import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.config.ServerStore
 import com.m57.hermescontrol.data.config.ServerStoreMigration
 import com.m57.hermescontrol.data.config.ServerStoreSerializer
+import com.m57.hermescontrol.data.config.ServerStoreState
 import com.m57.hermescontrol.data.config.ServerUrlMigration
+import com.m57.hermescontrol.data.config.resolveBaseUrl
 import com.m57.hermescontrol.data.config.resolvedBaseUrl
 import com.m57.hermescontrol.data.config.resolvedHost
 import com.m57.hermescontrol.data.config.resolvedPort
@@ -73,6 +75,9 @@ object AuthManager {
     private val _tokenFlow = MutableStateFlow<String?>(null)
     val tokenFlow: StateFlow<String?> = _tokenFlow.asStateFlow()
 
+    @Volatile
+    internal var beforeTokenFlowPublicationForTest: (() -> Unit)? = null
+
     private val _selectedProfileIdFlow = MutableStateFlow(DEFAULT_PROFILE_ID)
     val selectedProfileIdFlow: StateFlow<String> = _selectedProfileIdFlow.asStateFlow()
 
@@ -102,7 +107,7 @@ object AuthManager {
             val storage = secureStorageFactory(context)
             secureStorage = storage
             migrateLegacyDefaultIfNeeded(storage)
-            _tokenFlow.value = getTokenInternal(storage)
+            publishTokenLocked(getTokenInternal(storage))
 
             // Initialize the encrypted cookie store. Its initial scope loads on IO.
             val initialProfileId =
@@ -112,13 +117,14 @@ object AuthManager {
 
             scope.launch {
                 store.stateFlow.collect { state ->
-                    _selectedProfileIdFlow.value =
-                        state.selectedProfileId?.takeIf(String::isNotBlank) ?: DEFAULT_PROFILE_ID
+                    synchronized(AuthManager) {
+                        val latestProfileId = store.getLatestState().selectedProfileId
+                        _selectedProfileIdFlow.value = normalizedProfileId(latestProfileId)
+                        syncCookieStoreForProfile(latestProfileId)
+                    }
                     _themePreferenceFlow.value = state.themePreference
                     _useDynamicColorsFlow.value = state.useDynamicColors
                     _themePresetFlow.value = state.themePreset
-                    // B7 (Jul 08 2026, kanban t_470): keep cookie scope aligned with active profile.
-                    syncCookieStoreForProfile(state.selectedProfileId)
                 }
             }
         }
@@ -129,19 +135,21 @@ object AuthManager {
         secureStorage ?: throw IllegalStateException("AuthManager not initialized. Call init(context) first.")
 
     fun setWsAuthParam(param: String) {
-        val selectedId = getSelectedProfileId()
-        serverStore.update { state ->
-            state.copy(
-                wsAuthParam = param,
-                connectionProfiles =
-                    state.connectionProfiles.map { profile ->
-                        if (profile.id == selectedId) {
-                            profile.copy(wsAuthParam = param)
-                        } else {
-                            profile
-                        }
-                    },
-            )
+        synchronized(this) {
+            val selectedId = getSelectedProfileId()
+            serverStore.update { state ->
+                state.copy(
+                    wsAuthParam = param,
+                    connectionProfiles =
+                        state.connectionProfiles.map { profile ->
+                            if (profile.id == selectedId) {
+                                profile.copy(wsAuthParam = param)
+                            } else {
+                                profile
+                            }
+                        },
+                )
+            }
         }
     }
 
@@ -220,7 +228,38 @@ object AuthManager {
     fun getConnectionProfiles(): List<ConnectionProfile> = serverStore.getLatestState().connectionProfiles
 
     fun saveConnectionProfiles(profiles: List<ConnectionProfile>) {
-        serverStore.update { it.copy(connectionProfiles = profiles) }
+        synchronized(this) { serverStore.update { it.copy(connectionProfiles = profiles) } }
+    }
+
+    fun saveConnectionProfilesAndToken(
+        profiles: List<ConnectionProfile>,
+        profileId: String,
+        token: String?,
+    ) {
+        synchronized(this) {
+            serverStore.update { it.copy(connectionProfiles = profiles) }
+            requireSecureStorage().putString(SecureStorage.authKey("token_$profileId"), token)
+            if (getSelectedProfileId() == profileId) {
+                cachedToken = token
+                tokenInitialized = true
+                publishTokenLocked(token)
+            }
+        }
+    }
+
+    fun saveConnectionProfilesAndSelect(
+        profiles: List<ConnectionProfile>,
+        profileId: String,
+        token: String?,
+    ) {
+        synchronized(this) {
+            serverStore.update { it.copy(connectionProfiles = profiles, selectedProfileId = profileId) }
+            requireSecureStorage().putString(SecureStorage.authKey("token_$profileId"), token)
+            cachedToken = token
+            tokenInitialized = true
+            syncCookieStoreForProfile(profileId)
+            publishTokenLocked(token)
+        }
     }
 
     /**
@@ -336,15 +375,13 @@ object AuthManager {
         profileId: String,
         token: String?,
     ) {
-        requireSecureStorage().putString(SecureStorage.authKey("token_$profileId"), token)
-        if (getSelectedProfileId() == profileId) {
-            // B7 (Jul 08 2026, kanban t_470): sync in-memory cachedToken
-            // to prevent stale tokens during ticket refresh
-            synchronized(this) {
+        synchronized(this) {
+            requireSecureStorage().putString(SecureStorage.authKey("token_$profileId"), token)
+            if (getSelectedProfileId() == profileId) {
                 cachedToken = token
                 tokenInitialized = true
+                publishTokenLocked(token)
             }
-            _tokenFlow.value = token
         }
     }
 
@@ -354,14 +391,88 @@ object AuthManager {
     }
 
     fun setSelectedProfileId(id: String?) {
-        serverStore.update { it.copy(selectedProfileId = id) }
         synchronized(this) {
+            serverStore.update { it.copy(selectedProfileId = id) }
+            cachedToken = null
             tokenInitialized = false
+            syncCookieStoreForProfile(id)
+            publishTokenLocked(id?.takeIf(String::isNotBlank)?.let(::getProfileToken))
         }
-        _tokenFlow.value = getToken()
-        // B7 (Jul 08 2026, kanban t_470): keep cookie scope aligned with active profile.
-        syncCookieStoreForProfile(id)
     }
+
+    internal data class CredentialBoundary(
+        val profileId: String,
+        val profileBacked: Boolean,
+        val endpoint: ServerEndpoint,
+        val gated: Boolean,
+        val token: String?,
+    )
+
+    internal fun credentialBoundary(): CredentialBoundary =
+        synchronized(this) {
+            val state = serverStore.getLatestState()
+            val selectedId = state.selectedProfileId?.takeIf(String::isNotBlank)
+            val profileId = selectedId ?: DEFAULT_PROFILE_ID
+            currentProfileBoundary(state, profileId)
+                ?.copy(token = selectedId?.let(::getProfileToken))
+                ?: CredentialBoundary(
+                    profileId = profileId,
+                    profileBacked = false,
+                    endpoint = ServerEndpoint.parseForBuild(state.resolvedBaseUrl),
+                    gated = state.wsAuthParam == "ticket",
+                    token = selectedId?.let(::getProfileToken),
+                )
+        }
+
+    /** Store a refresh result only while its captured profile boundary remains valid. */
+    internal fun commitRefreshedToken(
+        boundary: CredentialBoundary,
+        token: String?,
+    ): Boolean {
+        return synchronized(this) {
+            val state = serverStore.getLatestState()
+            val currentProfile = currentProfileBoundary(state, boundary.profileId)
+            if (!currentProfile.matches(boundary)) return@synchronized false
+
+            requireSecureStorage().putString(SecureStorage.authKey("token_${boundary.profileId}"), token)
+            val active =
+                normalizedProfileId(state.selectedProfileId) == boundary.profileId &&
+                    currentProfile.matches(boundary)
+            if (active) {
+                cachedToken = token
+                tokenInitialized = true
+                publishTokenLocked(token)
+            }
+            active
+        }
+    }
+
+    private fun currentProfileBoundary(
+        state: ServerStoreState,
+        profileId: String,
+    ): CredentialBoundary? {
+        val profile = state.connectionProfiles.firstOrNull { it.id == profileId }
+        if (profile == null && (profileId != DEFAULT_PROFILE_ID || state.connectionProfiles.isNotEmpty())) return null
+        val endpoint = profile?.resolveBaseUrl(state.baseUrl) ?: state.resolvedBaseUrl
+        val mode =
+            profile?.wsAuthParam?.takeIf(String::isNotBlank)
+                ?: state.wsAuthParam.takeIf(String::isNotBlank)
+                ?: "token"
+        return CredentialBoundary(
+            profileId = profileId,
+            profileBacked = profile != null,
+            endpoint = ServerEndpoint.parseForBuild(endpoint),
+            gated = mode == "ticket",
+            token = null,
+        )
+    }
+
+    private fun CredentialBoundary?.matches(other: CredentialBoundary): Boolean =
+        this != null &&
+            profileId == other.profileId &&
+            profileBacked == other.profileBacked &&
+            endpoint.baseUrl == other.endpoint.baseUrl &&
+            gated == other.gated
 
     private fun normalizedProfileId(profileId: String?): String =
         profileId?.takeIf { it.isNotBlank() } ?: DEFAULT_PROFILE_ID
@@ -372,6 +483,13 @@ object AuthManager {
         if (currentId != normalizedId) {
             CookieManager.useStore(normalizedId)
         }
+    }
+
+    /** Publish the active token while the surrounding credential mutation still owns this monitor. */
+    private fun publishTokenLocked(token: String?) {
+        check(Thread.holdsLock(this))
+        beforeTokenFlowPublicationForTest?.invoke()
+        _tokenFlow.value = token
     }
 
     // ── Token ────────────────────────────────────────────────────────────
@@ -395,6 +513,7 @@ object AuthManager {
         synchronized(this) {
             cachedToken = null
             tokenInitialized = false
+            beforeTokenFlowPublicationForTest = null
             _serverStore = null
             secureStorage = null
             appScope?.let {
@@ -429,15 +548,16 @@ object AuthManager {
     }
 
     fun setToken(token: String?) {
-        val selectedId =
-            getSelectedProfileId() ?: run {
-                ensureDefaultSelected()
-                DEFAULT_PROFILE_ID
-            }
-        setProfileToken(selectedId, token)
         synchronized(this) {
+            val selectedId =
+                getSelectedProfileId() ?: run {
+                    ensureDefaultSelected()
+                    DEFAULT_PROFILE_ID
+                }
+            requireSecureStorage().putString(SecureStorage.authKey("token_$selectedId"), token)
             cachedToken = token
             tokenInitialized = true
+            publishTokenLocked(token)
         }
     }
 
@@ -459,28 +579,30 @@ object AuthManager {
                 baseUrl,
                 CleartextPolicy.ALLOW_WITH_WARNING,
             ).baseUrl.toString()
-        val selectedId =
-            getSelectedProfileId() ?: run {
-                ensureDefaultSelected()
-                DEFAULT_PROFILE_ID
-            }
-        serverStore.update { state ->
-            val profiles =
-                state.connectionProfiles.map { profile ->
-                    if (profile.id == selectedId) {
-                        profile.copy(
-                            host = "",
-                            port = 0,
-                            baseUrl = normalized,
-                        )
-                    } else {
-                        profile
-                    }
+        synchronized(this) {
+            val selectedId =
+                getSelectedProfileId() ?: run {
+                    ensureDefaultSelected()
+                    DEFAULT_PROFILE_ID
                 }
-            state.copy(
-                baseUrl = normalized,
-                connectionProfiles = profiles,
-            )
+            serverStore.update { state ->
+                val profiles =
+                    state.connectionProfiles.map { profile ->
+                        if (profile.id == selectedId) {
+                            profile.copy(
+                                host = "",
+                                port = 0,
+                                baseUrl = normalized,
+                            )
+                        } else {
+                            profile
+                        }
+                    }
+                state.copy(
+                    baseUrl = normalized,
+                    connectionProfiles = profiles,
+                )
+            }
         }
     }
 

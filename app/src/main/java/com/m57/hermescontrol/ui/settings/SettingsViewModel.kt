@@ -258,9 +258,10 @@ class SettingsViewModel(
                     port = 0,
                     baseUrl = endpoint.baseUrl.toString(),
                 )
-            AuthManager.saveConnectionProfiles(profiles)
             if (tokenChanged) {
-                AuthManager.setProfileToken(editingId, token)
+                AuthManager.saveConnectionProfilesAndToken(profiles, editingId, token)
+            } else {
+                AuthManager.saveConnectionProfiles(profiles)
             }
         } else {
             // Add new profile

@@ -113,6 +113,7 @@ data class ChatUiState(
     val backgroundCompleteMessage: String? = null,
     // Attachment open failure — surfaced as a non-blocking snackbar (issue #724)
     val openError: String? = null,
+    val openingAttachmentPath: String? = null,
     val clarifyRequest: ClarifyUi? = null,
     // Sudo / secret prompts — surfaced as dialogs (issue #524)
     val sudoPrompt: SudoPromptUi? = null,
@@ -2530,7 +2531,9 @@ class ChatViewModel(
      * snackbar); the tap is never swallowed.
      */
     fun openAttachment(attachment: Attachment) {
-        val ctx = getApplication<Application>().applicationContext
+        val application = getApplication<Application>()
+        val ctx = application.applicationContext
+        val cacheDir = application.cacheDir
         if (attachment.source == AttachmentSource.LOCAL) {
             // Best-effort direct open of the picked content URI.
             runCatching { openWithView(ctx, android.net.Uri.parse(attachment.uri), attachment.mimeType) }
@@ -2543,10 +2546,17 @@ class ChatViewModel(
                         val bytes =
                             ctx.contentResolver.openInputStream(uri)?.use { it.readBytesLimited() }
                                 ?: error("Could not read local attachment")
+                        val localCacheDir = java.io.File(cacheDir, "local_attachments").apply { mkdirs() }
+                        val localCache =
+                            java.io.File(
+                                localCacheDir,
+                                "${GatewayFileClient.sha256(attachment.uri)}.media",
+                            )
+                        localCache.writeBytes(bytes)
                         GatewayFile(
                             name = attachment.name,
                             mimeType = attachment.mimeType,
-                            bytes = bytes,
+                            cacheFile = localCache,
                         )
                     }.getOrElse {
                         showOpenError(R.string.attachment_error_open, attachment.name)
@@ -2561,30 +2571,37 @@ class ChatViewModel(
                 showOpenError(R.string.attachment_error_missing_gateway_path, attachment.name)
                 return
             }
-        viewModelScope.launch(Dispatchers.IO) {
-            when (val result = GatewayFileClient.fetch(path)) {
-                is GatewayFileResult.Success -> {
-                    openBytes(ctx, result.file)
-                }
+        viewModelScope.launch {
+            _uiState.update { it.copy(openingAttachmentPath = path) }
+            try {
+                when (val result = GatewayFileClient.fetch(path, java.io.File(cacheDir, "gateway_media"))) {
+                    is GatewayFileResult.Success -> {
+                        openBytes(ctx, result.file)
+                    }
 
-                is GatewayFileResult.NotFound -> {
-                    showOpenError(R.string.attachment_error_not_found, attachment.name)
-                }
+                    is GatewayFileResult.NotFound -> {
+                        showOpenError(R.string.attachment_error_not_found, attachment.name)
+                    }
 
-                is GatewayFileResult.Forbidden -> {
-                    showOpenError(R.string.attachment_error_access_denied, attachment.name)
-                }
+                    is GatewayFileResult.Forbidden -> {
+                        showOpenError(R.string.attachment_error_access_denied, attachment.name)
+                    }
 
-                is GatewayFileResult.TooLarge -> {
-                    showOpenError(R.string.attachment_error_too_large, attachment.name)
-                }
+                    is GatewayFileResult.TooLarge -> {
+                        showOpenError(R.string.attachment_error_too_large, attachment.name)
+                    }
 
-                is GatewayFileResult.Unauthorized -> {
-                    showOpenError(R.string.attachment_error_session_expired, attachment.name)
-                }
+                    is GatewayFileResult.Unauthorized -> {
+                        showOpenError(R.string.attachment_error_session_expired, attachment.name)
+                    }
 
-                is GatewayFileResult.Failure -> {
-                    showOpenError(R.string.attachment_error_open, attachment.name)
+                    is GatewayFileResult.Failure -> {
+                        showOpenError(R.string.attachment_error_open, attachment.name)
+                    }
+                }
+            } finally {
+                _uiState.update { state ->
+                    if (state.openingAttachmentPath == path) state.copy(openingAttachmentPath = null) else state
                 }
             }
         }
@@ -2596,15 +2613,11 @@ class ChatViewModel(
         file: GatewayFile,
     ) {
         runCatching {
-            val dir = java.io.File(ctx.cacheDir, "gateway_files").also { it.mkdirs() }
-            val safeName = file.name.replace(Regex("[/\\\\]"), "_").ifBlank { "file" }
-            val out = java.io.File(dir, safeName)
-            out.writeBytes(file.bytes)
             val uri =
                 androidx.core.content.FileProvider.getUriForFile(
                     ctx,
                     "${ctx.packageName}.fileprovider",
-                    out,
+                    file.cacheFile,
                 )
             openWithView(ctx, uri, file.mimeType)
         }.onFailure { showOpenError(R.string.attachment_error_open, file.name) }

@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "fork_base": "03785ad15a494d0db8716dc904ae2b78946dde70",
+  "fork_base": "cce58b6aa6ca7f5802bd53b21cf30422ea43310a",
   "review_start_exclusive": "daf33dcb4c8f7fdafc890acfffc2fbb04569f004",
   "reviewed_through": "bb4ca6bfa97c3ab333ccfa6cc4c1a2597392f379",
   "entries": [
@@ -221,6 +221,24 @@
       "disposition": "accepted",
       "reason": "downstream-adaptation",
       "downstream_commit": "e70eccf4919546e7633d6f52661097baa9ad7446"
+    },
+    {
+      "upstream_commit": "b653903fa8375bdad7f31fa48eeead4112c6615d",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation",
+      "downstream_commit": "35b031a08305540284534a255984af05a310d41c"
+    },
+    {
+      "upstream_commit": "d8be45b8fcc551aa611fcca208d0d4fce39587bb",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation",
+      "downstream_commit": "35b031a08305540284534a255984af05a310d41c"
+    },
+    {
+      "upstream_commit": "75023a2bf0d65cbfbe3204d0970c5995840797b6",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation",
+      "downstream_commit": "35b031a08305540284534a255984af05a310d41c"
     }
   ]
 }

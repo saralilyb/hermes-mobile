@@ -57,12 +57,17 @@ class FilesViewModelTest {
     fun `downloadFile returns authenticated gateway bytes and clears opening state`() =
         runTest(dispatcher) {
             val bytes = byteArrayOf(1, 2, 3)
-            coEvery { GatewayFileClient.fetch("/tmp/image.png") } returns
+            val cacheDir =
+                java.io.File(
+                    System.getProperty("java.io.tmpdir"),
+                    "files-${System.nanoTime()}",
+                ).apply { mkdirs() }
+            coEvery { GatewayFileClient.fetch("/tmp/image.png", any()) } returns
                 GatewayFileResult.Success(
                     GatewayFile(
                         name = "image.png",
                         mimeType = "image/png",
-                        bytes = bytes,
+                        cacheFile = java.io.File(cacheDir, "image.png").apply { writeBytes(bytes) },
                     ),
                 )
             val viewModel = FilesViewModel(ioDispatcher = dispatcher)
@@ -70,25 +75,32 @@ class FilesViewModelTest {
 
             viewModel.downloadFile(
                 ManagedFileEntry(name = "image.png", path = "/tmp/image.png"),
+                cacheDir,
             ) { result = it }
             advanceUntilIdle()
 
             val downloaded = (result as NetworkResult.Success).data
             assertEquals("image.png", downloaded.name)
             assertEquals("image/png", downloaded.mimeType)
-            assertArrayEquals(bytes, downloaded.bytes)
+            assertArrayEquals(bytes, downloaded.cacheFile.readBytes())
             assertNull(viewModel.uiState.value.openingPath)
         }
 
     @Test
     fun `downloadFile maps device size cap to HTTP 413`() =
         runTest(dispatcher) {
-            coEvery { GatewayFileClient.fetch("/tmp/large.bin") } returns GatewayFileResult.TooLarge
+            val cacheDir =
+                java.io.File(
+                    System.getProperty("java.io.tmpdir"),
+                    "files-${System.nanoTime()}",
+                ).apply { mkdirs() }
+            coEvery { GatewayFileClient.fetch("/tmp/large.bin", any()) } returns GatewayFileResult.TooLarge
             val viewModel = FilesViewModel(ioDispatcher = dispatcher)
             var result: NetworkResult<DownloadedFile>? = null
 
             viewModel.downloadFile(
                 ManagedFileEntry(name = "large.bin", path = "/tmp/large.bin"),
+                cacheDir,
             ) { result = it }
             advanceUntilIdle()
 

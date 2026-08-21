@@ -85,6 +85,7 @@ fun FilesScreen(
     modifier: Modifier = Modifier,
     onOpenDrawer: (() -> Unit)? = null,
     viewModel: FilesViewModel = viewModel { FilesViewModel() },
+    launchDownloadedFile: ((DownloadedFile) -> Unit)? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -279,7 +280,7 @@ fun FilesScreen(
                                     if (entry.isDirectory) {
                                         viewModel.navigateTo(entry)
                                     } else {
-                                        openManagedFile(entry, viewModel, context, scope)
+                                        openManagedFile(entry, viewModel, context, scope, launchDownloadedFile)
                                     }
                                 },
                                 onDelete = { viewModel.requestDelete(entry) },
@@ -515,31 +516,25 @@ private fun openManagedFile(
     viewModel: FilesViewModel,
     context: android.content.Context,
     scope: CoroutineScope,
+    launchDownloadedFile: ((DownloadedFile) -> Unit)? = null,
 ) {
-    viewModel.downloadFile(entry) { result ->
+    viewModel.downloadFile(entry, File(context.cacheDir, "gateway_media")) { result ->
         when (result) {
             is com.m57.hermescontrol.data.remote.NetworkResult.Success -> {
                 val data = result.data
-                val bytes = data.bytes
-                if (bytes == null) {
-                    viewModel.showToast(FilesUiText(R.string.files_error_decode))
+                if (launchDownloadedFile != null) {
+                    launchDownloadedFile(data)
                     return@downloadFile
                 }
                 scope.launch {
                     val intent =
                         runCatching {
                             withContext(Dispatchers.IO) {
-                                val safeName =
-                                    entry.name
-                                        .replace(Regex("[^A-Za-z0-9._-]"), "_")
-                                        .takeIf { it.isNotBlank() } ?: "file"
-                                val file = File(context.cacheDir, "hermes_files_$safeName")
-                                file.writeBytes(bytes)
                                 val uri =
                                     FileProvider.getUriForFile(
                                         context,
                                         "${context.packageName}.fileprovider",
-                                        file,
+                                        data.cacheFile,
                                     )
                                 Intent(Intent.ACTION_VIEW).apply {
                                     setDataAndType(uri, data.mimeType)

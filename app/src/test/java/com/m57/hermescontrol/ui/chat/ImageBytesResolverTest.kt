@@ -41,11 +41,18 @@ import java.util.Base64
 @OptIn(ExperimentalCoroutinesApi::class)
 class ImageBytesResolverTest {
     private val context = mockk<Context>(relaxed = true)
+    private lateinit var cacheDir: java.io.File
 
     @Before
     fun setUp() {
         // resolve() runs on Dispatchers.IO; bind the main dispatcher for tests.
         Dispatchers.setMain(StandardTestDispatcher())
+        cacheDir =
+            java.io.File(
+                System.getProperty("java.io.tmpdir"),
+                "image-resolver-${System.nanoTime()}",
+            ).apply { mkdirs() }
+        every { context.cacheDir } returns cacheDir
     }
 
     @After
@@ -54,6 +61,7 @@ class ImageBytesResolverTest {
         // that share this JVM, notably FilesViewModelTest's GatewayFileClient.
         unmockkObject(GatewayFileClient)
         Dispatchers.resetMain()
+        cacheDir.deleteRecursively()
     }
 
     @Test
@@ -250,11 +258,20 @@ class ImageBytesResolverTest {
         runTest {
             mockkObject(GatewayFileClient)
             val bytes = "gateway-image".toByteArray()
+            val cacheFile =
+                java.io.File(
+                    System.getProperty("java.io.tmpdir"),
+                    "gateway-image-${System.nanoTime()}.png",
+                ).apply { writeBytes(bytes) }
             coEvery {
-                GatewayFileClient.fetch("/tmp/image.png")
+                GatewayFileClient.fetch("/tmp/image.png", any())
             } returns
                 GatewayFileResult.Success(
-                    GatewayFile("image.png", "image/png", bytes),
+                    GatewayFile(
+                        "image.png",
+                        "image/png",
+                        cacheFile,
+                    ),
                 )
 
             val result =

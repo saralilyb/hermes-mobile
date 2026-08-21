@@ -108,6 +108,7 @@ fun ChatBubble(
     isCurrentMatch: Boolean = false,
     onRespondApproval: (String) -> Unit = {},
     onOpenAttachment: (Attachment) -> Unit = {},
+    openingAttachmentPath: String? = null,
     onImageClick: (ImageViewerModel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -130,6 +131,7 @@ fun ChatBubble(
                         searchQuery = searchQuery,
                         isCurrentMatch = isCurrentMatch,
                         onOpenAttachment = onOpenAttachment,
+                        openingAttachmentPath = openingAttachmentPath,
                         onImageClick = onImageClick,
                         modifier = modifier,
                     )
@@ -142,6 +144,7 @@ fun ChatBubble(
                         searchQuery = searchQuery,
                         isCurrentMatch = isCurrentMatch,
                         onOpenAttachment = onOpenAttachment,
+                        openingAttachmentPath = openingAttachmentPath,
                         onImageClick = onImageClick,
                         modifier = modifier,
                     )
@@ -169,6 +172,7 @@ private fun UserBubble(
     searchQuery: String = "",
     isCurrentMatch: Boolean = false,
     onOpenAttachment: (Attachment) -> Unit = {},
+    openingAttachmentPath: String? = null,
     onImageClick: (ImageViewerModel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -270,6 +274,7 @@ private fun UserBubble(
                                 attachment = attachment,
                                 textColor = userBubbleTextColor,
                                 onOpen = { onOpenAttachment(it) },
+                                isOpening = attachment.gatewayPath == openingAttachmentPath,
                                 onImageClick = onImageClick,
                             )
                             Spacer(modifier = Modifier.height(4.dp))
@@ -333,6 +338,7 @@ private fun AssistantBubble(
     searchQuery: String = "",
     isCurrentMatch: Boolean = false,
     onOpenAttachment: (Attachment) -> Unit = {},
+    openingAttachmentPath: String? = null,
     onImageClick: (ImageViewerModel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -412,6 +418,7 @@ private fun AssistantBubble(
                                 attachment = attachment,
                                 textColor = textColor,
                                 onOpen = { onOpenAttachment(it) },
+                                isOpening = attachment.gatewayPath == openingAttachmentPath,
                                 onImageClick = onImageClick,
                             )
                             Spacer(modifier = Modifier.height(4.dp))
@@ -2465,6 +2472,7 @@ private fun InlineAttachment(
     attachment: Attachment,
     textColor: Color,
     onOpen: (Attachment) -> Unit = {},
+    isOpening: Boolean = false,
     onImageClick: (ImageViewerModel) -> Unit = {},
 ) {
     val clickable = Modifier.clickable { onOpen(attachment) }
@@ -2499,6 +2507,13 @@ private fun InlineAttachment(
                 modifier = Modifier.padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (isOpening) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp).testTag("attachment_opening_${attachment.gatewayPath}"),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
                     contentDescription = null,

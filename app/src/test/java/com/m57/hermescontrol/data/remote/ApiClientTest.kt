@@ -7,6 +7,7 @@ import com.m57.hermescontrol.data.local.AuthSessionState
 import io.mockk.every
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -31,6 +32,10 @@ import org.junit.jupiter.api.Test
 class ApiClientTest {
     private lateinit var mockWebServer: MockWebServer
 
+    companion object {
+        private val cookieJar = buildFakePersistentCookieJar()
+    }
+
     @BeforeEach
     fun setUp() {
         mockWebServer = MockWebServer()
@@ -42,7 +47,8 @@ class ApiClientTest {
         // Issue #470: ApiClient builds through OkHttpProvider, which resolves
         // the shared CookieManager.cookieJar. Inject a fake jar so the test
         // can build clients without app context.
-        CookieManager.setJarForTest(buildFakePersistentCookieJar())
+        cookieJar.clearAll()
+        CookieManager.setJarForTest(cookieJar)
 
         // Point AuthManager at our MockWebServer
         every { AuthManager.baseUrl() } returns mockWebServer.url("/").toString()
@@ -170,6 +176,47 @@ class ApiClientTest {
         }
 
     @Test
+    fun managedFileDownloadUsesDirectBearerAuthentication() =
+        runTest {
+            every { AuthManager.getToken() } returns "media-token"
+            every { AuthManager.getSessionCookie() } returns null
+            ApiClient.rebuild()
+            mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("media"))
+
+            ApiClient.hermesApi.downloadManagedFile("/private/photo.png").body()?.close()
+
+            val request = mockWebServer.takeRequest()
+            assertEquals("/api/files/download?path=%2Fprivate%2Fphoto.png", request.path)
+            assertEquals("Bearer media-token", request.getHeader("Authorization"))
+            assertNull(request.getHeader("Cookie"))
+        }
+
+    @Test
+    fun managedFileDownloadUsesGatedCookieWithoutBearerAuthentication() =
+        runTest {
+            every { AuthManager.getToken() } returns "stale-token"
+            every { AuthManager.isGatedMode() } returns true
+            CookieManager.setSessionCookie(
+                "cookie-secret",
+                ServerEndpoint.parse(
+                    mockWebServer.url("/").toString(),
+                    CleartextPolicy.ALLOW_WITH_WARNING,
+                ),
+            )
+            assertEquals("cookie-secret", cookieJar.getSessionCookieValue())
+            assertEquals(1, cookieJar.loadForRequest(mockWebServer.url("/")).size)
+            ApiClient.rebuild()
+            mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("media"))
+
+            ApiClient.hermesApi.downloadManagedFile("/private/photo.png").body()?.close()
+
+            val request = mockWebServer.takeRequest()
+            assertEquals("/api/files/download?path=%2Fprivate%2Fphoto.png", request.path)
+            assertNull(request.getHeader("Authorization"))
+            assertEquals("hermes_session_at=cookie-secret", request.getHeader("Cookie"))
+        }
+
+    @Test
     fun testGated401_doesNotRetryBearerAndRequiresSignIn() =
         runTest {
             every { AuthManager.getToken() } returns "stale-loopback-token"
@@ -190,8 +237,24 @@ class ApiClientTest {
     fun testAuthInterceptor_refreshesExpiredDashboardTokenAndRetries() =
         runTest {
             var savedToken = "expired-token"
+            val boundary =
+                AuthManager.CredentialBoundary(
+                    profileId = AuthManager.DEFAULT_PROFILE_ID,
+                    profileBacked = false,
+                    endpoint =
+                        ServerEndpoint.parse(
+                            mockWebServer.url("/").toString(),
+                            CleartextPolicy.ALLOW_WITH_WARNING,
+                        ),
+                    gated = false,
+                    token = savedToken,
+                )
             every { AuthManager.getToken() } answers { savedToken }
-            every { AuthManager.setToken(any()) } answers { savedToken = firstArg() }
+            every { AuthManager.credentialBoundary() } returns boundary
+            every { AuthManager.commitRefreshedToken(boundary, any()) } answers {
+                savedToken = secondArg()
+                true
+            }
             every { AuthManager.getSessionCookie() } returns null
 
             ApiClient.rebuild()
@@ -211,6 +274,7 @@ class ApiClientTest {
             assertTrue(result is NetworkResult.Success)
             assertFalse(AuthSessionState.signInRequired.value)
             assertEquals("fresh-token", savedToken)
+            verify(exactly = 1) { AuthManager.commitRefreshedToken(boundary, "fresh-token") }
             assertEquals("Bearer expired-token", mockWebServer.takeRequest().getHeader("Authorization"))
             assertEquals("/", mockWebServer.takeRequest().path)
             assertEquals("Bearer fresh-token", mockWebServer.takeRequest().getHeader("Authorization"))
