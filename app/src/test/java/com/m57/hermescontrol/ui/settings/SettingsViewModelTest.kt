@@ -97,6 +97,7 @@ class SettingsViewModelTest {
             storedSelectedProfileId = firstArg()
         }
         every { AuthManager.saveConnectionProfiles(any()) } returns Unit
+        every { AuthManager.saveConnectionProfilesAndToken(any(), any(), any()) } returns Unit
         every { AuthManager.setProfileToken(any(), any()) } returns Unit
         every { AuthManager.clearPinnedSessionIds(any()) } returns Unit
         every { AuthManager.ensureDefaultProfile() } returns Unit
@@ -337,7 +338,18 @@ class SettingsViewModelTest {
 
         verifyOrder {
             disconnectWebSocket()
-            AuthManager.setProfileToken("prof-1", "")
+            AuthManager.saveConnectionProfilesAndToken(
+                match { profiles ->
+                    profiles.single().let { profile ->
+                        profile.id == "prof-1" &&
+                            profile.name == "Work" &&
+                            profile.baseUrl == "https://10.0.0.1:9119/"
+                    }
+                },
+                "prof-1",
+                "",
+            )
+            ApiClient.rebuild()
             connectWebSocket()
         }
     }
@@ -367,7 +379,18 @@ class SettingsViewModelTest {
 
         verifyOrder {
             disconnectWebSocket()
-            AuthManager.setProfileToken("prof-1", "new-token")
+            AuthManager.saveConnectionProfilesAndToken(
+                match { profiles ->
+                    profiles.single().let { profile ->
+                        profile.id == "prof-1" &&
+                            profile.name == "Work" &&
+                            profile.baseUrl == "https://10.0.0.1:9119/"
+                    }
+                },
+                "prof-1",
+                "new-token",
+            )
+            ApiClient.rebuild()
             connectWebSocket()
         }
     }

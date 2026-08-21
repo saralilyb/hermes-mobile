@@ -68,6 +68,7 @@ class ConnectViewModelTest {
         } answers { ServerEndpoint.parse("https://127.0.0.1:9119/", CleartextPolicy.ALLOW_WITH_WARNING) }
         every { AuthManager.getConnectionProfiles() } returns emptyList()
         every { AuthManager.saveConnectionProfiles(any()) } returns Unit
+        every { AuthManager.saveConnectionProfilesAndSelect(any(), any(), any()) } returns Unit
         every { AuthManager.getProfileToken(any()) } returns null
         every { AuthManager.setProfileToken(any(), any()) } returns Unit
         every { AuthManager.getSelectedProfileId() } returns null
@@ -452,13 +453,20 @@ class ConnectViewModelTest {
             viewModel.connect()
             advanceUntilIdle()
 
-            verify {
-                AuthManager.saveConnectionProfiles(
-                    match { profiles -> profiles.single().wsAuthParam == "token" },
+            val savedProfiles = slot<List<ConnectionProfile>>()
+            val selectedProfileId = slot<String>()
+            verify(exactly = 1) {
+                AuthManager.saveConnectionProfilesAndSelect(
+                    capture(savedProfiles),
+                    capture(selectedProfileId),
+                    "valid-token",
                 )
             }
-            verify { AuthManager.setSelectedProfileId(any()) }
-            verify { AuthManager.setProfileToken(any(), "valid-token") }
+            val savedProfile = savedProfiles.captured.single()
+            assertEquals("New Profile", savedProfile.name)
+            assertEquals("https://127.0.0.1:9119/", savedProfile.baseUrl)
+            assertEquals("token", savedProfile.wsAuthParam)
+            assertEquals(savedProfile.id, selectedProfileId.captured)
             verify { ApiClient.rebuild() }
 
             val state = viewModel.uiState.value

@@ -7,6 +7,7 @@ import com.m57.hermescontrol.data.local.AuthSessionState
 import io.mockk.every
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -236,8 +237,24 @@ class ApiClientTest {
     fun testAuthInterceptor_refreshesExpiredDashboardTokenAndRetries() =
         runTest {
             var savedToken = "expired-token"
+            val boundary =
+                AuthManager.CredentialBoundary(
+                    profileId = AuthManager.DEFAULT_PROFILE_ID,
+                    profileBacked = false,
+                    endpoint =
+                        ServerEndpoint.parse(
+                            mockWebServer.url("/").toString(),
+                            CleartextPolicy.ALLOW_WITH_WARNING,
+                        ),
+                    gated = false,
+                    token = savedToken,
+                )
             every { AuthManager.getToken() } answers { savedToken }
-            every { AuthManager.setToken(any()) } answers { savedToken = firstArg() }
+            every { AuthManager.credentialBoundary() } returns boundary
+            every { AuthManager.commitRefreshedToken(boundary, any()) } answers {
+                savedToken = secondArg()
+                true
+            }
             every { AuthManager.getSessionCookie() } returns null
 
             ApiClient.rebuild()
@@ -257,6 +274,7 @@ class ApiClientTest {
             assertTrue(result is NetworkResult.Success)
             assertFalse(AuthSessionState.signInRequired.value)
             assertEquals("fresh-token", savedToken)
+            verify(exactly = 1) { AuthManager.commitRefreshedToken(boundary, "fresh-token") }
             assertEquals("Bearer expired-token", mockWebServer.takeRequest().getHeader("Authorization"))
             assertEquals("/", mockWebServer.takeRequest().path)
             assertEquals("Bearer fresh-token", mockWebServer.takeRequest().getHeader("Authorization"))
