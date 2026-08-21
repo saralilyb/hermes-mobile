@@ -244,7 +244,7 @@ class SlashCommandDispatchRpcTest {
             advanceUntilIdle()
 
             val last = vm.uiState.value.messages.lastOrNull()
-            assertEquals("⚠️ /help: session busy — /interrupt first", last?.content)
+            assertEquals("/help: session busy — /interrupt first", last?.content)
         }
 
     @Test
@@ -345,7 +345,7 @@ class SlashCommandDispatchRpcTest {
 
             // Both RPCs fail -> the secondary slash.exec error must surface.
             val last = vm.uiState.value.messages.lastOrNull()
-            assertEquals("⚠️ /status: slash worker start failed: boom", last?.content)
+            assertEquals("/status: slash worker start failed: boom", last?.content)
         }
 
     @Test

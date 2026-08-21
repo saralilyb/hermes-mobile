@@ -103,7 +103,7 @@ class ToolBubbleParsingTest {
         val parsed = parseToolOutput(json, "read_file", false)
         assertNotNull(parsed)
         assertFalse(parsed!!.isTerminal)
-        assertEquals("📄 /opt/hermes/config.yaml", parsed.summaryText)
+        assertEquals("/opt/hermes/config.yaml", parsed.summaryText)
         assertEquals("port: 8080\nhost: 0.0.0.0", parsed.mainOutput)
     }
 
@@ -118,7 +118,7 @@ class ToolBubbleParsingTest {
         }"""
         val parsed = parseToolOutput(json, "write_file", false)
         assertNotNull(parsed)
-        assertEquals("✏️ /tmp/output.txt", parsed!!.summaryText)
+        assertEquals("/tmp/output.txt", parsed!!.summaryText)
     }
 
     @Test
@@ -132,7 +132,7 @@ class ToolBubbleParsingTest {
         }"""
         val parsed = parseToolOutput(json, "patch", false)
         assertNotNull(parsed)
-        assertEquals("🔧 src/main.kt", parsed!!.summaryText)
+        assertEquals("src/main.kt", parsed!!.summaryText)
     }
 
     @Test
@@ -146,7 +146,7 @@ class ToolBubbleParsingTest {
         }"""
         val parsed = parseToolOutput(json, "search_files", false)
         assertNotNull(parsed)
-        assertEquals("🔍 *.kt", parsed!!.summaryText)
+        assertEquals("*.kt", parsed!!.summaryText)
     }
 
     // ── Web / Browser ─────────────────────────────────────────
@@ -176,7 +176,7 @@ class ToolBubbleParsingTest {
         }"""
         val parsed = parseToolOutput(json, "browser_navigate", false)
         assertNotNull(parsed)
-        assertEquals("🌍 https://example.com", parsed!!.summaryText)
+        assertEquals("https://example.com", parsed!!.summaryText)
     }
 
     @Test
@@ -190,7 +190,7 @@ class ToolBubbleParsingTest {
         }"""
         val parsed = parseToolOutput(json, "clarify", false)
         assertNotNull(parsed)
-        assertEquals("💬 Which environment?", parsed!!.summaryText)
+        assertEquals("Which environment?", parsed!!.summaryText)
     }
 
     // ── Running state ─────────────────────────────────────────
@@ -202,6 +202,15 @@ class ToolBubbleParsingTest {
         val parsed = parseToolOutput(json, "terminal", true)
         assertNotNull(parsed)
         assertTrue(parsed!!.isRunning)
+    }
+
+    @Test
+    fun testDecorativeToolSummaryPrefixesAreRemovedForRendering() {
+        assertEquals("Kotlin guide", toolSummaryLabel("🌐 Kotlin guide"))
+        assertEquals("Fact added", toolSummaryLabel("🧠 Fact added"))
+        assertEquals("query", toolSummaryLabel("𝕏 query"))
+        assertEquals("$ ls", toolSummaryLabel("$ ls"))
+        assertEquals("plain summary", toolSummaryLabel("plain summary"))
     }
 
     // ── Unknown tool fallback ─────────────────────────────────

@@ -15,8 +15,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ElectricBolt
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,11 +34,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.m57.hermescontrol.R
+import com.m57.hermescontrol.theme.LocalHermesStatusColors
 import com.m57.hermescontrol.ui.chat.SubagentIndicator
 import com.m57.hermescontrol.ui.chat.TodoItem
 
@@ -71,7 +78,7 @@ fun SubagentInspectionSheet(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.ElectricBolt,
+                        imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
@@ -143,7 +150,7 @@ fun SubagentInspectionSheet(
                                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.ElectricBolt,
+                                        imageVector = Icons.Filled.Groups,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(16.dp),
@@ -174,7 +181,7 @@ fun SubagentInspectionSheet(
 }
 
 @Composable
-private fun TodoInspectionCard(todo: TodoItem) {
+internal fun TodoInspectionCard(todo: TodoItem) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -184,14 +191,42 @@ private fun TodoInspectionCard(todo: TodoItem) {
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val statusSymbol =
+            val statusColors = LocalHermesStatusColors.current
+            val (statusIcon, statusTint, statusDescription) =
                 when {
-                    todo.isCompleted -> "✅"
-                    todo.isInProgress -> "⚡"
-                    todo.isCancelled -> "❌"
-                    else -> "⭕"
+                    todo.isCompleted ->
+                        Triple(
+                            Icons.Filled.CheckCircle,
+                            statusColors.success,
+                            R.string.subagent_status_completed,
+                        )
+                    todo.isInProgress ->
+                        Triple(
+                            Icons.Filled.Autorenew,
+                            MaterialTheme.colorScheme.primary,
+                            R.string.subagent_status_running,
+                        )
+                    todo.isCancelled ->
+                        Triple(
+                            Icons.Filled.Cancel,
+                            statusColors.warning,
+                            R.string.subagent_status_cancelled,
+                        )
+                    else ->
+                        Triple(
+                            Icons.Filled.RadioButtonUnchecked,
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                alpha = 0.5f,
+                            ),
+                            R.string.subagent_status_pending,
+                        )
                 }
-            Text(text = statusSymbol, fontSize = 16.sp)
+            Icon(
+                imageVector = statusIcon,
+                contentDescription = stringResource(statusDescription),
+                tint = statusTint,
+                modifier = Modifier.size(18.dp),
+            )
             Spacer(modifier = Modifier.width(10.dp))
             Text(
                 text = todo.content,
@@ -213,7 +248,7 @@ private fun TodoInspectionCard(todo: TodoItem) {
 }
 
 @Composable
-private fun InspectionItemCard(indicator: SubagentIndicator) {
+internal fun InspectionItemCard(indicator: SubagentIndicator) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -221,13 +256,34 @@ private fun InspectionItemCard(indicator: SubagentIndicator) {
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val statusSymbol =
+                val statusColors = LocalHermesStatusColors.current
+                val (statusIcon, statusTint, statusDescription) =
                     when {
-                        indicator.isComplete -> "✅"
-                        indicator.isFailed -> "❌"
-                        else -> "⚡"
+                        indicator.isComplete ->
+                            Triple(
+                                Icons.Filled.CheckCircle,
+                                statusColors.success,
+                                R.string.subagent_status_completed,
+                            )
+                        indicator.isFailed ->
+                            Triple(
+                                Icons.Filled.Cancel,
+                                statusColors.error,
+                                R.string.subagent_status_failed,
+                            )
+                        else ->
+                            Triple(
+                                Icons.Filled.Autorenew,
+                                MaterialTheme.colorScheme.primary,
+                                R.string.subagent_status_running,
+                            )
                     }
-                Text(text = statusSymbol, fontSize = 16.sp)
+                Icon(
+                    imageVector = statusIcon,
+                    contentDescription = stringResource(statusDescription),
+                    tint = statusTint,
+                    modifier = Modifier.size(18.dp),
+                )
                 Spacer(modifier = Modifier.width(8.dp))
 
                 val taskIndexStr = indicator.taskIndex?.let { "#$it " } ?: ""

@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -58,6 +60,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -488,7 +491,12 @@ private fun SelfImprovementReviewCard(
     val isSkill =
         cleanText.contains("skill", ignoreCase = true) ||
             cleanText.contains("SKILL.md", ignoreCase = true)
-    val icon = if (isSkill) "⚡" else "🧠"
+    val icon: ImageVector =
+        if (isSkill) {
+            Icons.Filled.Build
+        } else {
+            Icons.Filled.Psychology
+        }
     val title =
         if (isSkill) {
             "Self-Improvement Review • Skill Patched"
@@ -510,7 +518,12 @@ private fun SelfImprovementReviewCard(
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = icon, fontSize = 16.sp)
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = title,
@@ -626,6 +639,39 @@ data class ParsedToolData(
     val diffOutput: String? = null,
     val diffPath: String? = null,
 )
+
+private val decorativeToolPrefixes =
+    listOf(
+        "✅",
+        "❌",
+        "⚠️",
+        "⚡",
+        "✏️",
+        "▶️",
+        "⚙️",
+        "🌐",
+        "🌍",
+        "📄",
+        "📋",
+        "📖",
+        "📜",
+        "📚",
+        "🔄",
+        "🔍",
+        "🔧",
+        "🔗",
+        "🖼️",
+        "🕸️",
+        "👁️",
+        "💬",
+        "🧠",
+        "𝕏",
+    )
+
+internal fun toolSummaryLabel(summary: String): String {
+    val prefix = decorativeToolPrefixes.firstOrNull(summary::startsWith)
+    return if (prefix == null) summary else summary.removePrefix(prefix).trimStart()
+}
 
 private fun formatTodoToolOutput(
     dataSource: JsonObject,
@@ -1176,7 +1222,7 @@ fun parseToolOutput(
                                         ?.toInt()
                                 val lines = mutableListOf("${pos?.let { "$it. " } ?: ""}$title")
                                 if (desc != null) lines.add("     $desc")
-                                if (url != null) lines.add("     🔗 $url")
+                                if (url != null) lines.add("     $url")
                                 lines.joinToString("\n")
                             }.joinToString("\n\n")
                     }
@@ -2149,18 +2195,29 @@ private fun ToolBubble(
 
                 // ── Summary line (always visible when collapsed) ──
                 if (!expanded && parsed?.summaryText != null) {
-                    Text(
-                        text = parsed.summaryText,
-                        style =
-                            MaterialTheme.typography.bodySmall.copy(
-                                color = contentColor.copy(alpha = 0.7f),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                            ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(top = 4.dp, start = 22.dp),
-                    )
+                    ) {
+                        Icon(
+                            imageVector = config.icon,
+                            contentDescription = null,
+                            tint = contentColor.copy(alpha = 0.7f),
+                            modifier = Modifier.size(13.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = toolSummaryLabel(parsed.summaryText),
+                            style =
+                                MaterialTheme.typography.bodySmall.copy(
+                                    color = contentColor.copy(alpha = 0.7f),
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
 
                 // ── Expanded content ──
@@ -2327,7 +2384,7 @@ private fun HeaderRow(
 /**
  * Security risk chip for [tool.output_risk] events.
  *
- * Shows a compact ⚠ badge when the backend flagged tool output as risky.
+ * Shows a compact warning badge when the backend flagged tool output as risky.
  * Renders in the tool card between the header row and the summary line.
  */
 @Composable
@@ -2351,10 +2408,11 @@ private fun SecurityRiskChip(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(
-            text = "⚠",
-            style = MaterialTheme.typography.labelSmall,
-            color = chipColor,
+        Icon(
+            imageVector = Icons.Filled.Warning,
+            contentDescription = null,
+            tint = chipColor,
+            modifier = Modifier.size(14.dp),
         )
         Text(
             text = label,

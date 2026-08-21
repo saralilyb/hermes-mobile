@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -27,16 +26,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.m57.hermescontrol.R
 import com.m57.hermescontrol.ui.chat.SubagentIndicator
 import com.m57.hermescontrol.ui.chat.TodoItem
 
 /**
- * Compact sticky progress indicator displayed below the top app bar
- * when background subagents or agent todos are in progress.
+ * Compact progress indicator displayed below the top app bar while todos are
+ * incomplete or background subagents are running.
  */
 @Composable
 fun StickySubagentBar(
@@ -45,106 +46,134 @@ fun StickySubagentBar(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val activeSubagents = indicators.count { it.isRunning }
-    val activeTodos = todos.count { it.isInProgress }
-    val isVisible = activeSubagents > 0 || activeTodos > 0
-
     AnimatedVisibility(
-        visible = isVisible,
+        visible = shouldShowStickyProgress(todos, indicators),
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically(),
         modifier = modifier,
     ) {
+        val display = computeStickyProgressDisplay(todos, indicators)
+        val label =
+            buildString {
+                if (display.hasTodos) {
+                    append(
+                        stringResource(
+                            R.string.task_progress_count,
+                            display.currentTaskNumber,
+                            display.totalTasks,
+                        ),
+                    )
+                    display.currentTaskContent?.let {
+                        append(" · ")
+                        append(it)
+                    }
+                } else if (display.activeAgents > 0) {
+                    append(
+                        pluralStringResource(
+                            R.plurals.task_progress_agent_running,
+                            display.activeAgents,
+                            display.activeAgents,
+                        ),
+                    )
+                }
+                if (display.hasTodos && display.activeAgents > 0) {
+                    append(" · ")
+                    append(
+                        pluralStringResource(
+                            R.plurals.task_progress_agents,
+                            display.activeAgents,
+                            display.activeAgents,
+                        ),
+                    )
+                }
+            }
+
         Surface(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .clickable(onClick = onClick)
                     .testTag("sticky_subagent_bar"),
-            color = MaterialTheme.colorScheme.tertiaryContainer,
-            shadowElevation = 2.dp,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            tonalElevation = 2.dp,
         ) {
             Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ElectricBolt,
-                        contentDescription = "Active Tasks",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp),
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(12.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer,
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    val labelText =
-                        when {
-                            activeSubagents > 0 && activeTodos > 0 -> {
-                                "$activeSubagents Subagents · $activeTodos Task Active"
-                            }
-                            activeSubagents > 0 -> {
-                                val activeSub = indicators.firstOrNull { it.isRunning }
-                                val goalText = activeSub?.goal?.takeIf { it.isNotBlank() }
-                                val countStr =
-                                    if (activeSubagents == 1) {
-                                        "1 Subagent Active"
-                                    } else {
-                                        "$activeSubagents Subagents Active"
-                                    }
-                                if (goalText != null) "$countStr · $goalText" else countStr
-                            }
-                            else -> {
-                                val activeTodo = todos.firstOrNull { it.isInProgress }
-                                val todoText = activeTodo?.content?.takeIf { it.isNotBlank() }
-                                if (todoText != null) "Task In Progress: $todoText" else "1 Task In Progress"
-                            }
-                        }
-
-                    Text(
-                        text = labelText,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "Inspect",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 11.sp,
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = "Inspect",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Icon(
+                    imageVector = Icons.Filled.ChevronRight,
+                    contentDescription =
+                        stringResource(R.string.task_progress_open_details),
+                    tint =
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                            alpha = 0.7f,
+                        ),
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }
 }
+
+internal data class StickyProgressDisplay(
+    val hasTodos: Boolean,
+    val currentTaskNumber: Int,
+    val totalTasks: Int,
+    val currentTaskContent: String?,
+    val activeAgents: Int,
+)
+
+internal fun computeStickyProgressDisplay(
+    todos: List<TodoItem>,
+    indicators: List<SubagentIndicator>,
+): StickyProgressDisplay {
+    val selectedIndex =
+        todos.indexOfFirst { it.isInProgress }.let { inProgressIndex ->
+            if (inProgressIndex >= 0) {
+                inProgressIndex
+            } else {
+                todos.indexOfFirst { !it.isCompleted && !it.isCancelled }
+            }
+        }
+    val selected = todos.getOrNull(selectedIndex)
+    val currentTaskNumber =
+        if (selectedIndex >= 0) {
+            selectedIndex + 1
+        } else {
+            todos.count { it.isCompleted }
+        }
+
+    return StickyProgressDisplay(
+        hasTodos = selected != null,
+        currentTaskNumber = currentTaskNumber,
+        totalTasks = todos.size,
+        currentTaskContent = selected?.content,
+        activeAgents = indicators.count { it.isRunning },
+    )
+}
+
+internal fun shouldShowStickyProgress(
+    todos: List<TodoItem>,
+    indicators: List<SubagentIndicator>,
+): Boolean =
+    todos.any { !it.isCompleted && !it.isCancelled } ||
+        indicators.any { it.isRunning }
