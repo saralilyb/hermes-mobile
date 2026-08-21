@@ -7,7 +7,9 @@ import com.m57.hermescontrol.data.config.ConnectionProfile
 import com.m57.hermescontrol.data.config.ServerStore
 import com.m57.hermescontrol.data.config.ServerStoreMigration
 import com.m57.hermescontrol.data.config.ServerStoreSerializer
+import com.m57.hermescontrol.data.config.ServerStoreState
 import com.m57.hermescontrol.data.config.ServerUrlMigration
+import com.m57.hermescontrol.data.config.resolveBaseUrl
 import com.m57.hermescontrol.data.config.resolvedBaseUrl
 import com.m57.hermescontrol.data.config.resolvedHost
 import com.m57.hermescontrol.data.config.resolvedPort
@@ -409,32 +411,31 @@ object AuthManager {
         synchronized(this) {
             val state = serverStore.getLatestState()
             val selectedId = state.selectedProfileId?.takeIf(String::isNotBlank)
-            val profile = state.connectionProfiles.firstOrNull { it.id == selectedId }
-            val mode =
-                profile?.wsAuthParam?.takeIf(String::isNotBlank)
-                    ?: state.wsAuthParam.takeIf(String::isNotBlank)
-                    ?: "token"
-            CredentialBoundary(
-                profileId = selectedId ?: DEFAULT_PROFILE_ID,
-                endpoint = ServerEndpoint.parseForBuild(state.resolvedBaseUrl),
-                gated = mode == "ticket",
-                token = selectedId?.let(::getProfileToken),
-            )
+            val profileId = selectedId ?: DEFAULT_PROFILE_ID
+            currentProfileBoundary(state, profileId)
+                ?.copy(token = selectedId?.let(::getProfileToken))
+                ?: CredentialBoundary(
+                    profileId = profileId,
+                    endpoint = ServerEndpoint.parseForBuild(state.resolvedBaseUrl),
+                    gated = state.wsAuthParam == "ticket",
+                    token = selectedId?.let(::getProfileToken),
+                )
         }
 
-    /** Store a refresh result for its captured profile without redirecting it after a switch. */
+    /** Store a refresh result only while its captured profile boundary remains valid. */
     internal fun commitRefreshedToken(
         boundary: CredentialBoundary,
         token: String?,
     ): Boolean {
         return synchronized(this) {
+            val state = serverStore.getLatestState()
+            val currentProfile = currentProfileBoundary(state, boundary.profileId)
+            if (!currentProfile.matches(boundary)) return@synchronized false
+
             requireSecureStorage().putString(SecureStorage.authKey("token_${boundary.profileId}"), token)
             val active =
-                credentialBoundary().let {
-                    it.profileId == boundary.profileId &&
-                        it.endpoint.baseUrl == boundary.endpoint.baseUrl &&
-                        it.gated == boundary.gated
-                }
+                normalizedProfileId(state.selectedProfileId) == boundary.profileId &&
+                    currentProfile.matches(boundary)
             if (active) {
                 cachedToken = token
                 tokenInitialized = true
@@ -443,6 +444,31 @@ object AuthManager {
             active
         }
     }
+
+    private fun currentProfileBoundary(
+        state: ServerStoreState,
+        profileId: String,
+    ): CredentialBoundary? {
+        val profile = state.connectionProfiles.firstOrNull { it.id == profileId }
+        if (profile == null && (profileId != DEFAULT_PROFILE_ID || state.connectionProfiles.isNotEmpty())) return null
+        val endpoint = profile?.resolveBaseUrl(state.baseUrl) ?: state.resolvedBaseUrl
+        val mode =
+            profile?.wsAuthParam?.takeIf(String::isNotBlank)
+                ?: state.wsAuthParam.takeIf(String::isNotBlank)
+                ?: "token"
+        return CredentialBoundary(
+            profileId = profileId,
+            endpoint = ServerEndpoint.parseForBuild(endpoint),
+            gated = mode == "ticket",
+            token = null,
+        )
+    }
+
+    private fun CredentialBoundary?.matches(other: CredentialBoundary): Boolean =
+        this != null &&
+            profileId == other.profileId &&
+            endpoint.baseUrl == other.endpoint.baseUrl &&
+            gated == other.gated
 
     private fun normalizedProfileId(profileId: String?): String =
         profileId?.takeIf { it.isNotBlank() } ?: DEFAULT_PROFILE_ID

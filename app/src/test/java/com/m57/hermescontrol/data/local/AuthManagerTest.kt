@@ -15,6 +15,7 @@ import io.mockk.unmockkAll
 import io.mockk.verify
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -531,6 +532,53 @@ class AuthManagerTest {
         verify { mockEditor.putString("token_prof-a", "token-a-refreshed") }
         assertEquals("prof-b", AuthManager.credentialBoundary().profileId)
         assertEquals("token-b", AuthManager.getToken())
+    }
+
+    @Test
+    fun refreshedTokenIsRejectedWhenCapturedProfileEndpointChanges() {
+        val original = ConnectionProfile("prof-a", "A", baseUrl = "https://old.example.test/", wsAuthParam = "token")
+        AuthManager.saveConnectionProfiles(listOf(original))
+        every { mockPrefs.getString("token_prof-a", null) } returns "token-a-old"
+        AuthManager.setSelectedProfileId("prof-a")
+        val captured = AuthManager.credentialBoundary()
+
+        AuthManager.saveConnectionProfiles(
+            listOf(original.copy(baseUrl = "https://new.example.test/")),
+        )
+        val accepted = AuthManager.commitRefreshedToken(captured, "token-from-old-server")
+
+        assertFalse(accepted)
+        verify(exactly = 0) { mockEditor.putString("token_prof-a", "token-from-old-server") }
+        assertEquals("token-a-old", AuthManager.getToken())
+        assertEquals("token-a-old", AuthManager.tokenFlow.value)
+    }
+
+    @Test
+    fun refreshedTokenIsRejectedWhenCapturedProfileAuthModeChanges() {
+        val original = ConnectionProfile("prof-a", "A", baseUrl = "https://same.example.test/", wsAuthParam = "token")
+        AuthManager.saveConnectionProfiles(listOf(original))
+        AuthManager.setSelectedProfileId("prof-a")
+        val captured = AuthManager.credentialBoundary()
+
+        AuthManager.saveConnectionProfiles(listOf(original.copy(wsAuthParam = "ticket")))
+        val accepted = AuthManager.commitRefreshedToken(captured, "direct-token")
+
+        assertFalse(accepted)
+        verify(exactly = 0) { mockEditor.putString("token_prof-a", "direct-token") }
+    }
+
+    @Test
+    fun refreshedTokenIsRejectedWhenCapturedProfileIsDeleted() {
+        val original = ConnectionProfile("prof-a", "A", baseUrl = "https://same.example.test/", wsAuthParam = "token")
+        AuthManager.saveConnectionProfiles(listOf(original))
+        AuthManager.setSelectedProfileId("prof-a")
+        val captured = AuthManager.credentialBoundary()
+
+        AuthManager.saveConnectionProfiles(emptyList())
+        val accepted = AuthManager.commitRefreshedToken(captured, "orphaned-token")
+
+        assertFalse(accepted)
+        verify(exactly = 0) { mockEditor.putString("token_prof-a", "orphaned-token") }
     }
 
     @Test
