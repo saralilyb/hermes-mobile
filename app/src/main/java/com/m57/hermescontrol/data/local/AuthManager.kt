@@ -73,6 +73,9 @@ object AuthManager {
     private val _tokenFlow = MutableStateFlow<String?>(null)
     val tokenFlow: StateFlow<String?> = _tokenFlow.asStateFlow()
 
+    @Volatile
+    internal var beforeTokenFlowPublicationForTest: (() -> Unit)? = null
+
     private val _selectedProfileIdFlow = MutableStateFlow(DEFAULT_PROFILE_ID)
     val selectedProfileIdFlow: StateFlow<String> = _selectedProfileIdFlow.asStateFlow()
 
@@ -102,7 +105,7 @@ object AuthManager {
             val storage = secureStorageFactory(context)
             secureStorage = storage
             migrateLegacyDefaultIfNeeded(storage)
-            _tokenFlow.value = getTokenInternal(storage)
+            publishTokenLocked(getTokenInternal(storage))
 
             // Initialize the encrypted cookie store. Its initial scope loads on IO.
             val initialProfileId =
@@ -231,17 +234,15 @@ object AuthManager {
         profileId: String,
         token: String?,
     ) {
-        var publish = false
         synchronized(this) {
             serverStore.update { it.copy(connectionProfiles = profiles) }
             requireSecureStorage().putString(SecureStorage.authKey("token_$profileId"), token)
             if (getSelectedProfileId() == profileId) {
                 cachedToken = token
                 tokenInitialized = true
-                publish = true
+                publishTokenLocked(token)
             }
         }
-        if (publish) _tokenFlow.value = token
     }
 
     fun saveConnectionProfilesAndSelect(
@@ -255,8 +256,8 @@ object AuthManager {
             cachedToken = token
             tokenInitialized = true
             syncCookieStoreForProfile(profileId)
+            publishTokenLocked(token)
         }
-        _tokenFlow.value = token
     }
 
     /**
@@ -372,16 +373,14 @@ object AuthManager {
         profileId: String,
         token: String?,
     ) {
-        var publish = false
         synchronized(this) {
             requireSecureStorage().putString(SecureStorage.authKey("token_$profileId"), token)
             if (getSelectedProfileId() == profileId) {
                 cachedToken = token
                 tokenInitialized = true
-                publish = true
+                publishTokenLocked(token)
             }
         }
-        if (publish) _tokenFlow.value = token
     }
 
     fun getSelectedProfileId(): String? {
@@ -390,15 +389,13 @@ object AuthManager {
     }
 
     fun setSelectedProfileId(id: String?) {
-        val token =
-            synchronized(this) {
-                serverStore.update { it.copy(selectedProfileId = id) }
-                cachedToken = null
-                tokenInitialized = false
-                syncCookieStoreForProfile(id)
-                id?.takeIf(String::isNotBlank)?.let(::getProfileToken)
-            }
-        _tokenFlow.value = token
+        synchronized(this) {
+            serverStore.update { it.copy(selectedProfileId = id) }
+            cachedToken = null
+            tokenInitialized = false
+            syncCookieStoreForProfile(id)
+            publishTokenLocked(id?.takeIf(String::isNotBlank)?.let(::getProfileToken))
+        }
     }
 
     internal data class CredentialBoundary(
@@ -430,25 +427,21 @@ object AuthManager {
         boundary: CredentialBoundary,
         token: String?,
     ): Boolean {
-        var publish = false
-        val stillActive =
-            synchronized(this) {
-                requireSecureStorage().putString(SecureStorage.authKey("token_${boundary.profileId}"), token)
-                val active =
-                    credentialBoundary().let {
-                        it.profileId == boundary.profileId &&
-                            it.endpoint == boundary.endpoint &&
-                            it.gated == boundary.gated
-                    }
-                if (active) {
-                    cachedToken = token
-                    tokenInitialized = true
-                    publish = true
+        return synchronized(this) {
+            requireSecureStorage().putString(SecureStorage.authKey("token_${boundary.profileId}"), token)
+            val active =
+                credentialBoundary().let {
+                    it.profileId == boundary.profileId &&
+                        it.endpoint.baseUrl == boundary.endpoint.baseUrl &&
+                        it.gated == boundary.gated
                 }
-                active
+            if (active) {
+                cachedToken = token
+                tokenInitialized = true
+                publishTokenLocked(token)
             }
-        if (publish) _tokenFlow.value = token
-        return stillActive
+            active
+        }
     }
 
     private fun normalizedProfileId(profileId: String?): String =
@@ -460,6 +453,13 @@ object AuthManager {
         if (currentId != normalizedId) {
             CookieManager.useStore(normalizedId)
         }
+    }
+
+    /** Publish the active token while the surrounding credential mutation still owns this monitor. */
+    private fun publishTokenLocked(token: String?) {
+        check(Thread.holdsLock(this))
+        beforeTokenFlowPublicationForTest?.invoke()
+        _tokenFlow.value = token
     }
 
     // ── Token ────────────────────────────────────────────────────────────
@@ -483,6 +483,7 @@ object AuthManager {
         synchronized(this) {
             cachedToken = null
             tokenInitialized = false
+            beforeTokenFlowPublicationForTest = null
             _serverStore = null
             secureStorage = null
             appScope?.let {
@@ -526,8 +527,8 @@ object AuthManager {
             requireSecureStorage().putString(SecureStorage.authKey("token_$selectedId"), token)
             cachedToken = token
             tokenInitialized = true
+            publishTokenLocked(token)
         }
-        _tokenFlow.value = token
     }
 
     // ── Server endpoint ──────────────────────────────────────────────────

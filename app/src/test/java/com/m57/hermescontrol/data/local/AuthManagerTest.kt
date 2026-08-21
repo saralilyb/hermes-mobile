@@ -54,6 +54,7 @@ class AuthManagerTest {
         // Mock Log to prevent "Method d in android.util.Log not mocked"
         mockkStatic(android.util.Log::class)
         every { android.util.Log.d(any(), any()) } returns 0
+        every { android.util.Log.isLoggable(any(), any()) } returns false
         every { android.util.Log.e(any(), any()) } returns 0
         every { android.util.Log.e(any(), any(), any()) } returns 0
         every { android.util.Log.w(any(), any<String>()) } returns 0
@@ -530,6 +531,68 @@ class AuthManagerTest {
         verify { mockEditor.putString("token_prof-a", "token-a-refreshed") }
         assertEquals("prof-b", AuthManager.credentialBoundary().profileId)
         assertEquals("token-b", AuthManager.getToken())
+    }
+
+    @Test
+    fun refreshedTokenPublicationIsAtomicWithProfileSwitch() {
+        assertTokenFlowPublicationSerialized(refresh = true)
+    }
+
+    @Test
+    fun setTokenPublicationIsAtomicWithProfileSwitch() {
+        assertTokenFlowPublicationSerialized(refresh = false)
+    }
+
+    private fun assertTokenFlowPublicationSerialized(refresh: Boolean) {
+        val profileA = ConnectionProfile("prof-a", "A", baseUrl = "https://same.example.test/", wsAuthParam = "token")
+        val profileB = ConnectionProfile("prof-b", "B", baseUrl = "https://same.example.test/", wsAuthParam = "token")
+        AuthManager.saveConnectionProfiles(listOf(profileA, profileB))
+        every { mockPrefs.getString("token_prof-a", null) } returns "token-a-old"
+        every { mockPrefs.getString("token_prof-b", null) } returns "token-b"
+        AuthManager.setSelectedProfileId("prof-a")
+        val captured = AuthManager.credentialBoundary()
+        val publicationReached = CountDownLatch(1)
+        val releasePublication = CountDownLatch(1)
+        AuthManager.beforeTokenFlowPublicationForTest = {
+            publicationReached.countDown()
+            check(releasePublication.await(5, TimeUnit.SECONDS))
+        }
+
+        var accepted: Boolean? = null
+        val mutation =
+            Thread {
+                if (refresh) {
+                    accepted = AuthManager.commitRefreshedToken(captured, "token-a-new")
+                } else {
+                    AuthManager.setToken("token-a-new")
+                }
+            }.apply { start() }
+        val switched = CountDownLatch(1)
+        val switch =
+            Thread {
+                AuthManager.setSelectedProfileId("prof-b")
+                switched.countDown()
+            }
+        try {
+            assertTrue("publication not reached; accepted=$accepted", publicationReached.await(5, TimeUnit.SECONDS))
+            switch.start()
+            assertTrue(!switched.await(100, TimeUnit.MILLISECONDS))
+            releasePublication.countDown()
+            mutation.join(5_000)
+            switch.join(5_000)
+            assertTrue(!mutation.isAlive && !switch.isAlive)
+
+            if (refresh) assertEquals(true, accepted)
+            verify { mockEditor.putString("token_prof-a", "token-a-new") }
+            assertEquals("prof-b", AuthManager.credentialBoundary().profileId)
+            assertEquals("token-b", AuthManager.credentialBoundary().token)
+            assertEquals("token-b", AuthManager.tokenFlow.value)
+        } finally {
+            AuthManager.beforeTokenFlowPublicationForTest = null
+            releasePublication.countDown()
+            mutation.join(5_000)
+            if (switch.state != Thread.State.NEW) switch.join(5_000)
+        }
     }
 
     @Test
