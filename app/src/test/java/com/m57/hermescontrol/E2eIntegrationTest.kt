@@ -99,6 +99,7 @@ class E2eIntegrationTest {
         every { AuthManager.setBaseUrl(any()) } returns Unit
         every { AuthManager.setSessionCookie(any()) } returns Unit
         every { AuthManager.setWsAuthParam(any()) } returns Unit
+        every { AuthManager.getWsAuthParam() } returns "token"
         every {
             AuthManager.endpoint()
         } answers { ServerEndpoint.parse("https://127.0.0.1:9119/", CleartextPolicy.ALLOW_WITH_WARNING) }
@@ -983,7 +984,7 @@ class E2eIntegrationTest {
     fun testFullUserSessionFlow() =
         runTest {
             // Step 1: User connects with valid token
-            val statusResponse = mockk<StatusResponse>()
+            val statusResponse = StatusResponse()
             coEvery { mockApiService.getStatus() } returns Response.success(statusResponse)
 
             val connectViewModel = ConnectViewModel(app = mockApp, ioDispatcher = testDispatcher)
