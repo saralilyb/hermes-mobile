@@ -220,6 +220,7 @@ fun ChatScreen(
                     streamingMessage = streamingState.streamingMessage,
                     isThinking = streamingState.isThinking,
                     subagentIndicators = state.subagentIndicators,
+                    todos = state.todos,
                     clarifyRequest = state.clarifyRequest,
                 ),
             messageCount = state.messages.size,

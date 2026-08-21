@@ -1,5 +1,7 @@
 package com.m57.hermescontrol.ui.chat.components
 
+import com.m57.hermescontrol.ui.chat.SubagentIndicator
+import com.m57.hermescontrol.ui.chat.TodoItem
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -92,6 +94,103 @@ class ChatScrollControllerTest {
 
             assertEquals(1, state.scrollCalls.size)
         }
+
+    @Test
+    fun upwardUserIntentDuringLayoutWaitInvalidatesDelayedTailScroll() =
+        runTest {
+            val state = FakeChatScrollableState(totalItemsCount = 1)
+            val controller = ChatScrollController(state, backgroundScope, bottomPixelTolerance = 8)
+            controller.observeUserScrollPosition()
+            runCurrent()
+
+            controller.onTailChanged(tailKey = "tail", messageCount = 2, listItemCount = 2)
+            runCurrent()
+            assertEquals(listOf(false), state.scrollCalls)
+
+            state.publishPosition(atBottom = false, lastScrolledBackward = true)
+            runCurrent()
+            state.publishLayout(totalItemsCount = 2)
+            runCurrent()
+
+            assertFalse(controller.isFollowingBottom)
+            assertEquals(listOf(false), state.scrollCalls)
+        }
+
+    @Test
+    fun rapidTailChangesLeaveOnlyNewestLayoutRetryEffective() =
+        runTest {
+            val state = FakeChatScrollableState(totalItemsCount = 1)
+            val controller = ChatScrollController(state, backgroundScope, bottomPixelTolerance = 8)
+
+            controller.onTailChanged(tailKey = "tail-2", messageCount = 2, listItemCount = 2)
+            runCurrent()
+            controller.onTailChanged(tailKey = "tail-3", messageCount = 3, listItemCount = 3)
+            runCurrent()
+            assertEquals(listOf(false, false), state.scrollCalls)
+
+            state.publishLayout(totalItemsCount = 2)
+            runCurrent()
+            assertEquals(listOf(false, false), state.scrollCalls)
+
+            state.publishLayout(totalItemsCount = 3)
+            runCurrent()
+            assertEquals(listOf(false, false, false), state.scrollCalls)
+        }
+
+    @Test
+    fun tailContentKeyTracksRenderedStickyBarInputs() {
+        val messages = listOf("message")
+        val base =
+            tailContentKey(
+                messages = messages,
+                streamingMessage = null,
+                isThinking = false,
+                subagentIndicators = listOf(SubagentIndicator(type = "subagent.start", goal = "short")),
+                todos = listOf(TodoItem(id = "todo", content = "first", status = "pending")),
+                clarifyRequest = null,
+            )
+
+        val changedGoal =
+            tailContentKey(
+                messages,
+                null,
+                false,
+                listOf(SubagentIndicator(type = "subagent.start", goal = "a resized goal")),
+                listOf(TodoItem(id = "todo", content = "first", status = "pending")),
+                null,
+            )
+        val changedTodoStatus =
+            tailContentKey(
+                messages,
+                null,
+                false,
+                listOf(SubagentIndicator(type = "subagent.complete", goal = "short", status = "completed")),
+                listOf(TodoItem(id = "todo", content = "first", status = "in_progress")),
+                null,
+            )
+        val changedTodoContent =
+            tailContentKey(
+                messages,
+                null,
+                false,
+                emptyList(),
+                listOf(TodoItem(id = "todo", content = "resized task", status = "in_progress")),
+                null,
+            )
+        val otherTodoContent =
+            tailContentKey(
+                messages,
+                null,
+                false,
+                emptyList(),
+                listOf(TodoItem(id = "todo", content = "different task", status = "in_progress")),
+                null,
+            )
+
+        assertFalse(base == changedGoal)
+        assertFalse(base == changedTodoStatus)
+        assertFalse(changedTodoContent == otherTodoContent)
+    }
 
     @Test
     fun chatListItemCountIncludesEveryConditionalLazyRow() {

@@ -11,7 +11,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalDensity
+import com.m57.hermescontrol.ui.chat.SubagentIndicator
+import com.m57.hermescontrol.ui.chat.TodoItem
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -123,6 +126,8 @@ class ChatScrollController internal constructor(
     private var lastMessageCount: Int = 0
     private var programmaticScrolls by mutableIntStateOf(0)
     private var bottomPixelTolerance by mutableIntStateOf(bottomPixelTolerance)
+    private var tailFollowGeneration = 0L
+    private var tailFollowJob: Job? = null
 
     fun launchScroll(block: suspend CoroutineScope.() -> Unit) {
         scope.launch(block = block)
@@ -136,6 +141,7 @@ class ChatScrollController internal constructor(
                     pendingCount = 0
                 } else if (programmaticScrolls == 0 && position.lastScrolledBackward) {
                     isFollowingBottom = false
+                    invalidateTailFollow()
                 }
             }
         }
@@ -154,28 +160,22 @@ class ChatScrollController internal constructor(
         lastMessageCount = messageCount
         lastTailKey = tailKey
         if (isFollowingBottom) {
-            scope.launch {
-                scrollToBottomAwaitingLayout(listItemCount)
-            }
+            scheduleTailFollow(listItemCount, animated = false)
         } else {
             pendingCount += newMessages
         }
     }
 
-    private suspend fun scrollToBottomAwaitingLayout(expectedItemsCount: Int) {
-        val boundary = listState.currentLayoutBoundary()
-        performProgrammaticScroll {
-            listState.scrollToBottom(animated = false)
-        }
-        val laidOut =
-            withTimeoutOrNull(LAYOUT_WAIT_TIMEOUT_MS) {
-                listState.awaitLayoutAfter(boundary, expectedItemsCount)
-            } ?: false
-        if (laidOut) {
-            performProgrammaticScroll {
-                listState.scrollToBottom(animated = false)
+    private fun scheduleTailFollow(
+        expectedItemsCount: Int,
+        animated: Boolean,
+    ) {
+        val generation = ++tailFollowGeneration
+        tailFollowJob?.cancel()
+        tailFollowJob =
+            scope.launch {
+                scrollToBottomAwaitingLayout(expectedItemsCount, animated, generation)
             }
-        }
     }
 
     fun jumpToBottom(
@@ -184,15 +184,15 @@ class ChatScrollController internal constructor(
     ) {
         pendingCount = 0
         isFollowingBottom = true
-        scope.launch {
-            scrollToBottomAwaitingLayout(listItemCount, animated)
-        }
+        scheduleTailFollow(listItemCount, animated)
     }
 
     private suspend fun scrollToBottomAwaitingLayout(
         expectedItemsCount: Int,
         animated: Boolean,
+        generation: Long,
     ) {
+        if (!canFollow(generation)) return
         val boundary = listState.currentLayoutBoundary()
         performProgrammaticScroll {
             listState.scrollToBottom(animated)
@@ -201,11 +201,19 @@ class ChatScrollController internal constructor(
             withTimeoutOrNull(LAYOUT_WAIT_TIMEOUT_MS) {
                 listState.awaitLayoutAfter(boundary, expectedItemsCount)
             } ?: false
-        if (laidOut) {
+        if (laidOut && canFollow(generation)) {
             performProgrammaticScroll {
                 listState.scrollToBottom(animated)
             }
         }
+    }
+
+    private fun canFollow(generation: Long): Boolean = isFollowingBottom && generation == tailFollowGeneration
+
+    private fun invalidateTailFollow() {
+        tailFollowGeneration += 1
+        tailFollowJob?.cancel()
+        tailFollowJob = null
     }
 
     fun resumeFollowing() = jumpToBottom(animated = true)
@@ -243,16 +251,38 @@ fun tailContentKey(
     messages: List<*>,
     streamingMessage: Any?,
     isThinking: Boolean,
-    subagentIndicators: List<*>,
+    subagentIndicators: List<SubagentIndicator>,
+    todos: List<TodoItem>,
     clarifyRequest: Any?,
 ): Any =
     listOf(
         messages.size,
         streamingMessage?.hashCode() ?: 0,
         isThinking,
-        subagentIndicators.size,
+        stickySubagentBarLayoutKey(subagentIndicators, todos),
         clarifyRequest?.hashCode() ?: 0,
     )
+
+internal data class StickySubagentBarLayoutKey(
+    val activeSubagentCount: Int,
+    val firstActiveSubagentGoal: String?,
+    val activeTodoCount: Int,
+    val firstActiveTodoContent: String?,
+)
+
+internal fun stickySubagentBarLayoutKey(
+    indicators: List<SubagentIndicator>,
+    todos: List<TodoItem>,
+): StickySubagentBarLayoutKey {
+    val activeSubagents = indicators.filter { it.isRunning }
+    val activeTodos = todos.filter { it.isInProgress }
+    return StickySubagentBarLayoutKey(
+        activeSubagentCount = activeSubagents.size,
+        firstActiveSubagentGoal = activeSubagents.firstOrNull()?.goal?.takeIf { it.isNotBlank() },
+        activeTodoCount = activeTodos.size,
+        firstActiveTodoContent = activeTodos.firstOrNull()?.content?.takeIf { it.isNotBlank() },
+    )
+}
 
 fun LazyListState.isAtBottom(tolerance: Int = 8): Boolean {
     val layoutInfo = this.layoutInfo
