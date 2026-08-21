@@ -94,6 +94,7 @@ import com.m57.hermescontrol.ui.chat.components.ReloginDialog
 import com.m57.hermescontrol.ui.chat.components.SearchBarRow
 import com.m57.hermescontrol.ui.chat.components.StickySubagentBar
 import com.m57.hermescontrol.ui.chat.components.SubagentInspectionSheet
+import com.m57.hermescontrol.ui.chat.components.chatListItemCount
 import com.m57.hermescontrol.ui.chat.components.rememberChatScrollController
 import com.m57.hermescontrol.ui.chat.components.tailContentKey
 import com.m57.hermescontrol.ui.common.AutoScrollingTitleText
@@ -144,6 +145,14 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val scrollScope = rememberCoroutineScope()
     val scrollController = rememberChatScrollController(listState, scrollScope)
+    val listItemCount =
+        chatListItemCount(
+            messageCount = state.messages.size,
+            hasStreamingMessage = streamingState.streamingMessage != null,
+            isThinking = streamingState.isThinking,
+            hasClarifyRequest = state.clarifyRequest != null,
+            isLoadingOlder = state.isLoadingOlder,
+        )
     var isOlderPagingArmed by remember(state.currentSessionId) { mutableStateOf(false) }
 
     // Periodic session sync while connected.
@@ -214,6 +223,7 @@ fun ChatScreen(
                     clarifyRequest = state.clarifyRequest,
                 ),
             messageCount = state.messages.size,
+            listItemCount = listItemCount,
         )
     }
     val showScrollToBottom by remember {
@@ -360,6 +370,7 @@ fun ChatScreen(
         connectionStatus = state.connectionStatus,
         currentSessionId = state.currentSessionId,
         messages = state.messages,
+        listItemCount = listItemCount,
         errorMessage = state.errorMessage,
         backgroundCompleteMessage = state.backgroundCompleteMessage,
         openError = state.openError,

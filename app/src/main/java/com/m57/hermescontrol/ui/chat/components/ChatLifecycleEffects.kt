@@ -36,6 +36,7 @@ fun ChatLifecycleEffects(
     connectionStatus: ConnectionStatus,
     currentSessionId: String?,
     messages: List<ChatMessage>,
+    listItemCount: Int,
     errorMessage: String?,
     backgroundCompleteMessage: String?,
     openError: String?,
@@ -97,7 +98,7 @@ fun ChatLifecycleEffects(
     // Land instantly at the bottom on a session switch (issue #682).
     LaunchedEffect(currentSessionId) {
         if (currentSessionId != null) {
-            scrollController.jumpToBottom(animated = false)
+            scrollController.jumpToBottom(animated = false, listItemCount = listItemCount)
         }
     }
 

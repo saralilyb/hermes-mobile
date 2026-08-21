@@ -24,6 +24,18 @@ import com.m57.hermescontrol.ui.chat.ImageViewerModel
 import com.m57.hermescontrol.ui.chat.MessageRole
 import com.m57.hermescontrol.ui.common.EmptyState
 
+internal val CHAT_LIST_VERTICAL_CONTENT_PADDING = 8.dp
+
+internal fun chatListItemCount(
+    messageCount: Int,
+    hasStreamingMessage: Boolean,
+    isThinking: Boolean,
+    hasClarifyRequest: Boolean,
+    isLoadingOlder: Boolean,
+): Int =
+    messageCount +
+        listOf(hasStreamingMessage, isThinking, hasClarifyRequest, isLoadingOlder).count { it }
+
 /**
  * The chat message list.
  */
@@ -65,7 +77,7 @@ fun ChatMessageList(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = 8.dp),
+            contentPadding = PaddingValues(vertical = CHAT_LIST_VERTICAL_CONTENT_PADDING),
         ) {
             if (isLoadingOlder) {
                 item(key = "loading-older") {
