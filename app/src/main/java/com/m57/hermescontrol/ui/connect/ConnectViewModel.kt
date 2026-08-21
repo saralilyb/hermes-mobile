@@ -18,6 +18,7 @@ import com.m57.hermescontrol.data.remote.NetworkError
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.ServerEndpoint
 import com.m57.hermescontrol.data.remote.safeApiCall
+import com.m57.hermescontrol.ui.common.reconcilePressureStatus
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -130,7 +131,6 @@ class ConnectViewModel(
     /** Probe only the persisted selected profile, using its normal cookie-or-token client. */
     fun loadStatus() {
         val generation = ++statusGeneration
-        _uiState.update { it.copy(status = null) }
         val state = _uiState.value
         val profile = state.selectedProfile ?: return
         val selectedId = AuthManager.getSelectedProfileId() ?: return
@@ -149,11 +149,22 @@ class ConnectViewModel(
             val current = _uiState.value
             val currentFingerprint =
                 listOf(current.selectedProfile?.id.orEmpty(), current.baseUrl, current.token, current.authMode)
-            if (generation == statusGeneration && result is NetworkResult.Success &&
-                fingerprint == currentFingerprint &&
-                (result.data.memory != null || result.data.disk != null)
-            ) {
-                _uiState.update { it.copy(status = result.data) }
+            if (generation != statusGeneration || fingerprint != currentFingerprint) return@launch
+            when (result) {
+                is NetworkResult.Success -> {
+                    _uiState.update { currentState ->
+                        currentState.copy(
+                            status =
+                                if (result.data.memory == null && result.data.disk == null) {
+                                    null
+                                } else {
+                                    reconcilePressureStatus(currentState.status, result.data)
+                                },
+                        )
+                    }
+                }
+
+                is NetworkResult.Failure -> _uiState.update { it.copy(status = null) }
             }
         }
     }
@@ -172,6 +183,13 @@ class ConnectViewModel(
         }
 
         val generation = ++statusGeneration
+        val requestFingerprint =
+            listOf(
+                state.selectedProfile?.id.orEmpty(),
+                state.baseUrl,
+                state.token,
+                state.authMode,
+            )
         _uiState.update { it.copy(isConnecting = true, errorMessage = null, status = null) }
 
         viewModelScope.launch {
@@ -180,6 +198,15 @@ class ConnectViewModel(
                     val tempApi = ApiClient.createTempService(endpoint.baseUrl.toString(), state.token)
                     safeApiCall(reportAuthExpiry = false) { tempApi.getStatus() }
                 }
+            val current = _uiState.value
+            val currentFingerprint =
+                listOf(
+                    current.selectedProfile?.id.orEmpty(),
+                    current.baseUrl,
+                    current.token,
+                    current.authMode,
+                )
+            if (generation != statusGeneration || requestFingerprint != currentFingerprint) return@launch
             when (result) {
                 is NetworkResult.Success -> {
                     // Persist credentials to the selected (Default) profile upon successful verification.
@@ -231,11 +258,6 @@ class ConnectViewModel(
                         AuthManager.setProfileToken(AuthManager.DEFAULT_PROFILE_ID, state.token)
                     }
                     ApiClient.rebuild()
-                    val current = _uiState.value
-                    val statusMatchesRequest =
-                        generation == statusGeneration &&
-                            current.baseUrl == state.baseUrl &&
-                            current.token == state.token
                     _uiState.update {
                         it.copy(
                             isConnecting = false,
@@ -244,7 +266,7 @@ class ConnectViewModel(
                             authMode = "token",
                             status =
                                 result.data.takeIf { status ->
-                                    statusMatchesRequest && (status.memory != null || status.disk != null)
+                                    status.memory != null || status.disk != null
                                 },
                         )
                     }

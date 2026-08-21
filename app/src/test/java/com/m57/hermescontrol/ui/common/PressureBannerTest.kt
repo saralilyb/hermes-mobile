@@ -2,6 +2,7 @@ package com.m57.hermescontrol.ui.common
 
 import com.m57.hermescontrol.data.model.DiskPressureStatus
 import com.m57.hermescontrol.data.model.MemoryPressureStatus
+import com.m57.hermescontrol.data.model.StatusResponse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -104,5 +105,44 @@ class PressureBannerTest {
     @Test
     fun oomFlagFalse_doesNotTrigger() {
         assertNull(selectPressureTrigger(mem("ok", suspectedOom = false), disk("ok")))
+    }
+
+    @Test
+    fun unknownSamplePreservesPreviousActionablePressure() {
+        val previous =
+            StatusResponse(
+                memory = mem("critical"),
+                disk = disk("elevated"),
+            )
+        val reconciled =
+            reconcilePressureStatus(
+                previous,
+                StatusResponse(
+                    memory = mem("unknown"),
+                    disk = disk("unknown"),
+                ),
+            )
+
+        assertEquals("critical", reconciled.memory?.pressure)
+        assertEquals("elevated", reconciled.disk?.pressure)
+    }
+
+    @Test
+    fun explicitHealthySampleClearsPreviousActionablePressure() {
+        val previous =
+            StatusResponse(
+                memory = mem("critical"),
+                disk = disk("elevated"),
+            )
+        val reconciled =
+            reconcilePressureStatus(
+                previous,
+                StatusResponse(
+                    memory = mem("ok"),
+                    disk = disk("ok"),
+                ),
+            )
+
+        assertNull(selectPressureTrigger(reconciled.memory, reconciled.disk))
     }
 }

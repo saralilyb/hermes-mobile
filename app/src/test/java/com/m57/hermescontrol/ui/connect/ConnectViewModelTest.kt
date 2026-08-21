@@ -197,7 +197,9 @@ class ConnectViewModelTest {
             advanceUntilIdle()
 
             assertEquals("new-token", viewModel.uiState.value.token)
+            assertFalse(viewModel.uiState.value.connectionSuccess)
             assertNull(viewModel.uiState.value.status)
+            verify(exactly = 0) { AuthManager.setToken("old-token") }
         }
 
     @Test

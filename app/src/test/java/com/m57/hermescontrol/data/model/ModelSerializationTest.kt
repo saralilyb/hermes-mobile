@@ -498,8 +498,8 @@ class ModelSerializationTest {
             )
 
         assertEquals("1.0.0", response.version)
-        assertNull(response.memory)
-        assertNull(response.disk)
+        assertEquals("unknown", response.memory?.pressure)
+        assertEquals("unknown", response.disk?.pressure)
     }
 
     @Test

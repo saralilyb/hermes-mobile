@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.StatusResponse
 import com.m57.hermescontrol.data.remote.ApiClient
+import com.m57.hermescontrol.data.remote.HermesApiService
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
+import com.m57.hermescontrol.ui.common.reconcilePressureStatus
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -35,10 +37,12 @@ class GatewayViewModel(
 
     private var profileId: String? = null
     private var statusGeneration = 0L
+    private var actionGeneration = 0L
 
     fun onProfileChanged(newProfileId: String) {
         if (profileId == newProfileId) return
         statusGeneration += 1
+        actionGeneration += 1
         profileId = newProfileId
         _uiState.value = GatewayUiState()
         loadStatus()
@@ -50,10 +54,20 @@ class GatewayViewModel(
         safeLaunchLoad(
             ioDispatcher = ioDispatcher,
             apiCall = { safeApiCall { ApiClient.hermesApi.getStatus() } },
-            onStart = { _uiState.update { it.copy(isLoading = true, errorMessage = null, status = null) } },
+            onStart = { _uiState.update { it.copy(isLoading = true, errorMessage = null) } },
             onSuccess = { data ->
                 if (profileId == requestedProfileId && generation == statusGeneration) {
-                    _uiState.update { it.copy(isLoading = false, status = data) }
+                    _uiState.update { current ->
+                        current.copy(
+                            isLoading = false,
+                            status =
+                                if (data.memory == null && data.disk == null) {
+                                    data
+                                } else {
+                                    reconcilePressureStatus(current.status, data)
+                                },
+                        )
+                    }
                 }
             },
             onError = { errorMsg ->
@@ -71,24 +85,29 @@ class GatewayViewModel(
     }
 
     fun startGateway() {
-        runGatewayAction("start") { safeApiCall { ApiClient.hermesApi.startGateway() } }
+        runGatewayAction("start") { api -> safeApiCall { api.startGateway() } }
     }
 
     fun stopGateway() {
-        runGatewayAction("stop") { safeApiCall { ApiClient.hermesApi.stopGateway() } }
+        runGatewayAction("stop") { api -> safeApiCall { api.stopGateway() } }
     }
 
     fun restartGateway() {
-        runGatewayAction("restart") { safeApiCall { ApiClient.hermesApi.restartGateway() } }
+        runGatewayAction("restart") { api -> safeApiCall { api.restartGateway() } }
     }
 
     private fun runGatewayAction(
         actionName: String,
-        apiCall: suspend () -> NetworkResult<Unit>,
+        apiCall: suspend (HermesApiService) -> NetworkResult<Unit>,
     ) {
+        if (_uiState.value.isActionRunning) return
+        val requestedProfileId = profileId
+        val requestedApi = ApiClient.hermesApi
+        val generation = ++actionGeneration
         _uiState.update { it.copy(isActionRunning = true) }
         viewModelScope.launch {
-            val result = withContext(ioDispatcher) { apiCall() }
+            val result = withContext(ioDispatcher) { apiCall(requestedApi) }
+            if (profileId != requestedProfileId || generation != actionGeneration) return@launch
             when (result) {
                 is NetworkResult.Success -> {
                     _uiState.update {

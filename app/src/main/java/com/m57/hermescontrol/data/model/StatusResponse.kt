@@ -6,6 +6,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.decodeFromJsonElement
 
 @Serializable
@@ -66,9 +67,10 @@ object NullableMemoryPressureStatusSerializer : KSerializer<MemoryPressureStatus
     override fun deserialize(decoder: Decoder): MemoryPressureStatus? {
         if (decoder !is JsonDecoder) return delegate.deserialize(decoder)
         val element = decoder.decodeJsonElement()
+        if (element is JsonNull) return null
         return runCatching {
             decoder.json.decodeFromJsonElement(MemoryPressureStatus.serializer(), element)
-        }.getOrNull()
+        }.getOrElse { MemoryPressureStatus(pressure = "unknown") }
     }
 
     override fun serialize(
@@ -84,9 +86,10 @@ object NullableDiskPressureStatusSerializer : KSerializer<DiskPressureStatus?> {
     override fun deserialize(decoder: Decoder): DiskPressureStatus? {
         if (decoder !is JsonDecoder) return delegate.deserialize(decoder)
         val element = decoder.decodeJsonElement()
+        if (element is JsonNull) return null
         return runCatching {
             decoder.json.decodeFromJsonElement(DiskPressureStatus.serializer(), element)
-        }.getOrNull()
+        }.getOrElse { DiskPressureStatus(pressure = "unknown") }
     }
 
     override fun serialize(

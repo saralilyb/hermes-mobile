@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.DiskPressureStatus
 import com.m57.hermescontrol.data.model.MemoryPressureStatus
+import com.m57.hermescontrol.data.model.StatusResponse
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
 import com.m57.hermescontrol.theme.onColorFor
 
@@ -58,6 +59,36 @@ internal fun selectPressureTrigger(
         memory?.pressure == "elevated" -> PressureTrigger.MEMORY_ELEVATED
         else -> null
     }
+
+internal fun reconcilePressureStatus(
+    previous: StatusResponse?,
+    incoming: StatusResponse,
+): StatusResponse =
+    incoming.copy(
+        memory =
+            incoming.memory?.let { current ->
+                if (current.pressure == "unknown" && previous?.memory.isActionable()) {
+                    previous?.memory ?: current
+                } else {
+                    current
+                }
+            },
+        disk =
+            incoming.disk?.let { current ->
+                if (current.pressure == "unknown" && previous?.disk.isActionable()) {
+                    previous?.disk ?: current
+                } else {
+                    current
+                }
+            },
+    )
+
+private fun MemoryPressureStatus?.isActionable(): Boolean =
+    this?.pressure == "critical" ||
+        this?.pressure == "elevated" ||
+        this?.last_boot_suspected_oom == true
+
+private fun DiskPressureStatus?.isActionable(): Boolean = this?.pressure == "critical" || this?.pressure == "elevated"
 
 /**
  * Small advisory banner for host resource trouble (issue #903): renders when

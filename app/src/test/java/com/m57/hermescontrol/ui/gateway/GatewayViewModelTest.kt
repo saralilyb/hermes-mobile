@@ -51,7 +51,7 @@ class GatewayViewModelTest {
     @Test
     fun `loadStatus success updates state with status data`() =
         runTest {
-            val mockResponse = mockk<StatusResponse>()
+            val mockResponse = StatusResponse(version = "test")
             coEvery { mockApi.getStatus() } returns Response.success(mockResponse)
 
             val viewModel = GatewayViewModel(ioDispatcher = testDispatcher)
@@ -154,5 +154,56 @@ class GatewayViewModelTest {
             advanceUntilIdle()
 
             assertNull(viewModel.uiState.value.status?.memory)
+        }
+
+    @Test
+    fun `unknown sample preserves previous actionable pressure`() =
+        runTest {
+            coEvery { mockApi.getStatus() } returns
+                Response.success(StatusResponse(memory = MemoryPressureStatus("critical"))) andThen
+                Response.success(StatusResponse(memory = MemoryPressureStatus("unknown")))
+            val viewModel = GatewayViewModel(ioDispatcher = testDispatcher)
+            viewModel.onProfileChanged("profile")
+            advanceUntilIdle()
+            viewModel.loadStatus()
+            advanceUntilIdle()
+
+            assertEquals("critical", viewModel.uiState.value.status?.memory?.pressure)
+        }
+
+    @Test
+    fun `profile change fences old action transport and completion`() =
+        runTest {
+            val oldApi = mockApi
+            val newApi = mockk<HermesApiService>()
+            val oldActionStarted = CompletableDeferred<Unit>()
+            val oldActionResult = CompletableDeferred<Response<Unit>>()
+            var currentApi = oldApi
+            every { ApiClient.hermesApi } answers { currentApi }
+            coEvery { oldApi.getStatus() } returns Response.success(StatusResponse())
+            coEvery { oldApi.startGateway() } coAnswers {
+                oldActionStarted.complete(Unit)
+                oldActionResult.await()
+            }
+            coEvery { newApi.getStatus() } returns Response.success(StatusResponse())
+            coEvery { newApi.startGateway() } returns Response.success(Unit)
+
+            val viewModel = GatewayViewModel(ioDispatcher = testDispatcher)
+            viewModel.onProfileChanged("old")
+            advanceUntilIdle()
+            viewModel.startGateway()
+            runCurrent()
+            oldActionStarted.await()
+            currentApi = newApi
+            viewModel.onProfileChanged("new")
+            runCurrent()
+            viewModel.startGateway()
+            runCurrent()
+            oldActionResult.complete(Response.error(500, "stale".toResponseBody()))
+            advanceUntilIdle()
+
+            assertNull(viewModel.uiState.value.errorMessage)
+            assertEquals("Gateway started successfully", viewModel.uiState.value.toastMessage)
+            assertFalse(viewModel.uiState.value.isActionRunning)
         }
 }
