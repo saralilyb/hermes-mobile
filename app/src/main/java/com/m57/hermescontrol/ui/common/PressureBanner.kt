@@ -24,6 +24,7 @@ import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.DiskPressureStatus
 import com.m57.hermescontrol.data.model.MemoryPressureStatus
 import com.m57.hermescontrol.data.model.StatusResponse
+import com.m57.hermescontrol.data.model.normalizePressureValue
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
 import com.m57.hermescontrol.theme.onColorFor
 
@@ -52,11 +53,11 @@ internal fun selectPressureTrigger(
     disk: DiskPressureStatus?,
 ): PressureTrigger? =
     when {
-        disk?.pressure == "critical" -> PressureTrigger.DISK_CRITICAL
-        memory?.pressure == "critical" -> PressureTrigger.MEMORY_CRITICAL
+        normalizePressureValue(disk?.pressure) == "critical" -> PressureTrigger.DISK_CRITICAL
+        normalizePressureValue(memory?.pressure) == "critical" -> PressureTrigger.MEMORY_CRITICAL
         memory?.last_boot_suspected_oom == true -> PressureTrigger.OOM_RESTART
-        disk?.pressure == "elevated" -> PressureTrigger.DISK_ELEVATED
-        memory?.pressure == "elevated" -> PressureTrigger.MEMORY_ELEVATED
+        normalizePressureValue(disk?.pressure) == "elevated" -> PressureTrigger.DISK_ELEVATED
+        normalizePressureValue(memory?.pressure) == "elevated" -> PressureTrigger.MEMORY_ELEVATED
         else -> null
     }
 
@@ -67,7 +68,7 @@ internal fun reconcilePressureStatus(
     incoming.copy(
         memory =
             incoming.memory?.let { current ->
-                if (current.pressure == "unknown" && previous?.memory.isActionable()) {
+                if (normalizePressureValue(current.pressure) == "unknown" && previous?.memory.isActionable()) {
                     previous?.memory ?: current
                 } else {
                     current
@@ -75,7 +76,7 @@ internal fun reconcilePressureStatus(
             },
         disk =
             incoming.disk?.let { current ->
-                if (current.pressure == "unknown" && previous?.disk.isActionable()) {
+                if (normalizePressureValue(current.pressure) == "unknown" && previous?.disk.isActionable()) {
                     previous?.disk ?: current
                 } else {
                     current
@@ -84,11 +85,13 @@ internal fun reconcilePressureStatus(
     )
 
 private fun MemoryPressureStatus?.isActionable(): Boolean =
-    this?.pressure == "critical" ||
-        this?.pressure == "elevated" ||
+    normalizePressureValue(this?.pressure) == "critical" ||
+        normalizePressureValue(this?.pressure) == "elevated" ||
         this?.last_boot_suspected_oom == true
 
-private fun DiskPressureStatus?.isActionable(): Boolean = this?.pressure == "critical" || this?.pressure == "elevated"
+private fun DiskPressureStatus?.isActionable(): Boolean =
+    normalizePressureValue(this?.pressure) == "critical" ||
+        normalizePressureValue(this?.pressure) == "elevated"
 
 /**
  * Small advisory banner for host resource trouble (issue #903): renders when

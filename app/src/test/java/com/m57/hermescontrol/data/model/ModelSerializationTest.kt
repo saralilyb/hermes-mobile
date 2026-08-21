@@ -503,6 +503,17 @@ class ModelSerializationTest {
     }
 
     @Test
+    fun testStatusResponseDeserialization_pressureValuesAreCanonicalized() {
+        val response =
+            json.decodeFromString<StatusResponse>(
+                """{"memory":{"pressure":"CRITICAL"},"disk":{"pressure":"future-value"}}""",
+            )
+
+        assertEquals("critical", response.memory?.pressure)
+        assertEquals("unknown", response.disk?.pressure)
+    }
+
+    @Test
     fun testStatusResponseDeserialization_typeMismatchInGatewayPlatforms() {
         val jsonStr =
             """

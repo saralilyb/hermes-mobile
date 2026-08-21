@@ -60,6 +60,13 @@ data class DiskPressureStatus(
     val used_percent: Double? = null,
 )
 
+internal fun normalizePressureValue(value: String?): String? =
+    when (val normalized = value?.trim()?.lowercase()) {
+        null -> null
+        "ok", "elevated", "critical", "unknown" -> normalized
+        else -> "unknown"
+    }
+
 object NullableMemoryPressureStatusSerializer : KSerializer<MemoryPressureStatus?> {
     private val delegate = MemoryPressureStatus.serializer().nullable
     override val descriptor: SerialDescriptor = delegate.descriptor
@@ -70,7 +77,8 @@ object NullableMemoryPressureStatusSerializer : KSerializer<MemoryPressureStatus
         if (element is JsonNull) return null
         return runCatching {
             decoder.json.decodeFromJsonElement(MemoryPressureStatus.serializer(), element)
-        }.getOrElse { MemoryPressureStatus(pressure = "unknown") }
+        }.map { value -> value.copy(pressure = normalizePressureValue(value.pressure)) }
+            .getOrElse { MemoryPressureStatus(pressure = "unknown") }
     }
 
     override fun serialize(
@@ -89,7 +97,8 @@ object NullableDiskPressureStatusSerializer : KSerializer<DiskPressureStatus?> {
         if (element is JsonNull) return null
         return runCatching {
             decoder.json.decodeFromJsonElement(DiskPressureStatus.serializer(), element)
-        }.getOrElse { DiskPressureStatus(pressure = "unknown") }
+        }.map { value -> value.copy(pressure = normalizePressureValue(value.pressure)) }
+            .getOrElse { DiskPressureStatus(pressure = "unknown") }
     }
 
     override fun serialize(

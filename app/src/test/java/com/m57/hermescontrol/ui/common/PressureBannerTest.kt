@@ -145,4 +145,16 @@ class PressureBannerTest {
 
         assertNull(selectPressureTrigger(reconciled.memory, reconciled.disk))
     }
+
+    @Test
+    fun unrecognizedSamplePreservesPreviousActionablePressure() {
+        val reconciled =
+            reconcilePressureStatus(
+                StatusResponse(memory = mem("critical")),
+                StatusResponse(memory = mem("future-value")),
+            )
+
+        assertEquals("critical", reconciled.memory?.pressure)
+        assertEquals(PressureTrigger.MEMORY_CRITICAL, selectPressureTrigger(mem("CRITICAL"), null))
+    }
 }
