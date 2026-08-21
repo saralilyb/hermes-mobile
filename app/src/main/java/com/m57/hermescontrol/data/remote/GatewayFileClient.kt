@@ -126,7 +126,13 @@ object GatewayFileClient {
             val key = cache.key(scope, normalized)
             val lock = keyLocks[(key.hashCode() and Int.MAX_VALUE) % keyLocks.size]
             lock.withLock {
+                if (!canPublish()) {
+                    return@withLock GatewayFileResult.Failure(StaleMediaBoundaryException())
+                }
                 cache.fresh(key)?.let { cached ->
+                    if (!canPublish()) {
+                        return@withLock GatewayFileResult.Failure(StaleMediaBoundaryException())
+                    }
                     return@withLock GatewayFileResult.Success(
                         GatewayFile(fileNameFromPath(normalized), mimeFor(normalized), cached),
                     )

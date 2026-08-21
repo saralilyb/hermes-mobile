@@ -9,6 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -90,6 +92,44 @@ class GatewayFileClientTest {
             assertTrue(first.await() is GatewayFileResult.Success)
             assertTrue(second.await() is GatewayFileResult.Success)
             coVerify(exactly = 1) { service.downloadManagedFile("/tmp/a.bin") }
+        }
+
+    @Test
+    fun `scope transition while waiting for key lock does not return obsolete cached bytes`() =
+        runTest {
+            val service = mockk<HermesApiService>()
+            val cache = GatewayMediaCache(tempDir())
+            val downloadStarted = CompletableDeferred<Unit>()
+            val releaseDownload = CompletableDeferred<Unit>()
+            coEvery { service.downloadManagedFile("/tmp/locked.bin") } coAnswers {
+                downloadStarted.complete(Unit)
+                releaseDownload.await()
+                Response.success("obsolete-scope".toResponseBody())
+            }
+
+            val lockHolder = async { GatewayFileClient.fetch("/tmp/locked.bin", service, cache, scope) }
+            downloadStarted.await()
+            var waitingContextIsCurrent = true
+            val waiterStarted = CompletableDeferred<Unit>()
+            val waiter =
+                async {
+                    waiterStarted.complete(Unit)
+                    GatewayFileClient.fetch("/tmp/locked.bin", service, cache, scope) {
+                        waitingContextIsCurrent
+                    }
+                }
+            waiterStarted.await()
+            waitingContextIsCurrent = false
+            releaseDownload.complete(Unit)
+
+            val (holderResult, result) =
+                withContext(Dispatchers.Default.limitedParallelism(1)) {
+                    withTimeout(5_000) { lockHolder.await() to waiter.await() }
+                }
+            assertTrue(holderResult is GatewayFileResult.Success)
+            assertTrue(result is GatewayFileResult.Failure)
+            assertTrue((result as GatewayFileResult.Failure).throwable is StaleMediaBoundaryException)
+            coVerify(exactly = 1) { service.downloadManagedFile("/tmp/locked.bin") }
         }
 
     @Test
