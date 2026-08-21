@@ -133,8 +133,15 @@ class DashboardSessionTokenRefresherTest {
     @Test
     fun refreshUpdatesAuthManagerOnSuccess() {
         mockkObject(AuthManager)
-        every { AuthManager.baseUrl() } returns server.url("/").toString()
-        every { AuthManager.setToken(any()) } returns Unit
+        val boundary =
+            AuthManager.CredentialBoundary(
+                profileId = "profile-a",
+                endpoint = ServerEndpoint.parseForBuild(server.url("/").toString()),
+                gated = false,
+                token = "old-token",
+            )
+        every { AuthManager.credentialBoundary() } returns boundary
+        every { AuthManager.commitRefreshedToken(boundary, any()) } returns true
 
         server.enqueue(
             MockResponse()
@@ -145,13 +152,13 @@ class DashboardSessionTokenRefresherTest {
         val token = DashboardSessionTokenRefresher.refresh()
 
         assertEquals("mocked-token", token)
-        verify { AuthManager.setToken("mocked-token") }
+        verify { AuthManager.commitRefreshedToken(boundary, "mocked-token") }
     }
 
     @Test
     fun refreshReturnsNullOnException() {
         mockkObject(AuthManager)
-        every { AuthManager.baseUrl() } throws RuntimeException("Network Error")
+        every { AuthManager.credentialBoundary() } throws RuntimeException("Network Error")
 
         val token = DashboardSessionTokenRefresher.refresh()
 
@@ -161,13 +168,19 @@ class DashboardSessionTokenRefresherTest {
     @Test
     fun refreshReturnsNullWhenFetchReturnsNull() {
         mockkObject(AuthManager)
-        every { AuthManager.baseUrl() } returns server.url("/").toString()
+        every { AuthManager.credentialBoundary() } returns
+            AuthManager.CredentialBoundary(
+                profileId = "profile-a",
+                endpoint = ServerEndpoint.parseForBuild(server.url("/").toString()),
+                gated = false,
+                token = "old-token",
+            )
         // No token returned from fetch
         server.enqueue(MockResponse().setResponseCode(200).setBody("<html></html>"))
 
         val token = DashboardSessionTokenRefresher.refresh()
 
         assertNull(token)
-        verify(exactly = 0) { AuthManager.setToken(any()) }
+        verify(exactly = 0) { AuthManager.commitRefreshedToken(any(), any()) }
     }
 }

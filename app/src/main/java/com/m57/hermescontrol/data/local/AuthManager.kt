@@ -372,16 +372,16 @@ object AuthManager {
         profileId: String,
         token: String?,
     ) {
-        requireSecureStorage().putString(SecureStorage.authKey("token_$profileId"), token)
-        if (getSelectedProfileId() == profileId) {
-            // B7 (Jul 08 2026, kanban t_470): sync in-memory cachedToken
-            // to prevent stale tokens during ticket refresh
-            synchronized(this) {
+        var publish = false
+        synchronized(this) {
+            requireSecureStorage().putString(SecureStorage.authKey("token_$profileId"), token)
+            if (getSelectedProfileId() == profileId) {
                 cachedToken = token
                 tokenInitialized = true
+                publish = true
             }
-            _tokenFlow.value = token
         }
+        if (publish) _tokenFlow.value = token
     }
 
     fun getSelectedProfileId(): String? {
@@ -424,6 +424,32 @@ object AuthManager {
                 token = selectedId?.let(::getProfileToken),
             )
         }
+
+    /** Store a refresh result for its captured profile without redirecting it after a switch. */
+    internal fun commitRefreshedToken(
+        boundary: CredentialBoundary,
+        token: String?,
+    ): Boolean {
+        var publish = false
+        val stillActive =
+            synchronized(this) {
+                requireSecureStorage().putString(SecureStorage.authKey("token_${boundary.profileId}"), token)
+                val active =
+                    credentialBoundary().let {
+                        it.profileId == boundary.profileId &&
+                            it.endpoint == boundary.endpoint &&
+                            it.gated == boundary.gated
+                    }
+                if (active) {
+                    cachedToken = token
+                    tokenInitialized = true
+                    publish = true
+                }
+                active
+            }
+        if (publish) _tokenFlow.value = token
+        return stillActive
+    }
 
     private fun normalizedProfileId(profileId: String?): String =
         profileId?.takeIf { it.isNotBlank() } ?: DEFAULT_PROFILE_ID
@@ -491,16 +517,17 @@ object AuthManager {
     }
 
     fun setToken(token: String?) {
-        val selectedId =
-            getSelectedProfileId() ?: run {
-                ensureDefaultSelected()
-                DEFAULT_PROFILE_ID
-            }
-        setProfileToken(selectedId, token)
         synchronized(this) {
+            val selectedId =
+                getSelectedProfileId() ?: run {
+                    ensureDefaultSelected()
+                    DEFAULT_PROFILE_ID
+                }
+            requireSecureStorage().putString(SecureStorage.authKey("token_$selectedId"), token)
             cachedToken = token
             tokenInitialized = true
         }
+        _tokenFlow.value = token
     }
 
     // ── Server endpoint ──────────────────────────────────────────────────

@@ -514,6 +514,92 @@ class AuthManagerTest {
     }
 
     @Test
+    fun refreshedTokenStaysWithCapturedProfileAfterProfileSwitch() {
+        val profileA = ConnectionProfile("prof-a", "A", baseUrl = "https://same.example.test/", wsAuthParam = "token")
+        val profileB = ConnectionProfile("prof-b", "B", baseUrl = "https://same.example.test/", wsAuthParam = "token")
+        AuthManager.saveConnectionProfiles(listOf(profileA, profileB))
+        every { mockPrefs.getString("token_prof-a", null) } returns "token-a-old"
+        every { mockPrefs.getString("token_prof-b", null) } returns "token-b"
+        AuthManager.setSelectedProfileId("prof-a")
+        val captured = AuthManager.credentialBoundary()
+
+        AuthManager.setSelectedProfileId("prof-b")
+        val accepted = AuthManager.commitRefreshedToken(captured, "token-a-refreshed")
+
+        assertEquals(false, accepted)
+        verify { mockEditor.putString("token_prof-a", "token-a-refreshed") }
+        assertEquals("prof-b", AuthManager.credentialBoundary().profileId)
+        assertEquals("token-b", AuthManager.getToken())
+    }
+
+    @Test
+    fun setTokenAndProfileSwitchNeverExposeMixedMediaCredentials() {
+        assertTokenMutationSerialized { AuthManager.setToken("token-a-new") }
+    }
+
+    @Test
+    fun setProfileTokenAndProfileSwitchNeverExposeMixedMediaCredentials() {
+        assertTokenMutationSerialized { AuthManager.setProfileToken("prof-a", "token-a-new") }
+    }
+
+    private fun assertTokenMutationSerialized(mutate: () -> Unit) {
+        val profileA = ConnectionProfile("prof-a", "A", baseUrl = "https://same.example.test/", wsAuthParam = "token")
+        val profileB = ConnectionProfile("prof-b", "B", baseUrl = "https://same.example.test/", wsAuthParam = "token")
+        AuthManager.saveConnectionProfiles(listOf(profileA, profileB))
+        val stored = java.util.concurrent.ConcurrentHashMap<String, String>()
+        stored["token_prof-a"] = "token-a-old"
+        stored["token_prof-b"] = "token-b"
+        every { mockPrefs.getString(match { it.startsWith("token_prof-") }, null) } answers {
+            stored[firstArg()]
+        }
+        val writeStarted = CountDownLatch(1)
+        val releaseWrite = CountDownLatch(1)
+        every { mockEditor.putString("token_prof-a", "token-a-new") } answers {
+            writeStarted.countDown()
+            check(releaseWrite.await(5, TimeUnit.SECONDS))
+            stored["token_prof-a"] = "token-a-new"
+            mockEditor
+        }
+
+        AuthManager.setSelectedProfileId("prof-b")
+        val expectedB = GatewayFileClient.currentContext().scope
+        AuthManager.setSelectedProfileId("prof-a")
+        val oldA = GatewayFileClient.currentContext().scope
+
+        val mutation = Thread(mutate).apply { start() }
+        val switch = Thread { AuthManager.setSelectedProfileId("prof-b") }
+        var captured: com.m57.hermescontrol.data.remote.MediaCacheScope? = null
+        val snapshotFinished = CountDownLatch(1)
+        try {
+            assertTrue(writeStarted.await(5, TimeUnit.SECONDS))
+            switch.start()
+            Thread {
+                captured = GatewayFileClient.currentContext().scope
+                snapshotFinished.countDown()
+            }.start()
+            assertTrue(!snapshotFinished.await(100, TimeUnit.MILLISECONDS))
+            releaseWrite.countDown()
+            mutation.join(5_000)
+            switch.join(5_000)
+            assertTrue(!mutation.isAlive && !switch.isAlive)
+            assertTrue(snapshotFinished.await(5, TimeUnit.SECONDS))
+
+            val snapshot = checkNotNull(captured)
+            assertTrue(snapshot.profileId == "prof-b" || snapshot.profileId == "prof-a")
+            if (snapshot.profileId == "prof-b") assertEquals(expectedB, snapshot) else assertTrue(snapshot != oldA)
+            assertEquals("token-a-new", stored["token_prof-a"])
+            assertEquals("token-b", stored["token_prof-b"])
+            assertEquals("prof-b", AuthManager.credentialBoundary().profileId)
+            assertEquals("token-b", AuthManager.getToken())
+            assertEquals(expectedB, GatewayFileClient.currentContext().scope)
+        } finally {
+            releaseWrite.countDown()
+            mutation.join(5_000)
+            if (switch.state != Thread.State.NEW) switch.join(5_000)
+        }
+    }
+
+    @Test
     fun testGetToken_profileWithNoTokenReturnsNull() {
         val profileA = ConnectionProfile("prof-a", "Profile A", "127.0.0.1", 9119)
         val profileB = ConnectionProfile("prof-b", "Profile B", "127.0.0.1", 9119)
