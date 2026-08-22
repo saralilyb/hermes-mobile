@@ -69,6 +69,116 @@ class ChatMessageSyncTest {
         assertEquals("model_switch", merged.single().displayKind)
     }
 
+    @Test
+    fun attachmentEnrichedRestRowReplacesOptimisticUserMessage() {
+        val current =
+            listOf(
+                userMessage(
+                    id = "local-1",
+                    content = "summarize this document",
+                ),
+            )
+        val incoming =
+            listOf(
+                userMessage(
+                    id = "rest-session-1",
+                    content =
+                        "@file:report.pdf\n\n" +
+                            "summarize this document",
+                ),
+            )
+
+        val merged = merge(current, incoming)
+
+        assertEquals(listOf("rest-session-1"), merged.map { it.id })
+    }
+
+    @Test
+    fun attachmentEnrichmentDoesNotCollapseDifferentCaptions() {
+        val current = listOf(userMessage(id = "local-1", content = "first"))
+        val incoming =
+            listOf(
+                userMessage(
+                    id = "rest-session-1",
+                    content = "@image:/tmp/a.jpg\n[screenshot]\n\nsecond",
+                ),
+            )
+
+        val merged = merge(current, incoming)
+
+        assertEquals(
+            listOf("local-1", "rest-session-1"),
+            merged.map { it.id },
+        )
+    }
+
+    @Test
+    fun attachmentMarkersInAssistantTextAreNotNormalized() {
+        val current =
+            listOf(
+                ChatMessage(
+                    id = "local-1",
+                    role = MessageRole.ASSISTANT,
+                    content = "caption",
+                ),
+            )
+        val incoming =
+            listOf(
+                ChatMessage(
+                    id = "rest-session-1",
+                    role = MessageRole.ASSISTANT,
+                    content = "@file:report.pdf\ncaption",
+                ),
+            )
+
+        val merged = merge(current, incoming)
+
+        assertEquals(
+            listOf("local-1", "rest-session-1"),
+            merged.map { it.id },
+        )
+    }
+
+    @Test
+    fun twoAttachmentOnlyMessagesRemainDistinct() {
+        val current =
+            listOf(
+                userMessage(id = "local-1", content = ""),
+                userMessage(id = "local-2", content = ""),
+            )
+        val incoming =
+            listOf(
+                userMessage(id = "rest-session-1", content = "@file:a.pdf"),
+                userMessage(id = "rest-session-2", content = "@file:b.pdf"),
+            )
+
+        val merged = merge(current, incoming)
+
+        assertEquals(
+            listOf("rest-session-1", "rest-session-2"),
+            merged.map { it.id },
+        )
+    }
+
+    private fun merge(
+        current: List<ChatMessage>,
+        incoming: List<ChatMessage>,
+    ): List<ChatMessage> =
+        mergeSyncedMessages(
+            current = current,
+            incoming = incoming,
+            isServerMessage = { it.startsWith("rest-session-") },
+        )
+
+    private fun userMessage(
+        id: String,
+        content: String,
+    ) = ChatMessage(
+        id = id,
+        role = MessageRole.USER,
+        content = content,
+    )
+
     private fun runningTool(
         id: String,
         callId: String?,

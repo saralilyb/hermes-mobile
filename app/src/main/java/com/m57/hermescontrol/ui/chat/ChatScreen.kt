@@ -78,6 +78,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.m57.hermescontrol.HistoryScreen
 import com.m57.hermescontrol.NavigationController
 import com.m57.hermescontrol.R
+import com.m57.hermescontrol.data.model.capabilitiesFor
 import com.m57.hermescontrol.data.ws.ConnectionStatus
 import com.m57.hermescontrol.data.ws.HermesWsClient
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
@@ -134,6 +135,12 @@ fun ChatScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val streamingState by viewModel.streamingState.collectAsStateWithLifecycle()
+    val currentModelCapabilities =
+        remember(state.currentSessionModel, state.modelPickerProviders) {
+            state.modelPickerProviders.capabilitiesFor(
+                state.currentSessionModel,
+            )
+        }
     val credentialWarning by HermesWsClient.credentialWarning.collectAsStateWithLifecycle()
     val visibleCredentialWarning =
         actionableCredentialWarning(
@@ -677,6 +684,9 @@ fun ChatScreen(
                 // Composer toolbar wiring (PR 1)
                 currentSessionModel = state.currentSessionModel,
                 reasoningLevel = state.reasoningLevel,
+                canDisableReasoning =
+                    currentModelCapabilities?.can_disable_reasoning,
+                supportsReasoning = currentModelCapabilities?.reasoning,
                 onModelTap = { viewModel.openModelPicker() },
                 onReasoningTap = { level -> viewModel.setReasoningLevel(level) },
             )

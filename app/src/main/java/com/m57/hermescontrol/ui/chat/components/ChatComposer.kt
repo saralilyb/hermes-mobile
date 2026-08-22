@@ -88,6 +88,8 @@ fun ChatInputBar(
     // NEW: composer toolbar wiring
     currentSessionModel: String? = null,
     reasoningLevel: String? = null,
+    canDisableReasoning: Boolean? = null,
+    supportsReasoning: Boolean? = null,
     onModelTap: () -> Unit = {},
     onReasoningTap: (String?) -> Unit = {},
 ) {
@@ -326,6 +328,8 @@ fun ChatInputBar(
                     onReasoningSelected = onReasoningTap,
                     onMicTap = onMicTap,
                     modifier = Modifier.testTag("chat_composer_toolbar"),
+                    canDisableReasoning = canDisableReasoning,
+                    supportsReasoning = supportsReasoning,
                 )
 
                 // Attachment dropdown (anchored to the attach button in ComposerToolbar)

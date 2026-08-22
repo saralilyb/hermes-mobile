@@ -48,9 +48,22 @@ internal fun mergeSyncedMessages(
                             candidate.toolName == existing.toolName &&
                             localRunningToolCounts[existing.toolName] == 1 &&
                             incomingToolCounts[candidate.toolName] == 1
+                    val attachmentEnrichedUserMessage =
+                        sameRole &&
+                            existing.role == MessageRole.USER &&
+                            sameUserMessageWithAttachmentEnrichment(
+                                localContent = existing.content,
+                                serverContent = candidate.content,
+                            )
                     sameRole && (
                         sameCallId ||
-                            (!conflictingCallIds && candidate.content == existing.content) ||
+                            (
+                                !conflictingCallIds &&
+                                    (
+                                        candidate.content == existing.content ||
+                                            attachmentEnrichedUserMessage
+                                    )
+                            ) ||
                             unambiguousLegacyTool
                     )
                 }
@@ -63,4 +76,32 @@ internal fun mergeSyncedMessages(
     }
     merged.addAll(unmatchedIncoming)
     return merged.distinctBy { it.id }
+}
+
+/**
+ * Matches a local optimistic user row to the server's enriched transcript row.
+ * Only the incoming server row is normalized so literal reference lines in a
+ * locally authored message continue to require an exact match.
+ */
+private fun sameUserMessageWithAttachmentEnrichment(
+    localContent: String,
+    serverContent: String,
+): Boolean {
+    val normalizedServer =
+        serverContent
+            .lines()
+            .filterNot(::isAttachmentReferenceLine)
+            .joinToString("\n")
+            .trim()
+    val normalizedOriginal = serverContent.trim()
+    if (normalizedServer == normalizedOriginal) return false
+
+    return localContent.trim() == normalizedServer
+}
+
+private fun isAttachmentReferenceLine(line: String): Boolean {
+    val normalized = line.trim()
+    return normalized.startsWith("@image:") ||
+        normalized.startsWith("@file:") ||
+        normalized == "[screenshot]"
 }
