@@ -1,8 +1,8 @@
 {
   "schema_version": 3,
-  "fork_base": "1265ed80260c64e8546784cce26ee4b20f7c034d",
+  "fork_base": "7f9a5d2e2c53232dd8460561ae23847b3b2a00eb",
   "review_start_exclusive": "daf33dcb4c8f7fdafc890acfffc2fbb04569f004",
-  "reviewed_through": "f6b771b84cd53e0d41a9f725f771bc1b182eedb9",
+  "reviewed_through": "a11761f120be25927c373449cc4d5f66a0e6b06a",
   "entries": [
     {
       "commit": "3c0f281276dd695f09cf38a43fa379f843483646",
@@ -205,6 +205,41 @@
       "commit": "f6b771b84cd53e0d41a9f725f771bc1b182eedb9",
       "disposition": "excluded",
       "reason": "downstream-conflict"
+    },
+    {
+      "commit": "695364943965cbb6b0ef4a7d29a0a42fd48b7bae",
+      "disposition": "accepted",
+      "reason": "downstream-equivalent"
+    },
+    {
+      "commit": "0f1ea6c5c8460c271b1d788a71c4225301e4aa0f",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "bb3fa31b9cc3e01e23df3601c60b4e319cde2094",
+      "disposition": "excluded",
+      "reason": "distribution-policy"
+    },
+    {
+      "commit": "90c07e0aee145aec6988b2424e4189461ceda82a",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "e9f2c726e4c6934aec00e506872fa028985783c9",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation"
+    },
+    {
+      "commit": "5153e1572fcdd5046afa3d739c5d27b7bffbd691",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation"
+    },
+    {
+      "commit": "a11761f120be25927c373449cc4d5f66a0e6b06a",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation"
     }
   ],
   "resolutions": [

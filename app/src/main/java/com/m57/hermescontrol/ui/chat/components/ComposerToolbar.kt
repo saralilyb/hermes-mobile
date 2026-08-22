@@ -51,8 +51,11 @@ fun ComposerToolbar(
     onReasoningSelected: (String?) -> Unit,
     onMicTap: () -> Unit,
     modifier: Modifier = Modifier,
+    canDisableReasoning: Boolean? = null,
+    supportsReasoning: Boolean? = null,
 ) {
     var showReasoningMenu by remember { mutableStateOf(false) }
+    val reasoningDisabled = supportsReasoning == false
 
     Row(
         modifier =
@@ -103,9 +106,15 @@ fun ComposerToolbar(
             FilterChip(
                 selected = reasoningLevel != null,
                 onClick = { showReasoningMenu = true },
+                enabled = !reasoningDisabled,
                 label = {
                     Text(
-                        text = buildReasoningLabel(reasoningLevel),
+                        text =
+                            if (reasoningDisabled) {
+                                "No reasoning"
+                            } else {
+                                buildReasoningLabel(reasoningLevel)
+                            },
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -127,6 +136,21 @@ fun ComposerToolbar(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                 )
+                if (canDisableReasoning == false) {
+                    Text(
+                        text = "reasoning always on",
+                        style = MaterialTheme.typography.labelSmall,
+                        color =
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                alpha = 0.7f,
+                            ),
+                        modifier =
+                            Modifier.padding(
+                                horizontal = 12.dp,
+                                vertical = 2.dp,
+                            ),
+                    )
+                }
                 HorizontalDivider()
                 val allLevels =
                     listOf(
@@ -140,6 +164,8 @@ fun ComposerToolbar(
                         "ultra" to "Ultra",
                     )
                 allLevels.forEach { (level, label) ->
+                    val noneDisabled =
+                        level == "none" && canDisableReasoning == false
                     DropdownMenuItem(
                         text = {
                             Text(
@@ -151,10 +177,16 @@ fun ComposerToolbar(
                                         null
                                     },
                                 color =
-                                    if (reasoningLevel == level) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
+                                    when {
+                                        noneDisabled ->
+                                            MaterialTheme.colorScheme.onSurface.copy(
+                                                alpha = 0.38f,
+                                            )
+
+                                        reasoningLevel == level ->
+                                            MaterialTheme.colorScheme.primary
+
+                                        else -> MaterialTheme.colorScheme.onSurface
                                     },
                             )
                         },
@@ -162,6 +194,7 @@ fun ComposerToolbar(
                             showReasoningMenu = false
                             onReasoningSelected(level)
                         },
+                        enabled = !noneDisabled,
                     )
                 }
             }

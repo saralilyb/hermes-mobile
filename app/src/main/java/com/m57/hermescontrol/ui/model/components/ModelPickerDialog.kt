@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.m57.hermescontrol.data.model.ModelCapabilities
 import com.m57.hermescontrol.data.model.ModelProvider
 import com.m57.hermescontrol.data.model.PinnedModel
 import com.m57.hermescontrol.ui.common.LoadingState
@@ -196,6 +197,12 @@ fun ModelPickerDialog(
                             ) { pinned ->
                                 ModelItemCard(
                                     modelName = pinned.modelName,
+                                    capabilities =
+                                        providers
+                                            .find {
+                                                it.slug == pinned.providerSlug
+                                            }?.capabilities
+                                            ?.get(pinned.modelName),
                                     isPinned = true,
                                     onPinToggle =
                                         if (onPinToggle != null) {
@@ -237,6 +244,7 @@ fun ModelPickerDialog(
                                 val isPinned = "${provider.slug}:$model" in pinnedSet
                                 ModelItemCard(
                                     modelName = model,
+                                    capabilities = provider.capabilities?.get(model),
                                     isPinned = isPinned,
                                     onPinToggle =
                                         if (onPinToggle != null) {
@@ -259,6 +267,7 @@ fun ModelPickerDialog(
 @Composable
 private fun ModelItemCard(
     modelName: String,
+    capabilities: ModelCapabilities?,
     isPinned: Boolean,
     onPinToggle: (() -> Unit)?,
     onClick: () -> Unit,
@@ -283,13 +292,23 @@ private fun ModelItemCard(
             modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = modelName,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
+            Column(
                 modifier = Modifier.weight(1f),
-            )
+            ) {
+                Text(
+                    text = modelName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                modelCapabilityHint(capabilities)?.let { hint ->
+                    Text(
+                        text = hint,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             if (onPinToggle != null) {
                 IconButton(
                     onClick = onPinToggle,
@@ -311,3 +330,12 @@ private fun ModelItemCard(
         }
     }
 }
+
+internal fun modelCapabilityHint(capabilities: ModelCapabilities?): String? =
+    when {
+        capabilities?.reasoning == false -> "No reasoning"
+        capabilities?.can_disable_reasoning == false ->
+            "Reasoning always on"
+
+        else -> null
+    }

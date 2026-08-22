@@ -66,6 +66,7 @@ import com.m57.hermescontrol.ui.common.SkeletonListState
 import com.m57.hermescontrol.ui.common.ToastEffect
 import com.m57.hermescontrol.ui.model.components.MoaConfigDialog
 import com.m57.hermescontrol.ui.model.components.ModelPickerDialog
+import com.m57.hermescontrol.ui.model.components.modelCapabilityHint
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -810,18 +811,42 @@ private fun ProviderCard(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text(
-                                        text = model,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                                        color =
-                                            if (isActive) {
-                                                MaterialTheme.colorScheme.onPrimaryContainer
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurface
-                                            },
+                                    Column(
                                         modifier = Modifier.weight(1f),
-                                    )
+                                    ) {
+                                        Text(
+                                            text = model,
+                                            style =
+                                                MaterialTheme.typography.bodyMedium,
+                                            fontWeight =
+                                                if (isActive) {
+                                                    FontWeight.Bold
+                                                } else {
+                                                    FontWeight.Normal
+                                                },
+                                            color =
+                                                if (isActive) {
+                                                    MaterialTheme.colorScheme
+                                                        .onPrimaryContainer
+                                                } else {
+                                                    MaterialTheme.colorScheme
+                                                        .onSurface
+                                                },
+                                        )
+                                        modelCapabilityHint(
+                                            provider.capabilities?.get(model),
+                                        )?.let { hint ->
+                                            Text(
+                                                text = hint,
+                                                style =
+                                                    MaterialTheme.typography
+                                                        .labelSmall,
+                                                color =
+                                                    MaterialTheme.colorScheme
+                                                        .onSurfaceVariant,
+                                            )
+                                        }
+                                    }
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),

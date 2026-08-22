@@ -2245,6 +2245,7 @@ class ChatViewModel(
                 }.toMap()
         val incomingRoleAndContentCounts =
             messages
+                .filter(::isDisplayableServerMessage)
                 .map { msg ->
                     val role =
                         when (msg.role?.lowercase()) {
@@ -2257,7 +2258,10 @@ class ChatViewModel(
                 }.groupingBy { it }
                 .eachCount()
 
-        return messages.mapIndexed { index, msg ->
+        return messages.mapIndexedNotNull { index, msg ->
+            if (!isDisplayableServerMessage(msg)) {
+                return@mapIndexedNotNull null
+            }
             val role =
                 when (msg.role?.lowercase()) {
                     "user" -> MessageRole.USER

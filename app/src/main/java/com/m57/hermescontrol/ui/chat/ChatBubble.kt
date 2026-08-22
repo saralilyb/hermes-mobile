@@ -402,15 +402,17 @@ private fun AssistantBubble(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                     }
-                    SelectionContainer {
-                        MarkdownText(
-                            text = message.content,
-                            textColor = textColor,
-                            isStreaming = message.isStreaming,
-                            searchQuery = searchQuery,
-                            isCurrentMatch = isCurrentMatch,
-                            onImageClick = onImageClick,
-                        )
+                    if (message.content.isNotBlank() || message.isStreaming) {
+                        SelectionContainer {
+                            MarkdownText(
+                                text = message.content,
+                                textColor = textColor,
+                                isStreaming = message.isStreaming,
+                                searchQuery = searchQuery,
+                                isCurrentMatch = isCurrentMatch,
+                                onImageClick = onImageClick,
+                            )
+                        }
                     }
                     // Render inline attachments (mirrors UserBubble so agent-delivered
                     // media — images, files — shows in assistant bubbles too).
@@ -443,7 +445,7 @@ private fun AssistantBubble(
 
             // Copy button overlay — top-right of the bubble
             AnimatedVisibility(
-                visible = showCopyButton,
+                visible = showCopyButton && message.content.isNotBlank(),
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut(),
                 modifier =
