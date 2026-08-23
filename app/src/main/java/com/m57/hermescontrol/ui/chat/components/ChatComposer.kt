@@ -287,7 +287,7 @@ fun ChatInputBar(
 
                                     // Send button INSIDE the field
                                     AnimatedContent(
-                                        targetState = canSend && inputFieldValue.text.isNotBlank(),
+                                        targetState = canSend,
                                         transitionSpec = {
                                             (scaleIn(initialScale = 0.8f) + fadeIn())
                                                 .togetherWith(scaleOut(targetScale = 0.8f) + fadeOut())

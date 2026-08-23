@@ -1,8 +1,8 @@
 {
   "schema_version": 3,
-  "fork_base": "7f9a5d2e2c53232dd8460561ae23847b3b2a00eb",
+  "fork_base": "c792a22a6db5dd0e5cd5e6dad58713554dc68c96",
   "review_start_exclusive": "daf33dcb4c8f7fdafc890acfffc2fbb04569f004",
-  "reviewed_through": "a11761f120be25927c373449cc4d5f66a0e6b06a",
+  "reviewed_through": "7540f7228a644892bcf1cab7da103abf605e8a11",
   "entries": [
     {
       "commit": "3c0f281276dd695f09cf38a43fa379f843483646",
@@ -238,6 +238,21 @@
     },
     {
       "commit": "a11761f120be25927c373449cc4d5f66a0e6b06a",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation"
+    },
+    {
+      "commit": "bb400881e6ddee443ae3a35a8d314bfe46b68bf4",
+      "disposition": "deferred",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "69578e78188a10d9761ceb37d5f353b132dbfc4d",
+      "disposition": "deferred",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "7540f7228a644892bcf1cab7da103abf605e8a11",
       "disposition": "accepted",
       "reason": "downstream-adaptation"
     }
