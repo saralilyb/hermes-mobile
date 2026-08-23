@@ -85,6 +85,37 @@ class ChatScreenTest {
     }
 
     @Test
+    fun attachmentOnlyInput_showsSendButton_andSubmitsThroughParent() {
+        val uiState =
+            ChatUiState(
+                connectionStatus = ConnectionStatus.CONNECTED,
+                isSessionReady = true,
+                pendingAttachments =
+                    listOf(
+                        Attachment(
+                            uri = "content://test/photo.jpg",
+                            name = "photo.jpg",
+                            mimeType = "image/jpeg",
+                        ),
+                    ),
+            )
+        val mockViewModel = mockk<ChatViewModel>(relaxed = true)
+        every { mockViewModel.uiState } returns MutableStateFlow(uiState).asStateFlow()
+        every { mockViewModel.streamingState } returns MutableStateFlow(StreamingState()).asStateFlow()
+
+        composeTestRule.setContent {
+            ChatScreen(
+                onOpenDrawer = {},
+                sessionId = null,
+                viewModel = mockViewModel,
+            )
+        }
+
+        composeTestRule.onNodeWithTag("send_button").assertIsDisplayed().performClick()
+        verify { mockViewModel.sendMessage("") }
+    }
+
+    @Test
     fun newSession_keepsDraftUntilSessionCreateCompletes() {
         val uiState =
             ChatUiState(
