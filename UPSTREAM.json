@@ -1,8 +1,8 @@
 {
   "schema_version": 3,
-  "fork_base": "c792a22a6db5dd0e5cd5e6dad58713554dc68c96",
+  "fork_base": "d995f6d2729428799259ea95d88162397312ca71",
   "review_start_exclusive": "daf33dcb4c8f7fdafc890acfffc2fbb04569f004",
-  "reviewed_through": "7540f7228a644892bcf1cab7da103abf605e8a11",
+  "reviewed_through": "ece0288ca8e451f52e4e115ad4611f79e3bbbcea",
   "entries": [
     {
       "commit": "3c0f281276dd695f09cf38a43fa379f843483646",
@@ -255,6 +255,26 @@
       "commit": "7540f7228a644892bcf1cab7da103abf605e8a11",
       "disposition": "accepted",
       "reason": "downstream-adaptation"
+    },
+    {
+      "commit": "913ae1275d4bba0a0dec0bfc8b9a58275f4f193c",
+      "disposition": "excluded",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "764cb3455f505efaddd982808b480c3346d5eb57",
+      "disposition": "accepted",
+      "reason": "downstream-equivalent"
+    },
+    {
+      "commit": "5fd732be9b1aec3281b7f46b15976199a0e2df60",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation"
+    },
+    {
+      "commit": "ece0288ca8e451f52e4e115ad4611f79e3bbbcea",
+      "disposition": "deferred",
+      "reason": "patch-dependency"
     }
   ],
   "resolutions": [
