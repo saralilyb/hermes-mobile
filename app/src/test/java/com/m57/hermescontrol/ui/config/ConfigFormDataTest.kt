@@ -267,6 +267,15 @@ class ConfigFormDataTest {
     }
 
     @Test
+    fun `category reset is hidden for search and synthetic Other`() {
+        val otherCategory = orderedCategories(emptyList(), emptyList(), true).single()
+
+        assertTrue(shouldShowCategoryReset("general", isSearching = false))
+        assertFalse(shouldShowCategoryReset("general", isSearching = true))
+        assertFalse(shouldShowCategoryReset(otherCategory, isSearching = false))
+    }
+
+    @Test
     fun `parseFiniteNumber rejects invalid and nonfinite intermediate text`() {
         assertEquals(JsonPrimitive(42), parseFiniteNumber("42"))
         assertEquals(JsonPrimitive(0.5), parseFiniteNumber("0.5"))

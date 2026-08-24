@@ -552,7 +552,7 @@ private fun FormEditor(
                     }
                 }
 
-                if (!isSearching) {
+                if (shouldShowCategoryReset(activeCategory, isSearching)) {
                     OutlinedButton(
                         onClick = { onResetCategory(activeCategory) },
                         modifier = Modifier.weight(1f),
@@ -656,7 +656,12 @@ private fun ConfigFieldCard(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                     ) {
                         Text(
-                            text = row.category.replaceFirstChar { it.uppercase() },
+                            text =
+                                if (isSyntheticOtherCategory(row.category)) {
+                                    stringResource(R.string.config_category_other)
+                                } else {
+                                    row.category.replaceFirstChar { it.uppercase() }
+                                },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),

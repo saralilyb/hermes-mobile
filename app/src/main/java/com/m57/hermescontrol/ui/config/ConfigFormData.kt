@@ -11,6 +11,11 @@ private const val OTHER_CATEGORY_ID = "\u0000config-other"
 
 fun isSyntheticOtherCategory(category: String): Boolean = category == OTHER_CATEGORY_ID
 
+fun shouldShowCategoryReset(
+    activeCategory: String,
+    isSearching: Boolean,
+): Boolean = !isSearching && !isSyntheticOtherCategory(activeCategory)
+
 /**
  * One renderable row of the config form: a schema-driven field or an
  * uncovered ("Other") config path. All rows are FLAT dot-paths — the nested
