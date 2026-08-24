@@ -82,10 +82,14 @@ internal data class ReconciledEditorDrafts(
  */
 private data class EditorContract(
     val type: String,
-    val options: Set<String>?,
+    val options: Set<String>,
 )
 
-private fun SchemaField.editorContract(): EditorContract = EditorContract(type = type, options = options?.toSet())
+private fun SchemaField.editorContract(): EditorContract =
+    EditorContract(
+        type = type,
+        options = options.orEmpty().toSet(),
+    )
 
 /** Keep uncommitted editor state only while its schema editor contract is stable. */
 internal fun reconcileEditorDrafts(

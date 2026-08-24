@@ -347,6 +347,41 @@ class ConfigViewModelTest {
     }
 
     @Test
+    fun `reconciliation treats null and empty options as the same editor contract in both directions`() {
+        val pending =
+            mapOf(
+                "null-to-empty" to JsonPrimitive("pending-one"),
+                "empty-to-null" to JsonPrimitive("pending-two"),
+            )
+        val drafts =
+            mapOf(
+                "null-to-empty" to ConfigFieldDraft("invalid draft", isValid = false),
+                "empty-to-null" to ConfigFieldDraft("valid dirty draft", isValid = true),
+            )
+
+        val result =
+            reconcileEditorDrafts(
+                pendingChanges = pending,
+                fieldDrafts = drafts,
+                previousFields =
+                    mapOf(
+                        "null-to-empty" to SchemaField(type = "string", options = null),
+                        "empty-to-null" to SchemaField(type = "string", options = emptyList()),
+                    ),
+                refreshedFields =
+                    mapOf(
+                        "null-to-empty" to SchemaField(type = "string", options = emptyList()),
+                        "empty-to-null" to SchemaField(type = "string", options = null),
+                    ),
+            )
+
+        assertEquals(pending, result.pendingChanges)
+        assertEquals(pending.keys, result.pendingChanges.keys)
+        assertEquals(drafts, result.fieldDrafts)
+        assertEquals(setOf("null-to-empty"), result.invalidKeys)
+    }
+
+    @Test
     fun `reconciliation preserves edits across descriptive and action metadata changes`() {
         val pending = mapOf("model" to JsonPrimitive("draft"))
         val drafts = mapOf("model" to ConfigFieldDraft("draft  ", isValid = true))
