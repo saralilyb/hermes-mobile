@@ -5,6 +5,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -32,13 +33,14 @@ class ApiClientMediaServiceTest {
             val endpoint = ServerEndpoint.parseForBuild(server.url("/captured/").toString())
             val service = ApiClient.createMediaService(endpoint, gated = false, token = "snapshot-token")
 
-            service.downloadManagedFileRange("/tmp/a", "bytes=10-19").body()?.close()
+            service.streamManagedFileRange("/tmp/a", "bytes=10-19").body()?.close()
 
             val request = server.takeRequest()
             assertEquals("Bearer snapshot-token", request.getHeader("Authorization"))
             assertNull(request.getHeader("Cookie"))
             assertEquals("bytes=10-19", request.getHeader("Range"))
-            assertEquals("/captured/api/files/download?path=%2Ftmp%2Fa", request.path)
+            assertEquals("/captured/api/files/stream?path=%2Ftmp%2Fa", request.path)
+            assertFalse(request.path.orEmpty().contains("snapshot-token"))
         }
 
     @Test
@@ -54,7 +56,7 @@ class ApiClientMediaServiceTest {
                     cookieHeader = "hermes_session=captured; secondary=fixed",
                 )
 
-            val response = service.downloadManagedFileRange("/tmp/a", "bytes=0-63")
+            val response = service.streamManagedFileRange("/tmp/a", "bytes=0-63")
             response.errorBody()?.close()
 
             val request = server.takeRequest()
@@ -62,6 +64,7 @@ class ApiClientMediaServiceTest {
             assertNull(request.getHeader("Authorization"))
             assertEquals("bytes=0-63", request.getHeader("Range"))
             assertEquals(1, server.requestCount)
-            assertEquals("/snapshot/api/files/download?path=%2Ftmp%2Fa", request.path)
+            assertEquals("/snapshot/api/files/stream?path=%2Ftmp%2Fa", request.path)
+            assertFalse(request.path.orEmpty().contains("captured"))
         }
 }

@@ -49,6 +49,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,7 +70,11 @@ import com.m57.hermescontrol.ui.common.ErrorState
 import com.m57.hermescontrol.ui.common.HermesScaffold
 import com.m57.hermescontrol.ui.common.NavIcon
 import com.m57.hermescontrol.ui.common.SkeletonListState
+import com.m57.hermescontrol.ui.common.SecureGatewayMediaPlayer
+import com.m57.hermescontrol.ui.common.SecureGatewayMediaRequest
+import com.m57.hermescontrol.ui.common.SecureMediaOpenRoute
 import com.m57.hermescontrol.ui.common.ToastEffect
+import com.m57.hermescontrol.ui.common.routeManagedFileOpen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -90,6 +96,7 @@ fun FilesScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var mediaPlayerRequest by remember { mutableStateOf<SecureGatewayMediaRequest?>(null) }
 
     LaunchedEffect(viewModel) {
         viewModel.refresh()
@@ -280,7 +287,13 @@ fun FilesScreen(
                                     if (entry.isDirectory) {
                                         viewModel.navigateTo(entry)
                                     } else {
-                                        openManagedFile(entry, viewModel, context, scope, launchDownloadedFile)
+                                        when (val route = routeManagedFileOpen(entry)) {
+                                            is SecureMediaOpenRoute.Player -> mediaPlayerRequest = route.request
+                                            SecureMediaOpenRoute.DownloadAndOpen ->
+                                                openManagedFile(entry, viewModel, context, scope, launchDownloadedFile)
+
+                                            SecureMediaOpenRoute.OpenLocal -> Unit
+                                        }
                                     }
                                 },
                                 onDelete = { viewModel.requestDelete(entry) },
@@ -305,6 +318,10 @@ fun FilesScreen(
                 )
             }
         }
+    }
+
+    mediaPlayerRequest?.let { request ->
+        SecureGatewayMediaPlayer(request = request, onClose = { mediaPlayerRequest = null })
     }
 }
 

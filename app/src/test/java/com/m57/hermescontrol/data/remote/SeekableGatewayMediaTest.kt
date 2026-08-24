@@ -23,11 +23,11 @@ class SeekableGatewayMediaTest {
     fun `range request returns partial bytes and metadata`() =
         runTest {
             val service = mockk<HermesApiService>()
-            coEvery { service.downloadManagedFileRange("/tmp/movie.mp4", "bytes=100-199") } returns
+            coEvery { service.streamManagedFileRange("/tmp/movie.mp4", "bytes=100-199") } returns
                 Response.success(
                     "chunk".toResponseBody(),
                     okhttp3.Response.Builder()
-                        .request(okhttp3.Request.Builder().url("https://example.test/api/files/download").build())
+                        .request(okhttp3.Request.Builder().url("https://example.test/api/files/stream").build())
                         .protocol(okhttp3.Protocol.HTTP_1_1)
                         .code(206)
                         .message("Partial Content")
@@ -41,7 +41,7 @@ class SeekableGatewayMediaTest {
             assertArrayEquals("chunk".toByteArray(), result.bytes)
             assertEquals(1000L, result.totalLength)
             assertEquals("video/mp4", result.mimeType)
-            coVerify(exactly = 1) { service.downloadManagedFileRange("/tmp/movie.mp4", "bytes=100-199") }
+            coVerify(exactly = 1) { service.streamManagedFileRange("/tmp/movie.mp4", "bytes=100-199") }
         }
 
     @Test
@@ -51,7 +51,7 @@ class SeekableGatewayMediaTest {
             val started = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
             var current = scope
-            coEvery { service.downloadManagedFileRange(any(), any()) } coAnswers {
+            coEvery { service.streamManagedFileRange(any(), any()) } coAnswers {
                 started.complete(Unit)
                 release.await()
                 Response.success("old-profile".toResponseBody())
@@ -66,6 +66,26 @@ class SeekableGatewayMediaTest {
         }
 
     @Test
+    fun `mismatched content range is rejected`() =
+        runTest {
+            val service = mockk<HermesApiService>()
+            coEvery { service.streamManagedFileRange(any(), any()) } returns
+                Response.success(
+                    "chunk".toResponseBody(),
+                    okhttp3.Response.Builder()
+                        .request(okhttp3.Request.Builder().url("https://example.test/api/files/stream").build())
+                        .protocol(okhttp3.Protocol.HTTP_1_1)
+                        .code(206)
+                        .message("Partial Content")
+                        .headers(Headers.headersOf("Content-Range", "bytes 0-4/1000"))
+                        .build(),
+                )
+            val session = SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { scope }
+
+            assertTrue(session.read(100, 5) is GatewayMediaRangeResult.Failure)
+        }
+
+    @Test
     fun `stale session rejects before issuing another range request`() =
         runTest {
             val service = mockk<HermesApiService>(relaxed = true)
@@ -75,7 +95,7 @@ class SeekableGatewayMediaTest {
                 }
 
             assertTrue(session.read(0, 64) is GatewayMediaRangeResult.Stale)
-            coVerify(exactly = 0) { service.downloadManagedFileRange(any(), any()) }
+            coVerify(exactly = 0) { service.streamManagedFileRange(any(), any()) }
         }
 
     @Test
@@ -86,7 +106,7 @@ class SeekableGatewayMediaTest {
             val started = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
             var current = scope
-            coEvery { service.downloadManagedFileRange(any(), any()) } coAnswers {
+            coEvery { service.streamManagedFileRange(any(), any()) } coAnswers {
                 started.complete(Unit)
                 release.await()
                 Response.error(401, ByteArray(0).toResponseBody())
@@ -107,7 +127,7 @@ class SeekableGatewayMediaTest {
         runTest {
             AuthSessionState.resetForTest()
             val service = mockk<HermesApiService>()
-            coEvery { service.downloadManagedFileRange(any(), any()) } returns
+            coEvery { service.streamManagedFileRange(any(), any()) } returns
                 Response.error(401, ByteArray(0).toResponseBody())
             val session = SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { scope }
 
@@ -126,12 +146,12 @@ class SeekableGatewayMediaTest {
             val result = session.read(0, 64)
 
             assertTrue(result is GatewayMediaRangeResult.Failure)
-            coVerify(exactly = 0) { service.downloadManagedFileRange(any(), any()) }
+            coVerify(exactly = 0) { service.streamManagedFileRange(any(), any()) }
         }
 
     @Test
     fun `range endpoint has no credential query parameters`() {
-        val method = HermesApiService::class.java.declaredMethods.single { it.name == "downloadManagedFileRange" }
+        val method = HermesApiService::class.java.declaredMethods.single { it.name == "streamManagedFileRange" }
         val queryNames =
             method.parameterAnnotations
                 .flatMap { it.asIterable() }

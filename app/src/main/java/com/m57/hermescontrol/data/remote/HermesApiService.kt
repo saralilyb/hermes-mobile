@@ -803,8 +803,8 @@ interface HermesApiService {
 
     /** Fetch one bounded byte range for profile-bound seekable playback. */
     @Streaming
-    @GET("api/files/download")
-    suspend fun downloadManagedFileRange(
+    @GET("api/files/stream")
+    suspend fun streamManagedFileRange(
         @Query("path") path: String,
         @retrofit2.http.Header("Range") range: String,
     ): Response<ResponseBody>
