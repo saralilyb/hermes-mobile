@@ -276,6 +276,20 @@ class ConfigFormDataTest {
     }
 
     @Test
+    fun `field reset is available only for changed schema-backed rows`() {
+        val defaultValue = JsonPrimitive("default")
+
+        assertTrue(
+            shouldShowFieldReset(
+                row("model", SchemaField(type = "string"), JsonPrimitive("custom")),
+                defaultValue,
+            ),
+        )
+        assertFalse(shouldShowFieldReset(row("model", SchemaField(type = "string"), defaultValue), defaultValue))
+        assertFalse(shouldShowFieldReset(row("plugin.custom", field = null, JsonPrimitive("custom")), defaultValue))
+    }
+
+    @Test
     fun `parseFiniteNumber rejects invalid and nonfinite intermediate text`() {
         assertEquals(JsonPrimitive(42), parseFiniteNumber("42"))
         assertEquals(JsonPrimitive(0.5), parseFiniteNumber("0.5"))

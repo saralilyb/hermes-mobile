@@ -694,7 +694,7 @@ private fun ConfigFieldCard(
                     }
                 }
 
-                if (defaultValue != null && defaultValue != row.value) {
+                if (shouldShowFieldReset(row, defaultValue)) {
                     CompactIconButton(
                         icon = Icons.Filled.Refresh,
                         contentDescription = stringResource(R.string.config_reset_default),
