@@ -2,16 +2,16 @@ package com.m57.hermescontrol.ui.common
 
 import com.m57.hermescontrol.data.remote.GatewayMediaRangeResult
 import com.m57.hermescontrol.data.remote.SeekableGatewayMediaReader
-import java.io.IOException
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.awaitCancellation
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class GatewayMediaDataReaderTest {
     @Test
@@ -19,7 +19,10 @@ class GatewayMediaDataReaderTest {
         val calls = mutableListOf<Pair<Long, Int>>()
         val session =
             object : SeekableGatewayMediaReader {
-                override suspend fun read(position: Long, byteCount: Int): GatewayMediaRangeResult {
+                override suspend fun read(
+                    position: Long,
+                    byteCount: Int,
+                ): GatewayMediaRangeResult {
                     calls += position to byteCount
                     return GatewayMediaRangeResult.Success(byteArrayOf(1, 2, 3), 99L, "audio/mpeg")
                 }
@@ -38,7 +41,10 @@ class GatewayMediaDataReaderTest {
         val calls = mutableListOf<Pair<Long, Int>>()
         val session =
             object : SeekableGatewayMediaReader {
-                override suspend fun read(position: Long, byteCount: Int): GatewayMediaRangeResult {
+                override suspend fun read(
+                    position: Long,
+                    byteCount: Int,
+                ): GatewayMediaRangeResult {
                     calls += position to byteCount
                     return GatewayMediaRangeResult.Success(ByteArray(byteCount), 10L, null)
                 }
@@ -83,8 +89,37 @@ class GatewayMediaDataReaderTest {
     }
 
     @Test
-    fun `close promptly cancels an in flight suspended read without blocking caller`() {
-        val started = CountDownLatch(1)
+    fun `overlapping reads both complete`() {
+        val bothStarted = CountDownLatch(2)
+        val release = CountDownLatch(1)
+        val reader =
+            GatewayMediaDataReader(
+                SeekableGatewayMediaReader { position, _ ->
+                    bothStarted.countDown()
+                    assertTrue(bothStarted.await(1, TimeUnit.SECONDS))
+                    release.await(1, TimeUnit.SECONDS)
+                    GatewayMediaRangeResult.Success(byteArrayOf(position.toByte()), 2L, null)
+                },
+            )
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val first = executor.submit<Int> { reader.readAt(0, ByteArray(1), 0, 1) }
+            val second = executor.submit<Int> { reader.readAt(1, ByteArray(1), 0, 1) }
+
+            assertTrue(bothStarted.await(1, TimeUnit.SECONDS))
+            release.countDown()
+
+            assertEquals(1, first.get(1, TimeUnit.SECONDS))
+            assertEquals(1, second.get(1, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `close promptly cancels all overlapping suspended reads without blocking caller`() {
+        val started = CountDownLatch(2)
         val reader =
             GatewayMediaDataReader(
                 SeekableGatewayMediaReader { _, _ ->
@@ -92,9 +127,10 @@ class GatewayMediaDataReaderTest {
                     awaitCancellation()
                 },
             )
-        val executor = Executors.newSingleThreadExecutor()
+        val executor = Executors.newFixedThreadPool(2)
         try {
-            val read = executor.submit<Int> { reader.readAt(0, ByteArray(1), 0, 1) }
+            val first = executor.submit<Int> { reader.readAt(0, ByteArray(1), 0, 1) }
+            val second = executor.submit<Int> { reader.readAt(1, ByteArray(1), 0, 1) }
             assertTrue(started.await(1, TimeUnit.SECONDS))
 
             val before = System.nanoTime()
@@ -102,7 +138,8 @@ class GatewayMediaDataReaderTest {
             val closeMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - before)
 
             assertTrue("close blocked for $closeMillis ms", closeMillis < 100)
-            assertThrows(Exception::class.java) { read.get(1, TimeUnit.SECONDS) }
+            assertThrows(Exception::class.java) { first.get(1, TimeUnit.SECONDS) }
+            assertThrows(Exception::class.java) { second.get(1, TimeUnit.SECONDS) }
         } finally {
             executor.shutdownNow()
         }

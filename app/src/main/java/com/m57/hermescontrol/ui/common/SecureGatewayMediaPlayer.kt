@@ -45,13 +45,97 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.remote.GatewayFileClient
-import java.util.Locale
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import java.util.Locale
+
+internal fun shouldAutoStartMedia(state: Lifecycle.State): Boolean = state.isAtLeast(Lifecycle.State.STARTED)
+
+internal suspend fun <T> initializeSecureMedia(
+    dispatcher: CoroutineDispatcher,
+    initializer: () -> T,
+): T = withContext(dispatcher) { initializer() }
+
+private sealed interface MediaInitialization {
+    data object Loading : MediaInitialization
+
+    data class Ready(val dataSource: GatewayMediaDataSource) : MediaInitialization
+
+    data object Error : MediaInitialization
+}
 
 @Composable
 internal fun SecureGatewayMediaPlayer(
     request: SecureGatewayMediaRequest,
     onClose: () -> Unit,
+) {
+    var initialization by remember(request) { mutableStateOf<MediaInitialization>(MediaInitialization.Loading) }
+    LaunchedEffect(request) {
+        var initialized: GatewayMediaDataSource? = null
+        var published = false
+        try {
+            initialized =
+                initializeSecureMedia(Dispatchers.IO) {
+                    GatewayMediaDataSource(GatewayFileClient.openSeekable(request.path))
+                }
+            currentCoroutineContext().ensureActive()
+            initialization = MediaInitialization.Ready(initialized)
+            published = true
+        } catch (_: Exception) {
+            currentCoroutineContext().ensureActive()
+            initialization = MediaInitialization.Error
+        } finally {
+            if (!published) initialized?.close()
+        }
+    }
+
+    when (val state = initialization) {
+        MediaInitialization.Loading -> MediaInitializationDialog(request, onClose, error = false)
+        MediaInitialization.Error -> MediaInitializationDialog(request, onClose, error = true)
+        is MediaInitialization.Ready -> ReadySecureGatewayMediaPlayer(request, onClose, state.dataSource)
+    }
+}
+
+@Composable
+private fun MediaInitializationDialog(
+    request: SecureGatewayMediaRequest,
+    onClose: () -> Unit,
+    error: Boolean,
+) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (error) {
+                    Text(
+                        text = stringResource(R.string.media_player_error),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    CircularProgressIndicator()
+                    Text(text = request.title, modifier = Modifier.weight(1f))
+                }
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.media_player_close))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReadySecureGatewayMediaPlayer(
+    request: SecureGatewayMediaRequest,
+    onClose: () -> Unit,
+    dataSource: GatewayMediaDataSource,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     var prepared by remember(request) { mutableStateOf(false) }
@@ -61,16 +145,17 @@ internal fun SecureGatewayMediaPlayer(
     var error by remember(request) { mutableStateOf(false) }
     var seeking by remember(request) { mutableStateOf(false) }
     val seekDescription = stringResource(R.string.media_player_seek)
-    val dataSource = remember(request) { GatewayMediaDataSource(GatewayFileClient.openSeekable(request.path)) }
     val player =
-        remember(request) {
+        remember(request, dataSource) {
             MediaPlayer().apply {
                 setDataSource(dataSource)
                 setOnPreparedListener {
                     prepared = true
                     duration = it.duration.coerceAtLeast(0)
-                    it.start()
-                    playing = true
+                    if (shouldAutoStartMedia(lifecycleOwner.lifecycle.currentState)) {
+                        it.start()
+                        playing = true
+                    }
                 }
                 setOnCompletionListener {
                     playing = false
