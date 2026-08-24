@@ -439,6 +439,33 @@ class ConfigFormDataTest {
     }
 
     @Test
+    fun `invalid field draft survives unrelated viewport state changes until explicitly cleared`() {
+        val invalid = ConfigUiState().withFieldDraft("terminal.timeout", "-", isValid = false)
+
+        val afterRowLeavesViewport = invalid.copy(searchQuery = "unrelated")
+
+        assertEquals(ConfigFieldDraft("-", isValid = false), afterRowLeavesViewport.fieldDrafts["terminal.timeout"])
+        assertTrue(
+            "invalid draft must continue to disable Save",
+            "terminal.timeout" in afterRowLeavesViewport.invalidKeys,
+        )
+        val cleared = afterRowLeavesViewport.withoutFieldDraft("terminal.timeout")
+        assertTrue(cleared.fieldDrafts.isEmpty())
+        assertTrue(cleared.invalidKeys.isEmpty())
+    }
+
+    @Test
+    fun `draft owner keeps exact valid editor text separate from committed value`() {
+        val state =
+            ConfigUiState(values = mapOf("temperature" to JsonPrimitive(42)))
+                .withFieldDraft("temperature", "42.0", isValid = true)
+
+        assertEquals("42.0", state.fieldDrafts.getValue("temperature").text)
+        assertEquals(JsonPrimitive(42), state.values?.get("temperature"))
+        assertFalse("temperature" in state.invalidKeys)
+    }
+
+    @Test
     fun `parseStructuredJson enforces object and list schema shapes`() {
         val objectValue = JsonObject(mapOf("enabled" to JsonPrimitive(true)))
         val listValue = JsonArray(listOf(JsonPrimitive("one")))

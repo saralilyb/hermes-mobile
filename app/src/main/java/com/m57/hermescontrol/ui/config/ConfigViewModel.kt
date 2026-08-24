@@ -38,6 +38,8 @@ data class ConfigUiState(
     val yamlText: String? = null,
     val modifiedKeys: Set<String> = emptySet(),
     val invalidKeys: Set<String> = emptySet(),
+    /** Uncommitted editor text must outlive LazyColumn viewport disposal. */
+    val fieldDrafts: Map<String, ConfigFieldDraft> = emptyMap(),
     val activeCategory: String = "",
     val searchQuery: String = "",
     val yamlMode: Boolean = false,
@@ -47,6 +49,24 @@ data class ConfigUiState(
     val errorMessage: String? = null,
     val toastMessage: ConfigUiText? = null,
 )
+
+data class ConfigFieldDraft(
+    val text: String,
+    val isValid: Boolean,
+)
+
+internal fun ConfigUiState.withFieldDraft(
+    key: String,
+    text: String,
+    isValid: Boolean,
+): ConfigUiState =
+    copy(
+        fieldDrafts = fieldDrafts + (key to ConfigFieldDraft(text, isValid)),
+        invalidKeys = if (isValid) invalidKeys - key else invalidKeys + key,
+    )
+
+internal fun ConfigUiState.withoutFieldDraft(key: String): ConfigUiState =
+    copy(fieldDrafts = fieldDrafts - key, invalidKeys = invalidKeys - key)
 
 data class ConfigUiText(
     @StringRes val resourceId: Int,
@@ -184,6 +204,8 @@ class ConfigViewModel :
                                     path = path,
                                     activeCategory = reconciled.activeCategory,
                                     modifiedKeys = pendingChanges.keys.toSet(),
+                                    invalidKeys = emptySet(),
+                                    fieldDrafts = emptyMap(),
                                 )
                             }
                         } else {
@@ -229,15 +251,20 @@ class ConfigViewModel :
         }
     }
 
-    fun setFieldValidity(
+    fun setFieldDraft(
         key: String,
+        text: String,
         isValid: Boolean,
     ) {
         val state = _uiState.value
         if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
-        _uiState.update {
-            it.copy(invalidKeys = if (isValid) it.invalidKeys - key else it.invalidKeys + key)
-        }
+        _uiState.update { it.withFieldDraft(key, text, isValid) }
+    }
+
+    fun clearFieldDraft(key: String) {
+        val state = _uiState.value
+        if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
+        _uiState.update { it.withoutFieldDraft(key) }
     }
 
     /** Reset ONE field to its default value (pending until Save). */
@@ -251,6 +278,7 @@ class ConfigViewModel :
                 values = it.values?.toMutableMap()?.apply { this[key] = defaultVal },
                 modifiedKeys = pendingChanges.keys.toSet(),
                 invalidKeys = it.invalidKeys - key,
+                fieldDrafts = it.fieldDrafts - key,
             )
         }
     }
@@ -266,6 +294,7 @@ class ConfigViewModel :
                 values = it.values?.toMutableMap()?.apply { this[key] = blank },
                 modifiedKeys = pendingChanges.keys.toSet(),
                 invalidKeys = it.invalidKeys - key,
+                fieldDrafts = it.fieldDrafts - key,
             )
         }
     }
@@ -398,6 +427,8 @@ class ConfigViewModel :
                                     reapplyPendingChanges(server, pendingChanges)
                                 } ?: it.values,
                             modifiedKeys = pendingChanges.keys.toSet(),
+                            invalidKeys = emptySet(),
+                            fieldDrafts = emptyMap(),
                             toastMessage = ConfigUiText(R.string.config_saved),
                         )
                     }
@@ -464,6 +495,7 @@ class ConfigViewModel :
                             activeCategory = structuredRefresh.activeCategory ?: it.activeCategory,
                             modifiedKeys = emptySet(),
                             invalidKeys = emptySet(),
+                            fieldDrafts = emptyMap(),
                             errorMessage = structuredRefresh.errorMessage,
                             toastMessage = ConfigUiText(R.string.config_yaml_saved),
                         )
@@ -510,6 +542,7 @@ class ConfigViewModel :
                 values = updatedValues ?: it.values,
                 modifiedKeys = pendingChanges.keys.toSet(),
                 invalidKeys = invalidKeysAfterReset(it.invalidKeys, replacedKeys),
+                fieldDrafts = it.fieldDrafts - replacedKeys,
             )
         }
 

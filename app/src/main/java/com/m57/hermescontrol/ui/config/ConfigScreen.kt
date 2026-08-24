@@ -45,12 +45,10 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -129,7 +127,8 @@ fun ConfigScreen(
                     onSearchQueryChange = viewModel::setSearchQuery,
                     onCategoryChange = viewModel::setActiveCategory,
                     onFieldChange = viewModel::updateField,
-                    onFieldValidityChange = viewModel::setFieldValidity,
+                    onFieldDraftChange = viewModel::setFieldDraft,
+                    onFieldDraftClear = viewModel::clearFieldDraft,
                     onResetField = viewModel::resetField,
                     onClearField = viewModel::clearField,
                     onSave = viewModel::saveConfig,
@@ -137,7 +136,7 @@ fun ConfigScreen(
                     onYamlSave = viewModel::saveYamlConfig,
                     onYamlRetry = viewModel::loadYaml,
                     onResetCategory = viewModel::resetCategoryToDefaults,
-                    modifier = Modifier,
+                    modifier = modifier,
                 )
             }
         }
@@ -151,7 +150,8 @@ private fun ConfigContent(
     onSearchQueryChange: (String) -> Unit,
     onCategoryChange: (String) -> Unit,
     onFieldChange: (String, JsonElement) -> Unit,
-    onFieldValidityChange: (String, Boolean) -> Unit,
+    onFieldDraftChange: (String, String, Boolean) -> Unit,
+    onFieldDraftClear: (String) -> Unit,
     onResetField: (String) -> Unit,
     onClearField: (String) -> Unit,
     onSave: () -> Unit,
@@ -280,10 +280,12 @@ private fun ConfigContent(
                 searchQuery = state.searchQuery,
                 modifiedKeys = state.modifiedKeys,
                 invalidKeys = state.invalidKeys,
+                fieldDrafts = state.fieldDrafts,
                 isSaving = state.isSaving,
                 onCategoryChange = onCategoryChange,
                 onFieldChange = onFieldChange,
-                onFieldValidityChange = onFieldValidityChange,
+                onFieldDraftChange = onFieldDraftChange,
+                onFieldDraftClear = onFieldDraftClear,
                 onResetField = onResetField,
                 onClearField = onClearField,
                 onSave = onSave,
@@ -333,6 +335,7 @@ private fun YAMLEditor(
                     .fillMaxWidth()
                     .weight(1f),
             textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+            label = { Text(stringResource(R.string.config_yaml_editor_label)) },
             maxLines = Int.MAX_VALUE,
         )
 
@@ -374,10 +377,12 @@ private fun FormEditor(
     searchQuery: String,
     modifiedKeys: Set<String>,
     invalidKeys: Set<String>,
+    fieldDrafts: Map<String, ConfigFieldDraft>,
     isSaving: Boolean,
     onCategoryChange: (String) -> Unit,
     onFieldChange: (String, JsonElement) -> Unit,
-    onFieldValidityChange: (String, Boolean) -> Unit,
+    onFieldDraftChange: (String, String, Boolean) -> Unit,
+    onFieldDraftClear: (String) -> Unit,
     onResetField: (String) -> Unit,
     onClearField: (String) -> Unit,
     onSave: () -> Unit,
@@ -493,9 +498,11 @@ private fun FormEditor(
                     row = row,
                     defaultValue = defaults?.get(row.key),
                     isModified = row.key in modifiedKeys,
+                    draft = fieldDrafts[row.key],
                     showCategoryChip = isSearching,
                     onChange = { onFieldChange(row.key, it) },
-                    onValidityChange = { onFieldValidityChange(row.key, it) },
+                    onDraftChange = { text, valid -> onFieldDraftChange(row.key, text, valid) },
+                    onDraftClear = { onFieldDraftClear(row.key) },
                     onReset = { onResetField(row.key) },
                     onClear = { onClearField(row.key) },
                 )
@@ -609,9 +616,11 @@ private fun ConfigFieldCard(
     row: ConfigRow,
     defaultValue: JsonElement?,
     isModified: Boolean,
+    draft: ConfigFieldDraft?,
     showCategoryChip: Boolean,
     onChange: (JsonElement) -> Unit,
-    onValidityChange: (Boolean) -> Unit,
+    onDraftChange: (String, Boolean) -> Unit,
+    onDraftClear: () -> Unit,
     onReset: () -> Unit,
     onClear: () -> Unit,
 ) {
@@ -767,22 +776,24 @@ private fun ConfigFieldCard(
 
                 "number" -> {
                     NumberField(
-                        key = row.key,
                         value = row.value,
+                        draft = draft,
                         label = description,
                         onChange = onChange,
-                        onValidityChange = onValidityChange,
+                        onDraftChange = onDraftChange,
+                        onDraftClear = onDraftClear,
                     )
                 }
 
                 "object", "list" -> {
                     JsonField(
-                        key = row.key,
                         value = row.value,
+                        draft = draft,
                         label = description,
                         schemaType = field.type,
                         onChange = onChange,
-                        onValidityChange = onValidityChange,
+                        onDraftChange = onDraftChange,
+                        onDraftClear = onDraftClear,
                     )
                 }
 
@@ -917,44 +928,30 @@ private fun SearchableSelectField(
     }
 }
 
-/**
- * Number editor with local text state. The value is committed only when the
- * text parses, and the field's text never snaps while focused — so typing
- * intermediate states like "0." or "42.0" works instead of dropping keys.
- */
+/** Number editor whose draft is owned above the lazy viewport. */
 @Composable
 private fun NumberField(
-    key: String,
     value: JsonElement?,
+    draft: ConfigFieldDraft?,
     label: String,
     onChange: (JsonElement) -> Unit,
-    onValidityChange: (Boolean) -> Unit,
+    onDraftChange: (String, Boolean) -> Unit,
+    onDraftClear: () -> Unit,
 ) {
-    var text by remember(key) { mutableStateOf((value as? JsonPrimitive)?.content ?: "") }
-    var hasFocus by remember { mutableStateOf(false) }
-
-    ClearEditorValidityOnDispose(key, onValidityChange)
-
-    LaunchedEffect(value) {
-        if (!hasFocus) text = (value as? JsonPrimitive)?.content ?: ""
-    }
+    val text = draft?.text ?: (value as? JsonPrimitive)?.content.orEmpty()
 
     OutlinedTextField(
         value = text,
         onValueChange = { newText ->
-            text = newText
             val parsed = parseFiniteNumber(newText)
-            onValidityChange(parsed != null)
+            onDraftChange(newText, parsed != null)
             parsed?.let(onChange)
         },
         modifier =
             Modifier
                 .fillMaxWidth()
                 .onFocusChanged {
-                    hasFocus = it.isFocused
-                    if (!it.isFocused && parseFiniteNumber(text) != null) {
-                        text = (value as? JsonPrimitive)?.content ?: ""
-                    }
+                    if (!it.isFocused && parseFiniteNumber(text) != null) onDraftClear()
                 },
         isError = parseFiniteNumber(text) == null,
         label = { Text(label) },
@@ -964,49 +961,33 @@ private fun NumberField(
     )
 }
 
-/**
- * Object/list JSON editor with local text state. Commits only valid JSON;
- * invalid input shows an error but is never sent. Multi-line + monospace.
- */
+/** Object/list JSON editor whose draft is owned above the lazy viewport. */
 @Composable
 private fun JsonField(
-    key: String,
     value: JsonElement?,
+    draft: ConfigFieldDraft?,
     label: String,
     schemaType: String,
     onChange: (JsonElement) -> Unit,
-    onValidityChange: (Boolean) -> Unit,
+    onDraftChange: (String, Boolean) -> Unit,
+    onDraftClear: () -> Unit,
 ) {
-    var text by remember(key) { mutableStateOf(value?.let(::jsonText) ?: "") }
-    var hasFocus by remember { mutableStateOf(false) }
-    var invalid by remember { mutableStateOf(false) }
-
-    ClearEditorValidityOnDispose(key, onValidityChange)
-
-    LaunchedEffect(value) {
-        if (!hasFocus) text = value?.let(::jsonText) ?: ""
-    }
+    val text = draft?.text ?: value?.let(::jsonText).orEmpty()
+    val invalid = draft?.isValid == false
 
     OutlinedTextField(
         value = text,
         onValueChange = { newText ->
-            text = newText
             val parsed = parseStructuredJson(newText, schemaType)
-            invalid = parsed == null
-            onValidityChange(!invalid)
-            if (parsed != null && newText.isNotBlank()) {
-                onChange(parsed)
-            }
+            onDraftChange(newText, parsed != null)
+            if (parsed != null && newText.isNotBlank()) onChange(parsed)
         },
         modifier =
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = 96.dp)
                 .onFocusChanged {
-                    hasFocus = it.isFocused
-                    if (!it.isFocused) {
-                        if (!invalid) text = value?.let(::jsonText) ?: ""
-                    }
+                    if (!it.isFocused && !invalid) onDraftClear()
                 },
         isError = invalid,
         supportingText =
@@ -1019,16 +1000,4 @@ private fun JsonField(
         label = { Text(label) },
         maxLines = Int.MAX_VALUE,
     )
-}
-
-/** Removes field-local validation when filtering disposes its editor. */
-@Composable
-private fun ClearEditorValidityOnDispose(
-    key: String,
-    onValidityChange: (Boolean) -> Unit,
-) {
-    val currentOnValidityChange by rememberUpdatedState(onValidityChange)
-    DisposableEffect(key) {
-        onDispose { currentOnValidityChange(true) }
-    }
 }
