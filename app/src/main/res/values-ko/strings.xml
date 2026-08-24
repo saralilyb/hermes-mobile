@@ -565,6 +565,7 @@
     <string name="config_path">경로: %1$s</string>
     <string name="config_mode_form">양식</string>
     <string name="config_mode_yaml">YAML</string>
+    <string name="config_category_other">기타</string>
     <string name="config_search_placeholder">설정 검색…</string>
     <string name="config_pending_changes">대기 중인 변경사항 %1$d개</string>
     <string name="config_search_results">결과 %1$d개</string>

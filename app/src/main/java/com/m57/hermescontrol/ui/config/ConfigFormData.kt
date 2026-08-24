@@ -148,6 +148,40 @@ fun acknowledgeSubmittedChanges(
     submitted.forEach { (key, value) -> pendingChanges.remove(key, value) }
 }
 
+/** A raw document is editable only after its GET completed successfully. */
+fun isYamlDocumentEditable(
+    yamlText: String?,
+    isLoading: Boolean,
+    loadError: String?,
+): Boolean = yamlText != null && !isLoading && loadError == null
+
+fun canSaveYamlDocument(
+    yamlMode: Boolean,
+    yamlText: String?,
+    isLoading: Boolean,
+    isSaving: Boolean,
+    loadError: String?,
+): Boolean = yamlMode && !isSaving && isYamlDocumentEditable(yamlText, isLoading, loadError)
+
+/** Prevent mode changes while either editor is committing its snapshot. */
+fun canSwitchConfigMode(
+    isFormSaving: Boolean,
+    isYamlSaving: Boolean,
+): Boolean = !isFormSaving && !isYamlSaving
+
+/** Form mutations are accepted only while the form is the active, idle editor. */
+fun canEditConfigForm(
+    yamlMode: Boolean,
+    isFormSaving: Boolean,
+    isYamlSaving: Boolean,
+): Boolean = !yamlMode && canSwitchConfigMode(isFormSaving, isYamlSaving)
+
+/** Reset values are valid defaults, so their previous validation errors are stale. */
+fun invalidKeysAfterReset(
+    invalidKeys: Set<String>,
+    replacedKeys: Set<String>,
+): Set<String> = invalidKeys - replacedKeys
+
 /** Parse JSON only when its shape matches the declared schema editor type. */
 fun parseStructuredJson(
     text: String,

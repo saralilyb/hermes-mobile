@@ -135,6 +135,7 @@ fun ConfigScreen(
                     onSave = viewModel::saveConfig,
                     onYamlTextChange = viewModel::setYamlText,
                     onYamlSave = viewModel::saveYamlConfig,
+                    onYamlRetry = viewModel::loadYaml,
                     onResetCategory = viewModel::resetCategoryToDefaults,
                     modifier = Modifier,
                 )
@@ -156,6 +157,7 @@ private fun ConfigContent(
     onSave: () -> Unit,
     onYamlTextChange: (String) -> Unit,
     onYamlSave: () -> Unit,
+    onYamlRetry: () -> Unit,
     onResetCategory: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -183,7 +185,10 @@ private fun ConfigContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onModeToggle) {
+                TextButton(
+                    onClick = onModeToggle,
+                    enabled = canSwitchConfigMode(state.isSaving, state.yamlIsSaving),
+                ) {
                     Icon(
                         imageVector = if (state.yamlMode) Icons.Filled.Tune else Icons.Filled.Code,
                         contentDescription = null,
@@ -257,11 +262,13 @@ private fun ConfigContent(
         // ── Scrollable content ──
         if (state.yamlMode) {
             YAMLEditor(
-                yamlText = state.yamlText ?: "",
+                yamlText = state.yamlText,
                 onYamlTextChange = onYamlTextChange,
                 isSaving = state.yamlIsSaving,
                 isLoading = state.yamlIsLoading,
+                loadError = state.yamlLoadError,
                 onSave = onYamlSave,
+                onRetry = onYamlRetry,
             )
         } else {
             FormEditor(
@@ -288,16 +295,29 @@ private fun ConfigContent(
 
 @Composable
 private fun YAMLEditor(
-    yamlText: String,
+    yamlText: String?,
     onYamlTextChange: (String) -> Unit,
     isSaving: Boolean,
     isLoading: Boolean,
+    loadError: String?,
     onSave: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     if (isLoading) {
         SkeletonListState()
         return
     }
+
+    if (loadError != null) {
+        ErrorState(
+            message = stringResource(R.string.config_load_yaml_failed, loadError),
+            onRetry = onRetry,
+        )
+        return
+    }
+
+    if (!isYamlDocumentEditable(yamlText, isLoading, loadError)) return
+    val loadedYaml = yamlText ?: return
 
     Column(
         modifier =
@@ -306,7 +326,7 @@ private fun YAMLEditor(
                 .padding(horizontal = 16.dp),
     ) {
         OutlinedTextField(
-            value = yamlText,
+            value = loadedYaml,
             onValueChange = onYamlTextChange,
             modifier =
                 Modifier
@@ -569,7 +589,7 @@ private fun ConfigTabs(
                         Text(
                             text =
                                 if (isSyntheticOtherCategory(category)) {
-                                    "Other"
+                                    stringResource(R.string.config_category_other)
                                 } else {
                                     category.replaceFirstChar { it.uppercase() }
                                 },

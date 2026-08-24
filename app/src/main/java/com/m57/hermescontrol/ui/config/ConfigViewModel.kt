@@ -42,6 +42,7 @@ data class ConfigUiState(
     val yamlMode: Boolean = false,
     val yamlIsLoading: Boolean = false,
     val yamlIsSaving: Boolean = false,
+    val yamlLoadError: String? = null,
     val errorMessage: String? = null,
     val toastMessage: ConfigUiText? = null,
 )
@@ -66,6 +67,8 @@ class ConfigViewModel :
     }
 
     fun loadAll() {
+        val current = _uiState.value
+        if (current.isSaving || current.yamlIsSaving) return
         val generation = ++loadGeneration
         loadJob?.cancel()
         loadJob =
@@ -152,6 +155,8 @@ class ConfigViewModel :
         key: String,
         value: JsonElement,
     ) {
+        val state = _uiState.value
+        if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
         pendingChanges[key] = value
         _uiState.update {
             it.copy(
@@ -165,6 +170,8 @@ class ConfigViewModel :
         key: String,
         isValid: Boolean,
     ) {
+        val state = _uiState.value
+        if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
         _uiState.update {
             it.copy(invalidKeys = if (isValid) it.invalidKeys - key else it.invalidKeys + key)
         }
@@ -173,6 +180,7 @@ class ConfigViewModel :
     /** Reset ONE field to its default value (pending until Save). */
     fun resetField(key: String) {
         val state = _uiState.value
+        if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
         val defaultVal = state.defaults?.get(key) ?: return
         pendingChanges[key] = defaultVal
         _uiState.update {
@@ -186,6 +194,8 @@ class ConfigViewModel :
 
     /** Clear a clearable field to blank (e.g. timezone → system default). */
     fun clearField(key: String) {
+        val state = _uiState.value
+        if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
         val blank = JsonPrimitive("")
         pendingChanges[key] = blank
         _uiState.update {
@@ -198,45 +208,62 @@ class ConfigViewModel :
     }
 
     fun setActiveCategory(category: String) {
-        _uiState.update { it.copy(activeCategory = category) }
+        _uiState.update {
+            if (!canEditConfigForm(it.yamlMode, it.isSaving, it.yamlIsSaving)) return@update it
+            it.copy(activeCategory = category)
+        }
     }
 
     fun setSearchQuery(query: String) {
-        _uiState.update { it.copy(searchQuery = query) }
+        _uiState.update {
+            if (!canEditConfigForm(it.yamlMode, it.isSaving, it.yamlIsSaving)) return@update it
+            it.copy(searchQuery = query)
+        }
     }
 
     fun toggleYamlMode() {
         val current = _uiState.value
+        if (!canSwitchConfigMode(current.isSaving, current.yamlIsSaving)) return
         if (current.yamlMode) {
-            _uiState.update { it.copy(yamlMode = false, yamlText = null) }
+            _uiState.update { it.copy(yamlMode = false, yamlText = null, yamlLoadError = null) }
         } else {
-            _uiState.update { it.copy(yamlMode = true, yamlIsLoading = true) }
-            viewModelScope.launch {
-                val result =
-                    withContext(Dispatchers.IO) {
-                        safeApiCall { ApiClient.hermesApi.getRawConfig() }
-                    }
-                when (result) {
-                    is NetworkResult.Success -> {
-                        _uiState.update {
-                            it.copy(
-                                yamlIsLoading = false,
-                                yamlText = result.data.yaml ?: "",
-                            )
-                        }
-                    }
+            _uiState.update { it.copy(yamlMode = true) }
+            loadYaml()
+        }
+    }
 
-                    is NetworkResult.Failure -> {
-                        _uiState.update {
-                            it.copy(
-                                yamlIsLoading = false,
-                                toastMessage =
-                                    ConfigUiText(
-                                        R.string.config_load_yaml_failed,
-                                        listOf(result.error.message),
-                                    ),
-                            )
-                        }
+    fun loadYaml() {
+        val current = _uiState.value
+        if (!current.yamlMode || current.yamlIsLoading || current.yamlIsSaving) return
+        _uiState.update { it.copy(yamlIsLoading = true, yamlText = null, yamlLoadError = null) }
+        viewModelScope.launch {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getRawConfig() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            yamlIsLoading = false,
+                            yamlText = result.data.yaml ?: "",
+                            yamlLoadError = null,
+                        )
+                    }
+                }
+
+                is NetworkResult.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            yamlIsLoading = false,
+                            yamlText = null,
+                            yamlLoadError = result.error.message,
+                            toastMessage =
+                                ConfigUiText(
+                                    R.string.config_load_yaml_failed,
+                                    listOf(result.error.message),
+                                ),
+                        )
                     }
                 }
             }
@@ -244,11 +271,18 @@ class ConfigViewModel :
     }
 
     fun setYamlText(text: String) {
-        _uiState.update { it.copy(yamlText = text) }
+        _uiState.update {
+            if (isYamlDocumentEditable(it.yamlText, it.yamlIsLoading, it.yamlLoadError) && !it.yamlIsSaving) {
+                it.copy(yamlText = text)
+            } else {
+                it
+            }
+        }
     }
 
     fun saveConfig() {
-        if (pendingChanges.isEmpty() || _uiState.value.isSaving || _uiState.value.invalidKeys.isNotEmpty()) return
+        val state = _uiState.value
+        if (state.yamlMode || pendingChanges.isEmpty() || state.isSaving || state.invalidKeys.isNotEmpty()) return
         val submitted = pendingChanges.toMap()
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
@@ -299,8 +333,19 @@ class ConfigViewModel :
     }
 
     fun saveYamlConfig() {
-        if (_uiState.value.yamlIsSaving) return
-        val yamlText = _uiState.value.yamlText ?: return
+        val state = _uiState.value
+        if (
+            !canSaveYamlDocument(
+                yamlMode = state.yamlMode,
+                yamlText = state.yamlText,
+                isLoading = state.yamlIsLoading,
+                isSaving = state.yamlIsSaving,
+                loadError = state.yamlLoadError,
+            )
+        ) {
+            return
+        }
+        val yamlText = state.yamlText ?: return
         _uiState.update { it.copy(yamlIsSaving = true) }
         viewModelScope.launch {
             val result =
@@ -348,6 +393,7 @@ class ConfigViewModel :
 
     fun resetCategoryToDefaults(category: String) {
         val state = _uiState.value
+        if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
         val schema = state.schema ?: return
         val defaults = state.defaults ?: return
 
@@ -357,12 +403,14 @@ class ConfigViewModel :
             }
 
         var count = 0
+        val replacedKeys = mutableSetOf<String>()
         val updatedValues = state.values?.toMutableMap()
         for ((key, _) in categoryFields) {
             val defaultVal = defaults[key]
             if (defaultVal != null) {
                 pendingChanges[key] = defaultVal
                 updatedValues?.set(key, defaultVal)
+                replacedKeys += key
                 count++
             }
         }
@@ -370,6 +418,7 @@ class ConfigViewModel :
             it.copy(
                 values = updatedValues ?: it.values,
                 modifiedKeys = pendingChanges.keys.toSet(),
+                invalidKeys = invalidKeysAfterReset(it.invalidKeys, replacedKeys),
             )
         }
 

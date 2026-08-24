@@ -565,6 +565,7 @@
     <string name="config_path">Path: %1$s</string>
     <string name="config_mode_form">Form</string>
     <string name="config_mode_yaml">YAML</string>
+    <string name="config_category_other">Other</string>
     <string name="config_search_placeholder">Search settings…</string>
     <string name="config_pending_changes">%1$d change(s) pending</string>
     <string name="config_search_results">%1$d result(s)</string>

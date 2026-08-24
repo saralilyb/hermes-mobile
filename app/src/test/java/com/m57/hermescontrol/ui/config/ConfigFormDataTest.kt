@@ -283,6 +283,38 @@ class ConfigFormDataTest {
     }
 
     @Test
+    fun `yaml document requires a successful completed load before editing`() {
+        assertFalse(isYamlDocumentEditable(null, isLoading = false, loadError = null))
+        assertFalse(isYamlDocumentEditable(null, isLoading = false, loadError = "GET failed"))
+        assertFalse(isYamlDocumentEditable("loaded", isLoading = true, loadError = null))
+        assertTrue(isYamlDocumentEditable("", isLoading = false, loadError = null))
+        assertFalse(canSaveYamlDocument(true, null, false, false, "GET failed"))
+        assertFalse(canSaveYamlDocument(false, "loaded", false, false, null))
+        assertTrue(canSaveYamlDocument(true, "loaded", false, false, null))
+    }
+
+    @Test
+    fun `save fencing blocks cross-mode transitions and mutations`() {
+        assertFalse(canSwitchConfigMode(isFormSaving = false, isYamlSaving = true))
+        assertFalse(canSwitchConfigMode(isFormSaving = true, isYamlSaving = false))
+        assertTrue(canSwitchConfigMode(isFormSaving = false, isYamlSaving = false))
+        assertFalse(canEditConfigForm(yamlMode = true, isFormSaving = false, isYamlSaving = false))
+        assertFalse(canEditConfigForm(yamlMode = false, isFormSaving = false, isYamlSaving = true))
+        assertTrue(canEditConfigForm(yamlMode = false, isFormSaving = false, isYamlSaving = false))
+    }
+
+    @Test
+    fun `category reset clears validation only for replaced fields`() {
+        assertEquals(
+            setOf("other.invalid"),
+            invalidKeysAfterReset(
+                invalidKeys = setOf("category.invalid", "other.invalid"),
+                replacedKeys = setOf("category.invalid", "category.valid"),
+            ),
+        )
+    }
+
+    @Test
     fun `parseStructuredJson enforces object and list schema shapes`() {
         val objectValue = JsonObject(mapOf("enabled" to JsonPrimitive(true)))
         val listValue = JsonArray(listOf(JsonPrimitive("one")))

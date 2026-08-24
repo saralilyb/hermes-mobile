@@ -565,6 +565,7 @@
     <string name="config_path">パス: %1$s</string>
     <string name="config_mode_form">フォーム</string>
     <string name="config_mode_yaml">YAML</string>
+    <string name="config_category_other">その他</string>
     <string name="config_search_placeholder">設定を検索…</string>
     <string name="config_pending_changes">保留中の変更: %1$d 件</string>
     <string name="config_search_results">%1$d 件の結果</string>
