@@ -1,7 +1,9 @@
 package com.m57.hermescontrol.ui.config
 
+import com.m57.hermescontrol.data.model.RawConfigResponse
 import com.m57.hermescontrol.data.model.SchemaField
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -261,7 +263,8 @@ class ConfigFormDataTest {
 
     @Test
     fun `refresh reapplies pending edits and save acknowledgement preserves newer edits`() {
-        val pending = mutableMapOf("model" to JsonPrimitive("submitted"), "theme" to JsonPrimitive("dark"))
+        val pending: MutableMap<String, JsonElement> =
+            mutableMapOf("model" to JsonPrimitive("submitted"), "theme" to JsonPrimitive("dark"))
         val submitted = pending.toMap()
         pending["model"] = JsonPrimitive("newer")
 
@@ -291,6 +294,15 @@ class ConfigFormDataTest {
         assertFalse(canSaveYamlDocument(true, null, false, false, "GET failed"))
         assertFalse(canSaveYamlDocument(false, "loaded", false, false, null))
         assertTrue(canSaveYamlDocument(true, "loaded", false, false, null))
+    }
+
+    @Test
+    fun `raw YAML load mapper distinguishes empty YAML from a null payload`() {
+        assertEquals(RawYamlLoadResult.Loaded(""), rawYamlLoadResult(RawConfigResponse(yaml = "")))
+
+        val malformed = rawYamlLoadResult(RawConfigResponse(yaml = null))
+        assertTrue(malformed is RawYamlLoadResult.Error)
+        assertTrue((malformed as RawYamlLoadResult.Error).message.isNotBlank())
     }
 
     @Test

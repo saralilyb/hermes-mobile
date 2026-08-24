@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.ConfigSchemaResponse
 import com.m57.hermescontrol.data.model.ConfigUpdateRequest
+import com.m57.hermescontrol.data.model.RawConfigResponse
 import com.m57.hermescontrol.data.model.UpdateRawConfigRequest
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.NetworkResult
@@ -51,6 +52,16 @@ data class ConfigUiText(
     @StringRes val resourceId: Int,
     val args: List<Any> = emptyList(),
 )
+
+internal sealed interface RawYamlLoadResult {
+    data class Loaded(val yaml: String) : RawYamlLoadResult
+
+    data class Error(val message: String) : RawYamlLoadResult
+}
+
+internal fun rawYamlLoadResult(response: RawConfigResponse): RawYamlLoadResult =
+    response.yaml?.let(RawYamlLoadResult::Loaded)
+        ?: RawYamlLoadResult.Error("Raw config response did not include YAML")
 
 class ConfigViewModel :
     ViewModel(),
@@ -243,12 +254,31 @@ class ConfigViewModel :
                 }
             when (result) {
                 is NetworkResult.Success -> {
-                    _uiState.update {
-                        it.copy(
-                            yamlIsLoading = false,
-                            yamlText = result.data.yaml ?: "",
-                            yamlLoadError = null,
-                        )
+                    when (val loadResult = rawYamlLoadResult(result.data)) {
+                        is RawYamlLoadResult.Loaded -> {
+                            _uiState.update {
+                                it.copy(
+                                    yamlIsLoading = false,
+                                    yamlText = loadResult.yaml,
+                                    yamlLoadError = null,
+                                )
+                            }
+                        }
+
+                        is RawYamlLoadResult.Error -> {
+                            _uiState.update {
+                                it.copy(
+                                    yamlIsLoading = false,
+                                    yamlText = null,
+                                    yamlLoadError = loadResult.message,
+                                    toastMessage =
+                                        ConfigUiText(
+                                            R.string.config_load_yaml_failed,
+                                            listOf(loadResult.message),
+                                        ),
+                                )
+                            }
+                        }
                     }
                 }
 
