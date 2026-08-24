@@ -45,10 +45,12 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -911,6 +913,8 @@ private fun NumberField(
     var text by remember(key) { mutableStateOf((value as? JsonPrimitive)?.content ?: "") }
     var hasFocus by remember { mutableStateOf(false) }
 
+    ClearEditorValidityOnDispose(key, onValidityChange)
+
     LaunchedEffect(value) {
         if (!hasFocus) text = (value as? JsonPrimitive)?.content ?: ""
     }
@@ -957,6 +961,8 @@ private fun JsonField(
     var hasFocus by remember { mutableStateOf(false) }
     var invalid by remember { mutableStateOf(false) }
 
+    ClearEditorValidityOnDispose(key, onValidityChange)
+
     LaunchedEffect(value) {
         if (!hasFocus) text = value?.let(::jsonText) ?: ""
     }
@@ -993,4 +999,16 @@ private fun JsonField(
         label = { Text(label) },
         maxLines = Int.MAX_VALUE,
     )
+}
+
+/** Removes field-local validation when filtering disposes its editor. */
+@Composable
+private fun ClearEditorValidityOnDispose(
+    key: String,
+    onValidityChange: (Boolean) -> Unit,
+) {
+    val currentOnValidityChange by rememberUpdatedState(onValidityChange)
+    DisposableEffect(key) {
+        onDispose { currentOnValidityChange(true) }
+    }
 }
