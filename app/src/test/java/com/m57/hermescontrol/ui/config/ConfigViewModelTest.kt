@@ -289,6 +289,101 @@ class ConfigViewModelTest {
         }
 
     @Test
+    fun `refresh prunes scalar draft and pending change when field becomes object`() =
+        runBlocking {
+            val objectEditor = AtomicBoolean(false)
+            stubStableLoadEndpoints()
+            coEvery { mockApi.getConfig() } returns
+                Response.success(mapOf("model" to JsonPrimitive(7)))
+            coEvery { mockApi.getConfigSchema() } coAnswers {
+                Response.success(
+                    ConfigSchemaResponse(
+                        fields =
+                            mapOf(
+                                "model" to
+                                    SchemaField(
+                                        type = if (objectEditor.get()) "object" else "number",
+                                        category = "general",
+                                    ),
+                            ),
+                        category_order = listOf("general"),
+                    ),
+                )
+            }
+
+            val viewModel = ConfigViewModel()
+            withTimeout(5_000) { viewModel.uiState.first { !it.isLoading && it.schema != null } }
+            viewModel.setFieldDraft("model", "8", isValid = true)
+            viewModel.updateField("model", JsonPrimitive(8))
+
+            objectEditor.set(true)
+            viewModel.loadAll()
+            withTimeout(5_000) {
+                viewModel.uiState.first {
+                    !it.isLoading && it.schema?.fields?.get("model")?.type == "object"
+                }
+            }
+
+            assertTrue(viewModel.uiState.value.fieldDrafts.isEmpty())
+            assertTrue(viewModel.uiState.value.modifiedKeys.isEmpty())
+            assertEquals(JsonPrimitive(7), viewModel.uiState.value.values?.get("model"))
+            viewModel.saveConfig()
+            coVerify(exactly = 0) { mockApi.updateConfig(any()) }
+        }
+
+    @Test
+    fun `reconciliation prunes select edit when options change`() {
+        val result =
+            reconcileEditorDrafts(
+                pendingChanges = mapOf("model" to JsonPrimitive("old-option")),
+                fieldDrafts = mapOf("model" to ConfigFieldDraft("old-option", isValid = true)),
+                previousFields = mapOf("model" to SchemaField(type = "string", options = listOf("old-option"))),
+                refreshedFields = mapOf("model" to SchemaField(type = "string", options = listOf("new-option"))),
+            )
+
+        assertTrue(result.pendingChanges.isEmpty())
+        assertTrue(result.fieldDrafts.isEmpty())
+        assertTrue(result.invalidKeys.isEmpty())
+    }
+
+    @Test
+    fun `reconciliation preserves edits across descriptive and action metadata changes`() {
+        val pending = mapOf("model" to JsonPrimitive("draft"))
+        val drafts = mapOf("model" to ConfigFieldDraft("draft  ", isValid = true))
+        val result =
+            reconcileEditorDrafts(
+                pendingChanges = pending,
+                fieldDrafts = drafts,
+                previousFields =
+                    mapOf(
+                        "model" to
+                            SchemaField(
+                                type = "string",
+                                description = "Old description",
+                                category = "old-category",
+                                searchable = false,
+                                clearable = false,
+                            ),
+                    ),
+                refreshedFields =
+                    mapOf(
+                        "model" to
+                            SchemaField(
+                                type = "string",
+                                description = "New description",
+                                category = "new-category",
+                                searchable = true,
+                                clearable = true,
+                            ),
+                    ),
+            )
+
+        assertEquals(pending, result.pendingChanges)
+        assertEquals(drafts, result.fieldDrafts)
+        assertTrue(result.invalidKeys.isEmpty())
+    }
+
+    @Test
     fun `nested defaults support field and category resets without inventing missing defaults`() =
         runBlocking {
             val providerDefault = JsonObject(mapOf("custom" to JsonPrimitive("https://default.test")))

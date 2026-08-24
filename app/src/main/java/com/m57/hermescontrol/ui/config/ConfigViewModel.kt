@@ -7,6 +7,7 @@ import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.ConfigSchemaResponse
 import com.m57.hermescontrol.data.model.ConfigUpdateRequest
 import com.m57.hermescontrol.data.model.RawConfigResponse
+import com.m57.hermescontrol.data.model.SchemaField
 import com.m57.hermescontrol.data.model.UpdateRawConfigRequest
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.NetworkResult
@@ -74,15 +75,33 @@ internal data class ReconciledEditorDrafts(
     val invalidKeys: Set<String>,
 )
 
-/** Keep uncommitted editor state only for fields the refreshed schema can still edit. */
+/**
+ * The schema properties that determine which typed values an editor accepts.
+ * Description, category, and searchable affect presentation only. Clearable
+ * exposes a separate action, but does not change parsing of an existing draft.
+ */
+private data class EditorContract(
+    val type: String,
+    val options: Set<String>?,
+)
+
+private fun SchemaField.editorContract(): EditorContract = EditorContract(type = type, options = options?.toSet())
+
+/** Keep uncommitted editor state only while its schema editor contract is stable. */
 internal fun reconcileEditorDrafts(
     pendingChanges: Map<String, JsonElement>,
     fieldDrafts: Map<String, ConfigFieldDraft>,
-    editableKeys: Set<String>,
+    previousFields: Map<String, SchemaField>,
+    refreshedFields: Map<String, SchemaField>,
 ): ReconciledEditorDrafts {
-    val retainedDrafts = fieldDrafts.filterKeys(editableKeys::contains)
+    val compatibleKeys =
+        refreshedFields.keys.filterTo(mutableSetOf()) { key ->
+            val previous = previousFields[key] ?: return@filterTo false
+            previous.editorContract() == refreshedFields.getValue(key).editorContract()
+        }
+    val retainedDrafts = fieldDrafts.filterKeys(compatibleKeys::contains)
     return ReconciledEditorDrafts(
-        pendingChanges = pendingChanges.filterKeys(editableKeys::contains),
+        pendingChanges = pendingChanges.filterKeys(compatibleKeys::contains),
         fieldDrafts = retainedDrafts,
         invalidKeys = retainedDrafts.filterValues { !it.isValid }.keys,
     )
@@ -217,7 +236,8 @@ class ConfigViewModel :
                                 reconcileEditorDrafts(
                                     pendingChanges = pendingChanges,
                                     fieldDrafts = _uiState.value.fieldDrafts,
-                                    editableKeys = schema.fields.keys,
+                                    previousFields = _uiState.value.schema?.fields.orEmpty(),
+                                    refreshedFields = schema.fields,
                                 )
                             pendingChanges.clear()
                             pendingChanges.putAll(editorDrafts.pendingChanges)
