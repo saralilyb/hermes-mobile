@@ -561,6 +561,25 @@
     <string name="config_action_reset">Reset</string>
     <string name="config_action_save">Save</string>
     <string name="config_action_save_yaml">Save YAML</string>
+    <string name="config_save_changes">Save changes</string>
+    <string name="config_path">Path: %1$s</string>
+    <string name="config_mode_form">Form</string>
+    <string name="config_mode_yaml">YAML</string>
+    <string name="config_search_placeholder">Search settings…</string>
+    <string name="config_pending_changes">%1$d change(s) pending</string>
+    <string name="config_search_results">%1$d result(s)</string>
+    <string name="config_no_search_results">No settings match your search.</string>
+    <string name="config_no_category_fields">No fields in this category.</string>
+    <string name="config_reset_default">Reset to default</string>
+    <string name="config_clear_value">Clear value</string>
+    <string name="config_no_matches">No matches</string>
+    <string name="config_invalid_json">Invalid JSON</string>
+    <string name="config_load_yaml_failed">Failed to load YAML: %1$s</string>
+    <string name="config_saved">Configuration saved successfully</string>
+    <string name="config_save_failed">Failed to save: %1$s</string>
+    <string name="config_yaml_saved">YAML configuration saved</string>
+    <string name="config_save_yaml_failed">Failed to save YAML: %1$s</string>
+    <string name="config_reset_count">Reset %1$d field(s) to defaults (tap Save to apply)</string>
 
     <!-- Profiles Screen -->
     <string name="profiles_empty_title">No profiles available</string>

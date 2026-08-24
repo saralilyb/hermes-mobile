@@ -1,7 +1,9 @@
 package com.m57.hermescontrol.ui.config
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.ConfigSchemaResponse
 import com.m57.hermescontrol.data.model.ConfigUpdateRequest
 import com.m57.hermescontrol.data.model.UpdateRawConfigRequest
@@ -19,14 +21,17 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 data class ConfigUiState(
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
-    val config: Map<String, JsonElement>? = null,
+    /** Flattened dot-path → value map (see [flattenConfig]). */
+    val values: Map<String, JsonElement>? = null,
     val schema: ConfigSchemaResponse? = null,
     val defaults: Map<String, JsonElement>? = null,
+    /** Config paths present but not covered by the schema (the "Other" tab). */
+    val uncoveredPaths: List<String> = emptyList(),
     val path: String? = null,
     val yamlText: String? = null,
     val modifiedKeys: Set<String> = emptySet(),
@@ -36,7 +41,12 @@ data class ConfigUiState(
     val yamlIsLoading: Boolean = false,
     val yamlIsSaving: Boolean = false,
     val errorMessage: String? = null,
-    val toastMessage: String? = null,
+    val toastMessage: ConfigUiText? = null,
+)
+
+data class ConfigUiText(
+    @StringRes val resourceId: Int,
+    val args: List<Any> = emptyList(),
 )
 
 class ConfigViewModel :
@@ -68,24 +78,31 @@ class ConfigViewModel :
                     val rawResult = rawDeferred.await()
 
                     if (configResult is NetworkResult.Success) {
-                        val configData = configResult.data
                         val schema = (schemaResult as? NetworkResult.Success)?.data
+                        val values = flattenConfig(configResult.data, schema?.fields?.keys ?: emptySet())
                         val defaults = (defaultsResult as? NetworkResult.Success)?.data
                         val path = (rawResult as? NetworkResult.Success)?.data?.path
+                        val categories =
+                            orderedCategories(
+                                categoryOrder = schema?.category_order.orEmpty(),
+                                schemaCategories = schema?.fields?.values?.map { it.category ?: "general" }.orEmpty(),
+                                hasUncoveredPaths =
+                                    collectUncoveredPaths(values, schema?.fields?.keys ?: emptySet()).isNotEmpty(),
+                            )
 
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
-                                config = configData,
+                                values = values,
                                 schema = schema,
                                 defaults = defaults,
+                                uncoveredPaths =
+                                    collectUncoveredPaths(
+                                        values,
+                                        schema?.fields?.keys ?: emptySet(),
+                                    ),
                                 path = path,
-                                activeCategory =
-                                    if (schema?.category_order?.isNotEmpty() == true) {
-                                        schema.category_order.first()
-                                    } else {
-                                        ""
-                                    },
+                                activeCategory = categories.firstOrNull().orEmpty(),
                             )
                         }
                     } else {
@@ -108,17 +125,34 @@ class ConfigViewModel :
         value: JsonElement,
     ) {
         pendingChanges[key] = value
-        val state = _uiState.value
-
-        // Apply the change locally so the UI reflects it immediately
-        val updatedConfig =
-            state.config?.let { config ->
-                applyNestedValue(config, key, value)
-            }
-
         _uiState.update {
             it.copy(
-                config = updatedConfig,
+                values = it.values?.toMutableMap()?.apply { this[key] = value },
+                modifiedKeys = pendingChanges.keys.toSet(),
+            )
+        }
+    }
+
+    /** Reset ONE field to its default value (pending until Save). */
+    fun resetField(key: String) {
+        val state = _uiState.value
+        val defaultVal = state.defaults?.get(key) ?: return
+        pendingChanges[key] = defaultVal
+        _uiState.update {
+            it.copy(
+                values = it.values?.toMutableMap()?.apply { this[key] = defaultVal },
+                modifiedKeys = pendingChanges.keys.toSet(),
+            )
+        }
+    }
+
+    /** Clear a clearable field to blank (e.g. timezone → system default). */
+    fun clearField(key: String) {
+        val blank = JsonPrimitive("")
+        pendingChanges[key] = blank
+        _uiState.update {
+            it.copy(
+                values = it.values?.toMutableMap()?.apply { this[key] = blank },
                 modifiedKeys = pendingChanges.keys.toSet(),
             )
         }
@@ -157,7 +191,11 @@ class ConfigViewModel :
                         _uiState.update {
                             it.copy(
                                 yamlIsLoading = false,
-                                toastMessage = "Failed to load YAML: ${result.error.message}",
+                                toastMessage =
+                                    ConfigUiText(
+                                        R.string.config_load_yaml_failed,
+                                        listOf(result.error.message),
+                                    ),
                             )
                         }
                     }
@@ -174,7 +212,7 @@ class ConfigViewModel :
         if (pendingChanges.isEmpty()) return
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
-            val changeset = buildChangeset(pendingChanges)
+            val changeset = nestConfigChanges(pendingChanges)
             val result =
                 withContext(Dispatchers.IO) {
                     safeApiCall {
@@ -193,9 +231,13 @@ class ConfigViewModel :
                     _uiState.update {
                         it.copy(
                             isSaving = false,
-                            config = (configResult as? NetworkResult.Success)?.data ?: it.config,
+                            values =
+                                (configResult as? NetworkResult.Success)?.data?.let {
+                                    flattenConfig(it, uiState.value.schema?.fields?.keys ?: emptySet())
+                                }
+                                    ?: it.values,
                             modifiedKeys = emptySet(),
-                            toastMessage = "Configuration saved successfully",
+                            toastMessage = ConfigUiText(R.string.config_saved),
                         )
                     }
                 }
@@ -204,7 +246,7 @@ class ConfigViewModel :
                     _uiState.update {
                         it.copy(
                             isSaving = false,
-                            toastMessage = "Failed to save: ${result.error.message}",
+                            toastMessage = ConfigUiText(R.string.config_save_failed, listOf(result.error.message)),
                         )
                     }
                 }
@@ -233,8 +275,12 @@ class ConfigViewModel :
                     _uiState.update {
                         it.copy(
                             yamlIsSaving = false,
-                            config = (configResult as? NetworkResult.Success)?.data ?: it.config,
-                            toastMessage = "YAML configuration saved",
+                            values =
+                                (configResult as? NetworkResult.Success)?.data?.let {
+                                    flattenConfig(it, uiState.value.schema?.fields?.keys ?: emptySet())
+                                }
+                                    ?: it.values,
+                            toastMessage = ConfigUiText(R.string.config_yaml_saved),
                         )
                     }
                 }
@@ -243,7 +289,7 @@ class ConfigViewModel :
                     _uiState.update {
                         it.copy(
                             yamlIsSaving = false,
-                            toastMessage = "Failed to save YAML: ${result.error.message}",
+                            toastMessage = ConfigUiText(R.string.config_save_yaml_failed, listOf(result.error.message)),
                         )
                     }
                 }
@@ -262,90 +308,30 @@ class ConfigViewModel :
             }
 
         var count = 0
+        val updatedValues = state.values?.toMutableMap()
         for ((key, _) in categoryFields) {
             val defaultVal = defaults[key]
             if (defaultVal != null) {
                 pendingChanges[key] = defaultVal
+                updatedValues?.set(key, defaultVal)
                 count++
             }
         }
         _uiState.update {
-            it.copy(modifiedKeys = pendingChanges.keys.toSet())
+            it.copy(
+                values = updatedValues ?: it.values,
+                modifiedKeys = pendingChanges.keys.toSet(),
+            )
         }
 
         if (count > 0) {
             _uiState.update {
-                it.copy(toastMessage = "Reset $count field(s) to defaults (tap Save to apply)")
+                it.copy(toastMessage = ConfigUiText(R.string.config_reset_count, listOf(count)))
             }
         }
     }
 
     override fun clearToast() {
         _uiState.update { it.copy(toastMessage = null) }
-    }
-
-    /** Apply a value at a dot-path like "terminal.backend" into a flat config map. */
-    private fun applyNestedValue(
-        config: Map<String, JsonElement>,
-        dotPath: String,
-        value: JsonElement,
-    ): Map<String, JsonElement> {
-        val parts = dotPath.split(".")
-        if (parts.size == 1) {
-            val mutable = config.toMutableMap()
-            mutable[parts[0]] = value
-            return mutable
-        }
-        val topKey = parts.first()
-        val rest = parts.drop(1).joinToString(".")
-        val topValue = config[topKey]
-        val nestedJson = (topValue as? JsonObject) ?: JsonObject(emptyMap())
-        val updatedNested =
-            applyNestedValue(
-                nestedJson,
-                rest,
-                value,
-            )
-        val nestedObj = JsonObject(updatedNested)
-        val mutable = config.toMutableMap()
-        mutable[topKey] = nestedObj
-        return mutable
-    }
-
-    /** Build a nested JSON changeset from dot-path pending changes. */
-    private fun buildChangeset(changes: Map<String, JsonElement>): Map<String, JsonElement> {
-        val root = mutableMapOf<String, Any>()
-        for ((dotPath, value) in changes) {
-            val parts = dotPath.split(".")
-            var current = root
-            for (i in 0 until parts.size - 1) {
-                val key = parts[i]
-                val existing = current[key]
-                if (existing !is MutableMap<*, *>) {
-                    val newMap = mutableMapOf<String, Any>()
-                    current[key] = newMap
-                    current = newMap
-                } else {
-                    @Suppress("UNCHECKED_CAST")
-                    current = existing as MutableMap<String, Any>
-                }
-            }
-            current[parts.last()] = value
-        }
-
-        fun toJsonObject(map: Map<String, Any>): JsonObject {
-            val content =
-                map.mapValues { (_, v) ->
-                    if (v is Map<*, *>) {
-                        @Suppress("UNCHECKED_CAST")
-                        toJsonObject(v as Map<String, Any>)
-                    } else {
-                        v as JsonElement
-                    }
-                }
-            return JsonObject(content)
-        }
-
-        return toJsonObject(root)
     }
 }
