@@ -525,5 +525,6 @@ class ConfigViewModel :
         loadGeneration += 1
         loadJob?.cancel()
         loadJob = null
+        _uiState.update { it.copy(isLoading = false) }
     }
 }

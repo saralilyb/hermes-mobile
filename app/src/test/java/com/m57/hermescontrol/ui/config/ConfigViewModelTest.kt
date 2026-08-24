@@ -23,8 +23,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import retrofit2.Response
@@ -75,9 +78,11 @@ class ConfigViewModelTest {
             awaitModel(viewModel, "initial")
             viewModel.loadAll()
             withTimeout(5_000) { oldLoadStarted.await() }
+            assertTrue(viewModel.uiState.value.isLoading)
 
             viewModel.updateField("model", JsonPrimitive("submitted"))
             viewModel.saveConfig()
+            assertFalse(viewModel.uiState.value.isLoading)
             awaitModel(viewModel, "saved")
 
             releaseOldLoad.complete(Unit)
@@ -117,9 +122,11 @@ class ConfigViewModelTest {
             withTimeout(5_000) { viewModel.uiState.first { it.yamlText == "model: initial" } }
             viewModel.loadAll()
             withTimeout(5_000) { oldLoadStarted.await() }
+            assertTrue(viewModel.uiState.value.isLoading)
 
             viewModel.setYamlText("model: yaml-saved")
             viewModel.saveYamlConfig()
+            assertFalse(viewModel.uiState.value.isLoading)
             awaitModel(viewModel, "yaml-saved")
 
             releaseOldLoad.complete(Unit)
@@ -128,6 +135,76 @@ class ConfigViewModelTest {
 
             viewModel.loadAll()
             awaitModel(viewModel, "later-refresh")
+        }
+
+    @Test
+    fun `failed form save clears loading after canceling an older load`() =
+        runBlocking {
+            val oldLoadStarted = CompletableDeferred<Unit>()
+            val releaseOldLoad = CompletableDeferred<Unit>()
+            val configCalls = AtomicInteger()
+            stubStableLoadEndpoints()
+            coEvery { mockApi.getConfig() } coAnswers {
+                if (configCalls.incrementAndGet() == 1) {
+                    configResponse("initial")
+                } else {
+                    oldLoadStarted.complete(Unit)
+                    withContext(NonCancellable) { releaseOldLoad.await() }
+                    configResponse("stale")
+                }
+            }
+            coEvery { mockApi.updateConfig(any()) } returns Response.error(500, "save failed".toResponseBody())
+
+            val viewModel = ConfigViewModel()
+            awaitModel(viewModel, "initial")
+            viewModel.loadAll()
+            withTimeout(5_000) { oldLoadStarted.await() }
+            assertTrue(viewModel.uiState.value.isLoading)
+
+            viewModel.updateField("model", JsonPrimitive("submitted"))
+            viewModel.saveConfig()
+            withTimeout(5_000) { viewModel.uiState.first { !it.isSaving } }
+
+            assertFalse(viewModel.uiState.value.isLoading)
+            assertEquals("submitted", viewModel.uiState.value.modelValue())
+            releaseOldLoad.complete(Unit)
+            Unit
+        }
+
+    @Test
+    fun `failed YAML save clears loading after canceling an older load`() =
+        runBlocking {
+            val oldLoadStarted = CompletableDeferred<Unit>()
+            val releaseOldLoad = CompletableDeferred<Unit>()
+            val configCalls = AtomicInteger()
+            stubStableLoadEndpoints()
+            coEvery { mockApi.getConfig() } coAnswers {
+                if (configCalls.incrementAndGet() == 1) {
+                    configResponse("initial")
+                } else {
+                    oldLoadStarted.complete(Unit)
+                    withContext(NonCancellable) { releaseOldLoad.await() }
+                    configResponse("stale")
+                }
+            }
+            coEvery { mockApi.updateRawConfig(any()) } returns Response.error(500, "save failed".toResponseBody())
+
+            val viewModel = ConfigViewModel()
+            awaitModel(viewModel, "initial")
+            viewModel.toggleYamlMode()
+            withTimeout(5_000) { viewModel.uiState.first { it.yamlText == "model: initial" } }
+            viewModel.loadAll()
+            withTimeout(5_000) { oldLoadStarted.await() }
+            assertTrue(viewModel.uiState.value.isLoading)
+
+            viewModel.setYamlText("model: submitted")
+            viewModel.saveYamlConfig()
+            withTimeout(5_000) { viewModel.uiState.first { !it.yamlIsSaving } }
+
+            assertFalse(viewModel.uiState.value.isLoading)
+            assertEquals("model: submitted", viewModel.uiState.value.yamlText)
+            releaseOldLoad.complete(Unit)
+            Unit
         }
 
     private fun stubStableLoadEndpoints() {
