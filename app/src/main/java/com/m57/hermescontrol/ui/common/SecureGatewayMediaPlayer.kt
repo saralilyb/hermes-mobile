@@ -78,6 +78,23 @@ internal suspend fun <T : Any> initializeAndOwnSecureMedia(
     }
 }
 
+internal suspend fun monitorSecureMediaBoundary(
+    dispatcher: CoroutineDispatcher,
+    pollIntervalMillis: Long,
+    isCurrent: () -> Boolean,
+    onCurrent: () -> Unit,
+    onStale: () -> Unit,
+) {
+    while (true) {
+        if (!withContext(dispatcher) { isCurrent() }) {
+            onStale()
+            return
+        }
+        onCurrent()
+        delay(pollIntervalMillis)
+    }
+}
+
 private sealed interface MediaInitialization {
     data object Loading : MediaInitialization
 
@@ -184,8 +201,14 @@ private fun ReadySecureGatewayMediaPlayer(
         }
 
     LaunchedEffect(player, dataSource) {
-        while (true) {
-            if (!dataSource.isCurrent()) {
+        monitorSecureMediaBoundary(
+            dispatcher = Dispatchers.IO,
+            pollIntervalMillis = 250,
+            isCurrent = dataSource::isCurrent,
+            onCurrent = {
+                if (playing && !seeking) position = runCatching { player.currentPosition }.getOrDefault(position)
+            },
+            onStale = {
                 dataSource.close()
                 runCatching { player.stop() }
                 runCatching { player.reset() }
@@ -193,11 +216,8 @@ private fun ReadySecureGatewayMediaPlayer(
                 prepared = false
                 playing = false
                 error = true
-                return@LaunchedEffect
-            }
-            if (playing && !seeking) position = runCatching { player.currentPosition }.getOrDefault(position)
-            delay(250)
-        }
+            },
+        )
     }
 
     DisposableEffect(lifecycleOwner, player) {

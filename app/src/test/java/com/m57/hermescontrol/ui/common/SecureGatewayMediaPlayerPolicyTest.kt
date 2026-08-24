@@ -44,6 +44,75 @@ class SecureGatewayMediaPlayerPolicyTest {
     }
 
     @Test
+    fun `boundary probe runs off caller and stale result terminates playback path`() {
+        val executor = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "secure-media-boundary") }
+        val dispatcher = executor.asCoroutineDispatcher()
+        try {
+            val callerThread = Thread.currentThread().name
+            var probeThread = ""
+            var currentCount = 0
+            var staleCount = 0
+
+            runBlocking {
+                monitorSecureMediaBoundary(
+                    dispatcher = dispatcher,
+                    pollIntervalMillis = 0,
+                    isCurrent = {
+                        probeThread = Thread.currentThread().name
+                        false
+                    },
+                    onCurrent = { currentCount++ },
+                    onStale = { staleCount++ },
+                )
+            }
+
+            assertEquals("secure-media-boundary", probeThread)
+            assertFalse(probeThread == callerThread)
+            assertEquals(0, currentCount)
+            assertEquals(1, staleCount)
+        } finally {
+            dispatcher.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `cancelled boundary monitor cannot publish a completed probe`() =
+        runBlocking {
+            val executor = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "secure-media-boundary") }
+            val dispatcher = executor.asCoroutineDispatcher()
+            try {
+                val probeStarted = CompletableDeferred<Unit>()
+                val finishProbe = CompletableDeferred<Unit>()
+                val callbackCount = AtomicInteger()
+                val job =
+                    launch {
+                        monitorSecureMediaBoundary(
+                            dispatcher = dispatcher,
+                            pollIntervalMillis = 0,
+                            isCurrent = {
+                                probeStarted.complete(Unit)
+                                runBlocking { finishProbe.await() }
+                                true
+                            },
+                            onCurrent = { callbackCount.incrementAndGet() },
+                            onStale = { callbackCount.incrementAndGet() },
+                        )
+                    }
+
+                probeStarted.await()
+                job.cancel()
+                finishProbe.complete(Unit)
+                job.join()
+
+                assertEquals(0, callbackCount.get())
+            } finally {
+                dispatcher.close()
+                executor.shutdownNow()
+            }
+        }
+
+    @Test
     fun `initialized media remains owned when cancelled immediately after publication`() =
         runBlocking {
             val published = CompletableDeferred<Unit>()
