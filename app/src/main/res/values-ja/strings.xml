@@ -575,6 +575,7 @@
     <string name="config_no_matches">一致なし</string>
     <string name="config_invalid_json">無効な JSON</string>
     <string name="config_load_yaml_failed">YAML の読み込みに失敗しました: %1$s</string>
+    <string name="config_load_failed">設定の読み込みに失敗しました: %1$s</string>
     <string name="config_saved">設定を保存しました</string>
     <string name="config_save_failed">保存に失敗しました: %1$s</string>
     <string name="config_yaml_saved">YAML 設定を保存しました</string>

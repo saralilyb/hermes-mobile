@@ -235,8 +235,9 @@ class ConfigFormDataTest {
     @Test
     fun `orderedCategories appends omitted categories and Other deterministically`() {
         assertEquals(
-            listOf("models", "general", "tools", "Other"),
-            orderedCategories(listOf("models", "missing", "models"), listOf("tools", "general", "models"), true),
+            listOf("models", "general", "tools"),
+            orderedCategories(listOf("models", "missing", "models"), listOf("tools", "general", "models"), true)
+                .filterNot(::isSyntheticOtherCategory),
         )
         assertEquals(listOf("general", "tools"), orderedCategories(emptyList(), listOf("tools", "general"), false))
     }
@@ -249,6 +250,36 @@ class ConfigFormDataTest {
         assertEquals(null, parseFiniteNumber("NaN"))
         assertEquals(null, parseFiniteNumber("Infinity"))
         assertEquals(null, parseFiniteNumber("1e999"))
+    }
+
+    @Test
+    fun `parseFiniteNumber preserves long precision boundaries`() {
+        assertEquals(JsonPrimitive(Long.MAX_VALUE), parseFiniteNumber(Long.MAX_VALUE.toString()))
+        assertEquals(JsonPrimitive(Long.MIN_VALUE), parseFiniteNumber(Long.MIN_VALUE.toString()))
+        assertEquals(JsonPrimitive(9_007_199_254_740_993L), parseFiniteNumber("9007199254740993"))
+    }
+
+    @Test
+    fun `refresh reapplies pending edits and save acknowledgement preserves newer edits`() {
+        val pending = mutableMapOf("model" to JsonPrimitive("submitted"), "theme" to JsonPrimitive("dark"))
+        val submitted = pending.toMap()
+        pending["model"] = JsonPrimitive("newer")
+
+        acknowledgeSubmittedChanges(pending, submitted)
+
+        assertEquals(mapOf("model" to JsonPrimitive("newer")), pending)
+        assertEquals(
+            mapOf("model" to JsonPrimitive("newer"), "server" to JsonPrimitive(true)),
+            reapplyPendingChanges(mapOf("model" to JsonPrimitive("server"), "server" to JsonPrimitive(true)), pending),
+        )
+    }
+
+    @Test
+    fun `synthetic Other category cannot collide with server Other category`() {
+        val categories = orderedCategories(listOf("Other"), listOf("Other"), hasUncoveredPaths = true)
+        assertEquals("Other", categories.first())
+        assertTrue(isSyntheticOtherCategory(categories.last()))
+        assertFalse(categories.first() == categories.last())
     }
 
     @Test

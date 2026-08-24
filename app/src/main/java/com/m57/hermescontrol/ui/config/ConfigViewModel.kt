@@ -12,6 +12,7 @@ import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +36,7 @@ data class ConfigUiState(
     val path: String? = null,
     val yamlText: String? = null,
     val modifiedKeys: Set<String> = emptySet(),
+    val invalidKeys: Set<String> = emptySet(),
     val activeCategory: String = "",
     val searchQuery: String = "",
     val yamlMode: Boolean = false,
@@ -56,68 +58,94 @@ class ConfigViewModel :
     val uiState: StateFlow<ConfigUiState> = _uiState.asStateFlow()
 
     private val pendingChanges = mutableMapOf<String, JsonElement>()
+    private var loadJob: Job? = null
+    private var loadGeneration = 0L
 
     init {
         loadAll()
     }
 
     fun loadAll() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            try {
-                coroutineScope {
-                    val configDeferred = async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfig() } }
-                    val schemaDeferred = async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfigSchema() } }
-                    val defaultsDeferred =
-                        async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfigDefaults() } }
-                    val rawDeferred = async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getRawConfig() } }
+        val generation = ++loadGeneration
+        loadJob?.cancel()
+        loadJob =
+            viewModelScope.launch {
+                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+                try {
+                    coroutineScope {
+                        val configDeferred = async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfig() } }
+                        val schemaDeferred =
+                            async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfigSchema() } }
+                        val defaultsDeferred =
+                            async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfigDefaults() } }
+                        val rawDeferred = async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getRawConfig() } }
 
-                    val configResult = configDeferred.await()
-                    val schemaResult = schemaDeferred.await()
-                    val defaultsResult = defaultsDeferred.await()
-                    val rawResult = rawDeferred.await()
+                        val configResult = configDeferred.await()
+                        val schemaResult = schemaDeferred.await()
+                        val defaultsResult = defaultsDeferred.await()
+                        val rawResult = rawDeferred.await()
 
-                    if (configResult is NetworkResult.Success) {
-                        val schema = (schemaResult as? NetworkResult.Success)?.data
-                        val values = flattenConfig(configResult.data, schema?.fields?.keys ?: emptySet())
-                        val defaults = (defaultsResult as? NetworkResult.Success)?.data
-                        val path = (rawResult as? NetworkResult.Success)?.data?.path
-                        val categories =
-                            orderedCategories(
-                                categoryOrder = schema?.category_order.orEmpty(),
-                                schemaCategories = schema?.fields?.values?.map { it.category ?: "general" }.orEmpty(),
-                                hasUncoveredPaths =
-                                    collectUncoveredPaths(values, schema?.fields?.keys ?: emptySet()).isNotEmpty(),
-                            )
+                        if (generation != loadGeneration) return@coroutineScope
+                        if (
+                            configResult is NetworkResult.Success &&
+                            schemaResult is NetworkResult.Success
+                        ) {
+                            val schema = schemaResult.data
+                            val values = flattenConfig(configResult.data, schema.fields.keys)
+                            val defaults = (defaultsResult as? NetworkResult.Success)?.data
+                            val path = (rawResult as? NetworkResult.Success)?.data?.path
+                            val categories =
+                                orderedCategories(
+                                    categoryOrder = schema.category_order,
+                                    schemaCategories = schema.fields.values.map { it.category ?: "general" },
+                                    hasUncoveredPaths =
+                                        collectUncoveredPaths(values, schema.fields.keys).isNotEmpty(),
+                                )
 
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                values = values,
-                                schema = schema,
-                                defaults = defaults,
-                                uncoveredPaths =
-                                    collectUncoveredPaths(
-                                        values,
-                                        schema?.fields?.keys ?: emptySet(),
-                                    ),
-                                path = path,
-                                activeCategory = categories.firstOrNull().orEmpty(),
-                            )
-                        }
-                    } else {
-                        val errorMsg = (configResult as? NetworkResult.Failure)?.error?.message ?: "Unknown error"
-                        _uiState.update {
-                            it.copy(isLoading = false, errorMessage = "Failed to load config: $errorMsg")
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    values = reapplyPendingChanges(values, pendingChanges),
+                                    schema = schema,
+                                    defaults = defaults,
+                                    uncoveredPaths =
+                                        collectUncoveredPaths(
+                                            values,
+                                            schema.fields.keys,
+                                        ),
+                                    path = path,
+                                    activeCategory =
+                                        it.activeCategory.takeIf(categories::contains)
+                                            ?: categories.firstOrNull().orEmpty(),
+                                    modifiedKeys = pendingChanges.keys.toSet(),
+                                )
+                            }
+                        } else {
+                            val errorMsg =
+                                (
+                                    (configResult as? NetworkResult.Failure)
+                                        ?: (schemaResult as? NetworkResult.Failure)
+                                )?.error?.message.orEmpty()
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    errorMessage = errorMsg,
+                                    toastMessage = ConfigUiText(R.string.config_load_failed, listOf(errorMsg)),
+                                )
+                            }
                         }
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(isLoading = false, errorMessage = "Failed to load config: ${e.message}")
+                } catch (e: Exception) {
+                    if (generation != loadGeneration) return@launch
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = e.message.orEmpty(),
+                            toastMessage = ConfigUiText(R.string.config_load_failed, listOf(e.message.orEmpty())),
+                        )
+                    }
                 }
             }
-        }
     }
 
     fun updateField(
@@ -133,6 +161,15 @@ class ConfigViewModel :
         }
     }
 
+    fun setFieldValidity(
+        key: String,
+        isValid: Boolean,
+    ) {
+        _uiState.update {
+            it.copy(invalidKeys = if (isValid) it.invalidKeys - key else it.invalidKeys + key)
+        }
+    }
+
     /** Reset ONE field to its default value (pending until Save). */
     fun resetField(key: String) {
         val state = _uiState.value
@@ -142,6 +179,7 @@ class ConfigViewModel :
             it.copy(
                 values = it.values?.toMutableMap()?.apply { this[key] = defaultVal },
                 modifiedKeys = pendingChanges.keys.toSet(),
+                invalidKeys = it.invalidKeys - key,
             )
         }
     }
@@ -154,6 +192,7 @@ class ConfigViewModel :
             it.copy(
                 values = it.values?.toMutableMap()?.apply { this[key] = blank },
                 modifiedKeys = pendingChanges.keys.toSet(),
+                invalidKeys = it.invalidKeys - key,
             )
         }
     }
@@ -209,10 +248,11 @@ class ConfigViewModel :
     }
 
     fun saveConfig() {
-        if (pendingChanges.isEmpty()) return
+        if (pendingChanges.isEmpty() || _uiState.value.isSaving || _uiState.value.invalidKeys.isNotEmpty()) return
+        val submitted = pendingChanges.toMap()
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
-            val changeset = nestConfigChanges(pendingChanges)
+            val changeset = nestConfigChanges(submitted)
             val result =
                 withContext(Dispatchers.IO) {
                     safeApiCall {
@@ -223,20 +263,24 @@ class ConfigViewModel :
                 }
             when (result) {
                 is NetworkResult.Success -> {
-                    pendingChanges.clear()
+                    acknowledgeSubmittedChanges(pendingChanges, submitted)
                     val configResult =
                         withContext(Dispatchers.IO) {
                             safeApiCall { ApiClient.hermesApi.getConfig() }
+                        }
+                    val refreshed =
+                        (configResult as? NetworkResult.Success)?.data?.let {
+                            flattenConfig(it, uiState.value.schema?.fields?.keys ?: emptySet())
                         }
                     _uiState.update {
                         it.copy(
                             isSaving = false,
                             values =
-                                (configResult as? NetworkResult.Success)?.data?.let {
-                                    flattenConfig(it, uiState.value.schema?.fields?.keys ?: emptySet())
-                                }
-                                    ?: it.values,
-                            modifiedKeys = emptySet(),
+                                refreshed?.let {
+                                        server ->
+                                    reapplyPendingChanges(server, pendingChanges)
+                                } ?: it.values,
+                            modifiedKeys = pendingChanges.keys.toSet(),
                             toastMessage = ConfigUiText(R.string.config_saved),
                         )
                     }
@@ -255,6 +299,7 @@ class ConfigViewModel :
     }
 
     fun saveYamlConfig() {
+        if (_uiState.value.yamlIsSaving) return
         val yamlText = _uiState.value.yamlText ?: return
         _uiState.update { it.copy(yamlIsSaving = true) }
         viewModelScope.launch {
@@ -268,6 +313,8 @@ class ConfigViewModel :
                 }
             when (result) {
                 is NetworkResult.Success -> {
+                    // Raw YAML is authoritative; discard stale form edits only after success.
+                    pendingChanges.clear()
                     val configResult =
                         withContext(Dispatchers.IO) {
                             safeApiCall { ApiClient.hermesApi.getConfig() }
@@ -280,6 +327,8 @@ class ConfigViewModel :
                                     flattenConfig(it, uiState.value.schema?.fields?.keys ?: emptySet())
                                 }
                                     ?: it.values,
+                            modifiedKeys = emptySet(),
+                            invalidKeys = emptySet(),
                             toastMessage = ConfigUiText(R.string.config_yaml_saved),
                         )
                     }

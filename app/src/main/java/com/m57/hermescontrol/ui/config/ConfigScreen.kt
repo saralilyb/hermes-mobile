@@ -1,6 +1,5 @@
 package com.m57.hermescontrol.ui.config
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -84,10 +83,6 @@ fun ConfigScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    LaunchedEffect(Unit) {
-        viewModel.loadAll()
-    }
-
     ToastEffect(
         toastMessage = state.toastMessage?.let { stringResource(it.resourceId, *it.args.toTypedArray()) },
         onClearToast = viewModel::clearToast,
@@ -100,7 +95,10 @@ fun ConfigScreen(
         onRefresh = { viewModel.loadAll() },
         actions = {
             if (!state.yamlMode && state.modifiedKeys.isNotEmpty()) {
-                IconButton(onClick = { viewModel.saveConfig() }) {
+                IconButton(
+                    onClick = { viewModel.saveConfig() },
+                    enabled = !state.isSaving && state.invalidKeys.isEmpty(),
+                ) {
                     Icon(
                         imageVector = Icons.Filled.Save,
                         contentDescription = stringResource(R.string.config_save_changes),
@@ -116,7 +114,7 @@ fun ConfigScreen(
 
             state.errorMessage != null && state.values == null -> {
                 ErrorState(
-                    message = state.errorMessage ?: "",
+                    message = stringResource(R.string.config_load_failed, state.errorMessage.orEmpty()),
                     onRetry = { viewModel.loadAll() },
                     modifier = Modifier.padding(paddingValues),
                 )
@@ -129,6 +127,7 @@ fun ConfigScreen(
                     onSearchQueryChange = viewModel::setSearchQuery,
                     onCategoryChange = viewModel::setActiveCategory,
                     onFieldChange = viewModel::updateField,
+                    onFieldValidityChange = viewModel::setFieldValidity,
                     onResetField = viewModel::resetField,
                     onClearField = viewModel::clearField,
                     onSave = viewModel::saveConfig,
@@ -149,6 +148,7 @@ private fun ConfigContent(
     onSearchQueryChange: (String) -> Unit,
     onCategoryChange: (String) -> Unit,
     onFieldChange: (String, JsonElement) -> Unit,
+    onFieldValidityChange: (String, Boolean) -> Unit,
     onResetField: (String) -> Unit,
     onClearField: (String) -> Unit,
     onSave: () -> Unit,
@@ -227,7 +227,7 @@ private fun ConfigContent(
                         )
                         Button(
                             onClick = onSave,
-                            enabled = !state.isSaving,
+                            enabled = !state.isSaving && state.invalidKeys.isEmpty(),
                         ) {
                             if (state.isSaving) {
                                 CircularProgressIndicator(
@@ -270,9 +270,11 @@ private fun ConfigContent(
                 activeCategory = state.activeCategory,
                 searchQuery = state.searchQuery,
                 modifiedKeys = state.modifiedKeys,
+                invalidKeys = state.invalidKeys,
                 isSaving = state.isSaving,
                 onCategoryChange = onCategoryChange,
                 onFieldChange = onFieldChange,
+                onFieldValidityChange = onFieldValidityChange,
                 onResetField = onResetField,
                 onClearField = onClearField,
                 onSave = onSave,
@@ -349,9 +351,11 @@ private fun FormEditor(
     activeCategory: String,
     searchQuery: String,
     modifiedKeys: Set<String>,
+    invalidKeys: Set<String>,
     isSaving: Boolean,
     onCategoryChange: (String) -> Unit,
     onFieldChange: (String, JsonElement) -> Unit,
+    onFieldValidityChange: (String, Boolean) -> Unit,
     onResetField: (String) -> Unit,
     onClearField: (String) -> Unit,
     onSave: () -> Unit,
@@ -360,11 +364,12 @@ private fun FormEditor(
     if (schema == null || values == null) return
 
     val isSearching = searchQuery.isNotBlank()
+    val otherCategory = remember { orderedCategories(emptyList(), emptyList(), true).single() }
     val categoryCounts =
-        remember(schema) {
+        remember(schema, uncoveredPaths) {
             schema.fields.values
                 .groupingBy { it.category ?: "general" }
-                .eachCount()
+                .eachCount() + (otherCategory to uncoveredPaths.size)
         }
 
     // Every row is a flat dot-path with an O(1) value lookup — no nested walks.
@@ -387,7 +392,7 @@ private fun FormEditor(
                 rows.filter { rowMatchesQuery(it, searchQuery) }
             } else {
                 rows.filter { row ->
-                    if (activeCategory == "Other") {
+                    if (isSyntheticOtherCategory(activeCategory)) {
                         row.isUncovered
                     } else {
                         !row.isUncovered && row.category == activeCategory
@@ -400,7 +405,7 @@ private fun FormEditor(
         remember(schema, uncoveredPaths, categoryCounts) {
             orderedCategories(
                 categoryOrder = schema.category_order,
-                schemaCategories = categoryCounts.keys,
+                schemaCategories = categoryCounts.keys - otherCategory,
                 hasUncoveredPaths = uncoveredPaths.isNotEmpty(),
             )
         }
@@ -432,9 +437,9 @@ private fun FormEditor(
             }
         }
 
-        if (activeCategory == "Other" && !isSearching) {
+        if (isSyntheticOtherCategory(activeCategory) && !isSearching) {
             // Non-schema config values — read-only cards
-            items(uncoveredPaths, key = { it }) { dotPath ->
+            items(uncoveredPaths, key = { "uncovered:$it" }) { dotPath ->
                 Card(
                     modifier =
                         Modifier
@@ -461,13 +466,14 @@ private fun FormEditor(
                 }
             }
         } else {
-            items(visibleRows, key = { it.key }) { row ->
+            items(visibleRows, key = { "field:${it.key}" }) { row ->
                 ConfigFieldCard(
                     row = row,
                     defaultValue = defaults?.get(row.key),
                     isModified = row.key in modifiedKeys,
                     showCategoryChip = isSearching,
                     onChange = { onFieldChange(row.key, it) },
+                    onValidityChange = { onFieldValidityChange(row.key, it) },
                     onReset = { onResetField(row.key) },
                     onClear = { onClearField(row.key) },
                 )
@@ -500,7 +506,7 @@ private fun FormEditor(
                 Button(
                     onClick = onSave,
                     modifier = Modifier.weight(1f),
-                    enabled = modifiedKeys.isNotEmpty() && !isSaving,
+                    enabled = modifiedKeys.isNotEmpty() && !isSaving && invalidKeys.isEmpty(),
                 ) {
                     if (isSaving) {
                         CircularProgressIndicator(
@@ -559,7 +565,12 @@ private fun ConfigTabs(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            text = category.replaceFirstChar { it.uppercase() },
+                            text =
+                                if (isSyntheticOtherCategory(category)) {
+                                    "Other"
+                                } else {
+                                    category.replaceFirstChar { it.uppercase() }
+                                },
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -578,6 +589,7 @@ private fun ConfigFieldCard(
     isModified: Boolean,
     showCategoryChip: Boolean,
     onChange: (JsonElement) -> Unit,
+    onValidityChange: (Boolean) -> Unit,
     onReset: () -> Unit,
     onClear: () -> Unit,
 ) {
@@ -737,6 +749,7 @@ private fun ConfigFieldCard(
                         value = row.value,
                         label = description,
                         onChange = onChange,
+                        onValidityChange = onValidityChange,
                     )
                 }
 
@@ -747,6 +760,7 @@ private fun ConfigFieldCard(
                         label = description,
                         schemaType = field.type,
                         onChange = onChange,
+                        onValidityChange = onValidityChange,
                     )
                 }
 
@@ -773,16 +787,16 @@ private fun CompactIconButton(
     contentDescription: String,
     onClick: () -> Unit,
 ) {
-    Icon(
-        imageVector = icon,
-        contentDescription = contentDescription,
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier =
-            Modifier
-                .padding(start = 4.dp)
-                .size(18.dp)
-                .clickable(onClick = onClick),
-    )
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(48.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 /**
@@ -892,6 +906,7 @@ private fun NumberField(
     value: JsonElement?,
     label: String,
     onChange: (JsonElement) -> Unit,
+    onValidityChange: (Boolean) -> Unit,
 ) {
     var text by remember(key) { mutableStateOf((value as? JsonPrimitive)?.content ?: "") }
     var hasFocus by remember { mutableStateOf(false) }
@@ -904,16 +919,20 @@ private fun NumberField(
         value = text,
         onValueChange = { newText ->
             text = newText
-            parseFiniteNumber(newText)?.let(onChange)
+            val parsed = parseFiniteNumber(newText)
+            onValidityChange(parsed != null)
+            parsed?.let(onChange)
         },
         modifier =
             Modifier
                 .fillMaxWidth()
                 .onFocusChanged {
                     hasFocus = it.isFocused
-                    if (!it.isFocused) text = (value as? JsonPrimitive)?.content ?: ""
+                    if (!it.isFocused && parseFiniteNumber(text) != null) {
+                        text = (value as? JsonPrimitive)?.content ?: ""
+                    }
                 },
-        isError = text.isNotEmpty() && parseFiniteNumber(text) == null,
+        isError = parseFiniteNumber(text) == null,
         label = { Text(label) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         singleLine = true,
@@ -932,6 +951,7 @@ private fun JsonField(
     label: String,
     schemaType: String,
     onChange: (JsonElement) -> Unit,
+    onValidityChange: (Boolean) -> Unit,
 ) {
     var text by remember(key) { mutableStateOf(value?.let(::jsonText) ?: "") }
     var hasFocus by remember { mutableStateOf(false) }
@@ -946,7 +966,8 @@ private fun JsonField(
         onValueChange = { newText ->
             text = newText
             val parsed = parseStructuredJson(newText, schemaType)
-            invalid = newText.isNotBlank() && parsed == null
+            invalid = parsed == null
+            onValidityChange(!invalid)
             if (parsed != null && newText.isNotBlank()) {
                 onChange(parsed)
             }
@@ -958,8 +979,7 @@ private fun JsonField(
                 .onFocusChanged {
                     hasFocus = it.isFocused
                     if (!it.isFocused) {
-                        invalid = false
-                        text = value?.let(::jsonText) ?: ""
+                        if (!invalid) text = value?.let(::jsonText) ?: ""
                     }
                 },
         isError = invalid,

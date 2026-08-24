@@ -575,6 +575,7 @@
     <string name="config_no_matches">无匹配项</string>
     <string name="config_invalid_json">JSON 无效</string>
     <string name="config_load_yaml_failed">加载 YAML 失败：%1$s</string>
+    <string name="config_load_failed">加载配置失败：%1$s</string>
     <string name="config_saved">配置已保存</string>
     <string name="config_save_failed">保存失败：%1$s</string>
     <string name="config_yaml_saved">YAML 配置已保存</string>

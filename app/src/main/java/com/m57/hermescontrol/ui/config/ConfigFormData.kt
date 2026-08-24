@@ -6,6 +6,11 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+/** Internal category ID that cannot collide with a server-provided category. */
+private const val OTHER_CATEGORY_ID = "\u0000config-other"
+
+fun isSyntheticOtherCategory(category: String): Boolean = category == OTHER_CATEGORY_ID
+
 /**
  * One renderable row of the config form: a schema-driven field or an
  * uncovered ("Other") config path. All rows are FLAT dot-paths — the nested
@@ -23,7 +28,7 @@ data class ConfigRow(
     /** Search/display text of the current value. */
     val valueText: String = value?.let(::jsonText) ?: ""
 
-    val category: String = if (field == null) "Other" else field.category ?: "general"
+    val category: String = if (field == null) OTHER_CATEGORY_ID else field.category ?: "general"
 
     val isUncovered: Boolean = field == null
 }
@@ -114,18 +119,33 @@ fun orderedCategories(
     val available = schemaCategories.toSet()
     val ordered = categoryOrder.filter { it in available }.distinct().toMutableList()
     ordered += (available - ordered.toSet()).sorted()
-    if (hasUncoveredPaths) ordered += "Other"
+    if (hasUncoveredPaths) ordered += OTHER_CATEGORY_ID
     return ordered
 }
 
 /** Parse only finite JSON numbers; invalid text remains editor-local state. */
 fun parseFiniteNumber(text: String): JsonPrimitive? {
+    text.toLongOrNull()?.let { return JsonPrimitive(it) }
     val value = text.toDoubleOrNull()?.takeIf(Double::isFinite) ?: return null
     return if (value >= Long.MIN_VALUE && value <= Long.MAX_VALUE && value == value.toLong().toDouble()) {
         JsonPrimitive(value.toLong())
     } else {
         JsonPrimitive(value)
     }
+}
+
+/** Reapply form edits over a newly fetched server snapshot. */
+fun reapplyPendingChanges(
+    serverValues: Map<String, JsonElement>,
+    pendingChanges: Map<String, JsonElement>,
+): Map<String, JsonElement> = serverValues + pendingChanges
+
+/** Remove only submitted entries that were not edited again while saving. */
+fun acknowledgeSubmittedChanges(
+    pendingChanges: MutableMap<String, JsonElement>,
+    submitted: Map<String, JsonElement>,
+) {
+    submitted.forEach { (key, value) -> pendingChanges.remove(key, value) }
 }
 
 /** Parse JSON only when its shape matches the declared schema editor type. */

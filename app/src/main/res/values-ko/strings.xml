@@ -575,6 +575,7 @@
     <string name="config_no_matches">일치 항목 없음</string>
     <string name="config_invalid_json">잘못된 JSON</string>
     <string name="config_load_yaml_failed">YAML을 불러오지 못했습니다: %1$s</string>
+    <string name="config_load_failed">설정을 불러오지 못했습니다: %1$s</string>
     <string name="config_saved">설정을 저장했습니다</string>
     <string name="config_save_failed">저장 실패: %1$s</string>
     <string name="config_yaml_saved">YAML 설정을 저장했습니다</string>
