@@ -9,10 +9,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class SecureGatewayMediaPlayerPolicyTest {
     @Test
@@ -26,17 +29,21 @@ class SecureGatewayMediaPlayerPolicyTest {
 
     @Test
     fun `media initialization runs on the supplied background dispatcher`() {
-        val executor = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "secure-media-init") }
+        val executorThread = AtomicReference<Thread>()
+        val executor =
+            Executors.newSingleThreadExecutor { runnable ->
+                Thread(runnable, "secure-media-init").also(executorThread::set)
+            }
         val dispatcher = executor.asCoroutineDispatcher()
         try {
-            val callerThread = Thread.currentThread().name
+            val callerThread = Thread.currentThread()
             val initializationThread =
                 runBlocking {
-                    initializeSecureMedia(dispatcher) { Thread.currentThread().name }
+                    initializeSecureMedia(dispatcher) { Thread.currentThread() }
                 }
 
-            assertEquals("secure-media-init", initializationThread)
-            assertFalse(initializationThread == callerThread)
+            assertSame(executorThread.get(), initializationThread)
+            assertNotSame(callerThread, initializationThread)
         } finally {
             dispatcher.close()
             executor.shutdownNow()
@@ -45,11 +52,15 @@ class SecureGatewayMediaPlayerPolicyTest {
 
     @Test
     fun `boundary probe runs off caller and stale result terminates playback path`() {
-        val executor = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "secure-media-boundary") }
+        val executorThread = AtomicReference<Thread>()
+        val executor =
+            Executors.newSingleThreadExecutor { runnable ->
+                Thread(runnable, "secure-media-boundary").also(executorThread::set)
+            }
         val dispatcher = executor.asCoroutineDispatcher()
         try {
-            val callerThread = Thread.currentThread().name
-            var probeThread = ""
+            val callerThread = Thread.currentThread()
+            var probeThread: Thread? = null
             var currentCount = 0
             var staleCount = 0
 
@@ -58,7 +69,7 @@ class SecureGatewayMediaPlayerPolicyTest {
                     dispatcher = dispatcher,
                     pollIntervalMillis = 0,
                     isCurrent = {
-                        probeThread = Thread.currentThread().name
+                        probeThread = Thread.currentThread()
                         false
                     },
                     onCurrent = { currentCount++ },
@@ -66,8 +77,8 @@ class SecureGatewayMediaPlayerPolicyTest {
                 )
             }
 
-            assertEquals("secure-media-boundary", probeThread)
-            assertFalse(probeThread == callerThread)
+            assertSame(executorThread.get(), probeThread)
+            assertNotSame(callerThread, probeThread)
             assertEquals(0, currentCount)
             assertEquals(1, staleCount)
         } finally {
