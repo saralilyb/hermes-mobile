@@ -566,6 +566,28 @@
     <string name="config_action_reset">초기화</string>
     <string name="config_action_save">저장</string>
     <string name="config_action_save_yaml">YAML 저장</string>
+    <string name="config_save_changes">변경사항 저장</string>
+    <string name="config_path">경로: %1$s</string>
+    <string name="config_mode_form">양식</string>
+    <string name="config_mode_yaml">YAML</string>
+    <string name="config_yaml_editor_label">YAML 구성</string>
+    <string name="config_category_other">기타</string>
+    <string name="config_search_placeholder">설정 검색…</string>
+    <string name="config_pending_changes">대기 중인 변경사항 %1$d개</string>
+    <string name="config_search_results">결과 %1$d개</string>
+    <string name="config_no_search_results">검색과 일치하는 설정이 없습니다.</string>
+    <string name="config_no_category_fields">이 카테고리에 필드가 없습니다.</string>
+    <string name="config_reset_default">기본값으로 재설정</string>
+    <string name="config_clear_value">값 지우기</string>
+    <string name="config_no_matches">일치 항목 없음</string>
+    <string name="config_invalid_json">잘못된 JSON</string>
+    <string name="config_load_yaml_failed">YAML을 불러오지 못했습니다: %1$s</string>
+    <string name="config_load_failed">설정을 불러오지 못했습니다: %1$s</string>
+    <string name="config_saved">설정을 저장했습니다</string>
+    <string name="config_save_failed">저장 실패: %1$s</string>
+    <string name="config_yaml_saved">YAML 설정을 저장했습니다</string>
+    <string name="config_save_yaml_failed">YAML 저장 실패: %1$s</string>
+    <string name="config_reset_count">%1$d개 필드를 기본값으로 재설정했습니다(저장을 눌러 적용)</string>
 
     <!-- Profiles Screen -->
     <string name="profiles_empty_title">프로필이 없습니다</string>

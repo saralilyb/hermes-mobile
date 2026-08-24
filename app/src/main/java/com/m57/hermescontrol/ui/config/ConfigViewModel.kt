@@ -1,15 +1,20 @@
 package com.m57.hermescontrol.ui.config
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.ConfigSchemaResponse
 import com.m57.hermescontrol.data.model.ConfigUpdateRequest
+import com.m57.hermescontrol.data.model.RawConfigResponse
+import com.m57.hermescontrol.data.model.SchemaField
 import com.m57.hermescontrol.data.model.UpdateRawConfigRequest
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,25 +24,163 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 data class ConfigUiState(
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
-    val config: Map<String, JsonElement>? = null,
+    /** Flattened dot-path → value map (see [flattenConfig]). */
+    val values: Map<String, JsonElement>? = null,
     val schema: ConfigSchemaResponse? = null,
     val defaults: Map<String, JsonElement>? = null,
+    /** Config paths present but not covered by the schema (the "Other" tab). */
+    val uncoveredPaths: List<String> = emptyList(),
     val path: String? = null,
     val yamlText: String? = null,
     val modifiedKeys: Set<String> = emptySet(),
+    val invalidKeys: Set<String> = emptySet(),
+    /** Uncommitted editor text must outlive LazyColumn viewport disposal. */
+    val fieldDrafts: Map<String, ConfigFieldDraft> = emptyMap(),
     val activeCategory: String = "",
     val searchQuery: String = "",
     val yamlMode: Boolean = false,
     val yamlIsLoading: Boolean = false,
     val yamlIsSaving: Boolean = false,
+    val yamlLoadError: String? = null,
     val errorMessage: String? = null,
-    val toastMessage: String? = null,
+    val toastMessage: ConfigUiText? = null,
 )
+
+data class ConfigFieldDraft(
+    val text: String,
+    val isValid: Boolean,
+)
+
+internal fun ConfigUiState.withFieldDraft(
+    key: String,
+    text: String,
+    isValid: Boolean,
+): ConfigUiState =
+    copy(
+        fieldDrafts = fieldDrafts + (key to ConfigFieldDraft(text, isValid)),
+        invalidKeys = if (isValid) invalidKeys - key else invalidKeys + key,
+    )
+
+internal fun ConfigUiState.withoutFieldDraft(key: String): ConfigUiState =
+    copy(fieldDrafts = fieldDrafts - key, invalidKeys = invalidKeys - key)
+
+internal data class ReconciledEditorDrafts(
+    val pendingChanges: Map<String, JsonElement>,
+    val fieldDrafts: Map<String, ConfigFieldDraft>,
+    val invalidKeys: Set<String>,
+)
+
+/**
+ * The schema properties that determine which typed values an editor accepts.
+ * Description, category, and searchable affect presentation only. Clearable
+ * exposes a separate action, but does not change parsing of an existing draft.
+ */
+private data class EditorContract(
+    val type: String,
+    val options: Set<String>,
+)
+
+private fun SchemaField.editorContract(): EditorContract =
+    EditorContract(
+        type = type,
+        options = options.orEmpty().toSet(),
+    )
+
+/** Keep uncommitted editor state only while its schema editor contract is stable. */
+internal fun reconcileEditorDrafts(
+    pendingChanges: Map<String, JsonElement>,
+    fieldDrafts: Map<String, ConfigFieldDraft>,
+    previousFields: Map<String, SchemaField>,
+    refreshedFields: Map<String, SchemaField>,
+): ReconciledEditorDrafts {
+    val compatibleKeys =
+        refreshedFields.keys.filterTo(mutableSetOf()) { key ->
+            val previous = previousFields[key] ?: return@filterTo false
+            previous.editorContract() == refreshedFields.getValue(key).editorContract()
+        }
+    val retainedDrafts = fieldDrafts.filterKeys(compatibleKeys::contains)
+    return ReconciledEditorDrafts(
+        pendingChanges = pendingChanges.filterKeys(compatibleKeys::contains),
+        fieldDrafts = retainedDrafts,
+        invalidKeys = retainedDrafts.filterValues { !it.isValid }.keys,
+    )
+}
+
+data class ConfigUiText(
+    @StringRes val resourceId: Int,
+    val args: List<Any> = emptyList(),
+)
+
+internal sealed interface RawYamlLoadResult {
+    data class Loaded(val yaml: String) : RawYamlLoadResult
+
+    data class Error(val message: String) : RawYamlLoadResult
+}
+
+internal fun rawYamlLoadResult(response: RawConfigResponse): RawYamlLoadResult =
+    response.yaml?.let(RawYamlLoadResult::Loaded)
+        ?: RawYamlLoadResult.Error("Raw config response did not include YAML")
+
+internal data class StructuredRefreshAfterYamlSave(
+    val values: Map<String, JsonElement>?,
+    val uncoveredPaths: List<String>? = null,
+    val activeCategory: String? = null,
+    val errorMessage: String?,
+)
+
+internal data class ReconciledStructuredConfig(
+    val values: Map<String, JsonElement>,
+    val uncoveredPaths: List<String>,
+    val activeCategory: String,
+)
+
+internal fun reconcileStructuredConfig(
+    config: Map<String, JsonElement>,
+    schema: ConfigSchemaResponse,
+    activeCategory: String,
+): ReconciledStructuredConfig {
+    val values = flattenConfig(config, schema.fields.keys)
+    val uncoveredPaths = collectUncoveredPaths(values, schema.fields.keys)
+    val categories =
+        orderedCategories(
+            categoryOrder = schema.category_order,
+            schemaCategories = schema.fields.values.map { it.category ?: "general" },
+            hasUncoveredPaths = uncoveredPaths.isNotEmpty(),
+        )
+    return ReconciledStructuredConfig(
+        values = values,
+        uncoveredPaths = uncoveredPaths,
+        activeCategory = activeCategory.takeIf(categories::contains) ?: categories.firstOrNull().orEmpty(),
+    )
+}
+
+internal fun structuredRefreshAfterYamlSave(
+    result: NetworkResult<Map<String, JsonElement>>,
+    schema: ConfigSchemaResponse,
+    activeCategory: String,
+): StructuredRefreshAfterYamlSave =
+    when (result) {
+        is NetworkResult.Success -> {
+            val reconciled = reconcileStructuredConfig(result.data, schema, activeCategory)
+            StructuredRefreshAfterYamlSave(
+                values = reconciled.values,
+                uncoveredPaths = reconciled.uncoveredPaths,
+                activeCategory = reconciled.activeCategory,
+                errorMessage = null,
+            )
+        }
+
+        is NetworkResult.Failure ->
+            StructuredRefreshAfterYamlSave(
+                values = null,
+                errorMessage = result.error.message,
+            )
+    }
 
 class ConfigViewModel :
     ViewModel(),
@@ -46,120 +189,244 @@ class ConfigViewModel :
     val uiState: StateFlow<ConfigUiState> = _uiState.asStateFlow()
 
     private val pendingChanges = mutableMapOf<String, JsonElement>()
+    private var loadJob: Job? = null
+    private var loadGeneration = 0L
 
     init {
         loadAll()
     }
 
     fun loadAll() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            try {
-                coroutineScope {
-                    val configDeferred = async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfig() } }
-                    val schemaDeferred = async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfigSchema() } }
-                    val defaultsDeferred =
-                        async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfigDefaults() } }
-                    val rawDeferred = async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getRawConfig() } }
+        val current = _uiState.value
+        if (current.isSaving || current.yamlIsSaving) return
+        val generation = ++loadGeneration
+        loadJob?.cancel()
+        loadJob =
+            viewModelScope.launch {
+                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+                try {
+                    coroutineScope {
+                        val configDeferred = async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfig() } }
+                        val schemaDeferred =
+                            async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfigSchema() } }
+                        val defaultsDeferred =
+                            async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfigDefaults() } }
+                        val rawDeferred = async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getRawConfig() } }
 
-                    val configResult = configDeferred.await()
-                    val schemaResult = schemaDeferred.await()
-                    val defaultsResult = defaultsDeferred.await()
-                    val rawResult = rawDeferred.await()
+                        val configResult = configDeferred.await()
+                        val schemaResult = schemaDeferred.await()
+                        val defaultsResult = defaultsDeferred.await()
+                        val rawResult = rawDeferred.await()
 
-                    if (configResult is NetworkResult.Success) {
-                        val configData = configResult.data
-                        val schema = (schemaResult as? NetworkResult.Success)?.data
-                        val defaults = (defaultsResult as? NetworkResult.Success)?.data
-                        val path = (rawResult as? NetworkResult.Success)?.data?.path
+                        if (generation != loadGeneration) return@coroutineScope
+                        if (
+                            configResult is NetworkResult.Success &&
+                            schemaResult is NetworkResult.Success
+                        ) {
+                            val schema = schemaResult.data
+                            val reconciled =
+                                reconcileStructuredConfig(
+                                    configResult.data,
+                                    schema,
+                                    _uiState.value.activeCategory,
+                                )
+                            val values = reconciled.values
+                            val defaults =
+                                (defaultsResult as? NetworkResult.Success)?.data?.let {
+                                    flattenConfig(it, schema.fields.keys)
+                                }
+                            val path = (rawResult as? NetworkResult.Success)?.data?.path
+                            val editorDrafts =
+                                reconcileEditorDrafts(
+                                    pendingChanges = pendingChanges,
+                                    fieldDrafts = _uiState.value.fieldDrafts,
+                                    previousFields = _uiState.value.schema?.fields.orEmpty(),
+                                    refreshedFields = schema.fields,
+                                )
+                            pendingChanges.clear()
+                            pendingChanges.putAll(editorDrafts.pendingChanges)
 
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                config = configData,
-                                schema = schema,
-                                defaults = defaults,
-                                path = path,
-                                activeCategory =
-                                    if (schema?.category_order?.isNotEmpty() == true) {
-                                        schema.category_order.first()
-                                    } else {
-                                        ""
-                                    },
-                            )
-                        }
-                    } else {
-                        val errorMsg = (configResult as? NetworkResult.Failure)?.error?.message ?: "Unknown error"
-                        _uiState.update {
-                            it.copy(isLoading = false, errorMessage = "Failed to load config: $errorMsg")
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    values = reapplyPendingChanges(values, pendingChanges),
+                                    schema = schema,
+                                    defaults = defaults,
+                                    uncoveredPaths = reconciled.uncoveredPaths,
+                                    path = path,
+                                    activeCategory = reconciled.activeCategory,
+                                    modifiedKeys = pendingChanges.keys.toSet(),
+                                    invalidKeys = editorDrafts.invalidKeys,
+                                    fieldDrafts = editorDrafts.fieldDrafts,
+                                )
+                            }
+                        } else {
+                            val errorMsg =
+                                (
+                                    (configResult as? NetworkResult.Failure)
+                                        ?: (schemaResult as? NetworkResult.Failure)
+                                )?.error?.message.orEmpty()
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    errorMessage = errorMsg,
+                                    toastMessage = ConfigUiText(R.string.config_load_failed, listOf(errorMsg)),
+                                )
+                            }
                         }
                     }
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(isLoading = false, errorMessage = "Failed to load config: ${e.message}")
+                } catch (e: Exception) {
+                    if (generation != loadGeneration) return@launch
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = e.message.orEmpty(),
+                            toastMessage = ConfigUiText(R.string.config_load_failed, listOf(e.message.orEmpty())),
+                        )
+                    }
                 }
             }
-        }
     }
 
     fun updateField(
         key: String,
         value: JsonElement,
     ) {
-        pendingChanges[key] = value
         val state = _uiState.value
-
-        // Apply the change locally so the UI reflects it immediately
-        val updatedConfig =
-            state.config?.let { config ->
-                applyNestedValue(config, key, value)
-            }
-
+        if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
+        pendingChanges[key] = value
         _uiState.update {
             it.copy(
-                config = updatedConfig,
+                values = it.values?.toMutableMap()?.apply { this[key] = value },
                 modifiedKeys = pendingChanges.keys.toSet(),
             )
         }
     }
 
+    fun setFieldDraft(
+        key: String,
+        text: String,
+        isValid: Boolean,
+    ) {
+        val state = _uiState.value
+        if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
+        _uiState.update { it.withFieldDraft(key, text, isValid) }
+    }
+
+    fun clearFieldDraft(key: String) {
+        val state = _uiState.value
+        if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
+        _uiState.update { it.withoutFieldDraft(key) }
+    }
+
+    /** Reset ONE field to its default value (pending until Save). */
+    fun resetField(key: String) {
+        val state = _uiState.value
+        if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
+        val defaultVal = state.defaults?.get(key) ?: return
+        pendingChanges[key] = defaultVal
+        _uiState.update {
+            it.copy(
+                values = it.values?.toMutableMap()?.apply { this[key] = defaultVal },
+                modifiedKeys = pendingChanges.keys.toSet(),
+                invalidKeys = it.invalidKeys - key,
+                fieldDrafts = it.fieldDrafts - key,
+            )
+        }
+    }
+
+    /** Clear a clearable field to blank (e.g. timezone → system default). */
+    fun clearField(key: String) {
+        val state = _uiState.value
+        if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
+        val blank = JsonPrimitive("")
+        pendingChanges[key] = blank
+        _uiState.update {
+            it.copy(
+                values = it.values?.toMutableMap()?.apply { this[key] = blank },
+                modifiedKeys = pendingChanges.keys.toSet(),
+                invalidKeys = it.invalidKeys - key,
+                fieldDrafts = it.fieldDrafts - key,
+            )
+        }
+    }
+
     fun setActiveCategory(category: String) {
-        _uiState.update { it.copy(activeCategory = category) }
+        _uiState.update {
+            if (!canEditConfigForm(it.yamlMode, it.isSaving, it.yamlIsSaving)) return@update it
+            it.copy(activeCategory = category)
+        }
     }
 
     fun setSearchQuery(query: String) {
-        _uiState.update { it.copy(searchQuery = query) }
+        _uiState.update {
+            if (!canEditConfigForm(it.yamlMode, it.isSaving, it.yamlIsSaving)) return@update it
+            it.copy(searchQuery = query)
+        }
     }
 
     fun toggleYamlMode() {
         val current = _uiState.value
+        if (!canSwitchConfigMode(current.isSaving, current.yamlIsSaving)) return
         if (current.yamlMode) {
-            _uiState.update { it.copy(yamlMode = false, yamlText = null) }
+            _uiState.update { it.copy(yamlMode = false, yamlText = null, yamlLoadError = null) }
         } else {
-            _uiState.update { it.copy(yamlMode = true, yamlIsLoading = true) }
-            viewModelScope.launch {
-                val result =
-                    withContext(Dispatchers.IO) {
-                        safeApiCall { ApiClient.hermesApi.getRawConfig() }
-                    }
-                when (result) {
-                    is NetworkResult.Success -> {
-                        _uiState.update {
-                            it.copy(
-                                yamlIsLoading = false,
-                                yamlText = result.data.yaml ?: "",
-                            )
-                        }
-                    }
+            _uiState.update { it.copy(yamlMode = true) }
+            loadYaml()
+        }
+    }
 
-                    is NetworkResult.Failure -> {
-                        _uiState.update {
-                            it.copy(
-                                yamlIsLoading = false,
-                                toastMessage = "Failed to load YAML: ${result.error.message}",
-                            )
+    fun loadYaml() {
+        val current = _uiState.value
+        if (!current.yamlMode || current.yamlIsLoading || current.yamlIsSaving) return
+        _uiState.update { it.copy(yamlIsLoading = true, yamlText = null, yamlLoadError = null) }
+        viewModelScope.launch {
+            val result =
+                withContext(Dispatchers.IO) {
+                    safeApiCall { ApiClient.hermesApi.getRawConfig() }
+                }
+            when (result) {
+                is NetworkResult.Success -> {
+                    when (val loadResult = rawYamlLoadResult(result.data)) {
+                        is RawYamlLoadResult.Loaded -> {
+                            _uiState.update {
+                                it.copy(
+                                    yamlIsLoading = false,
+                                    yamlText = loadResult.yaml,
+                                    yamlLoadError = null,
+                                )
+                            }
                         }
+
+                        is RawYamlLoadResult.Error -> {
+                            _uiState.update {
+                                it.copy(
+                                    yamlIsLoading = false,
+                                    yamlText = null,
+                                    yamlLoadError = loadResult.message,
+                                    toastMessage =
+                                        ConfigUiText(
+                                            R.string.config_load_yaml_failed,
+                                            listOf(loadResult.message),
+                                        ),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                is NetworkResult.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            yamlIsLoading = false,
+                            yamlText = null,
+                            yamlLoadError = result.error.message,
+                            toastMessage =
+                                ConfigUiText(
+                                    R.string.config_load_yaml_failed,
+                                    listOf(result.error.message),
+                                ),
+                        )
                     }
                 }
             }
@@ -167,14 +434,23 @@ class ConfigViewModel :
     }
 
     fun setYamlText(text: String) {
-        _uiState.update { it.copy(yamlText = text) }
+        _uiState.update {
+            if (isYamlDocumentEditable(it.yamlText, it.yamlIsLoading, it.yamlLoadError) && !it.yamlIsSaving) {
+                it.copy(yamlText = text)
+            } else {
+                it
+            }
+        }
     }
 
     fun saveConfig() {
-        if (pendingChanges.isEmpty()) return
+        val state = _uiState.value
+        if (state.yamlMode || pendingChanges.isEmpty() || state.isSaving || state.invalidKeys.isNotEmpty()) return
+        val submitted = pendingChanges.toMap()
+        invalidateLoad()
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
-            val changeset = buildChangeset(pendingChanges)
+            val changeset = nestConfigChanges(submitted)
             val result =
                 withContext(Dispatchers.IO) {
                     safeApiCall {
@@ -185,17 +461,27 @@ class ConfigViewModel :
                 }
             when (result) {
                 is NetworkResult.Success -> {
-                    pendingChanges.clear()
+                    acknowledgeSubmittedChanges(pendingChanges, submitted)
                     val configResult =
                         withContext(Dispatchers.IO) {
                             safeApiCall { ApiClient.hermesApi.getConfig() }
                         }
+                    val refreshed =
+                        (configResult as? NetworkResult.Success)?.data?.let {
+                            flattenConfig(it, uiState.value.schema?.fields?.keys ?: emptySet())
+                        }
                     _uiState.update {
                         it.copy(
                             isSaving = false,
-                            config = (configResult as? NetworkResult.Success)?.data ?: it.config,
-                            modifiedKeys = emptySet(),
-                            toastMessage = "Configuration saved successfully",
+                            values =
+                                refreshed?.let {
+                                        server ->
+                                    reapplyPendingChanges(server, pendingChanges)
+                                } ?: it.values,
+                            modifiedKeys = pendingChanges.keys.toSet(),
+                            invalidKeys = emptySet(),
+                            fieldDrafts = emptyMap(),
+                            toastMessage = ConfigUiText(R.string.config_saved),
                         )
                     }
                 }
@@ -204,7 +490,7 @@ class ConfigViewModel :
                     _uiState.update {
                         it.copy(
                             isSaving = false,
-                            toastMessage = "Failed to save: ${result.error.message}",
+                            toastMessage = ConfigUiText(R.string.config_save_failed, listOf(result.error.message)),
                         )
                     }
                 }
@@ -213,7 +499,20 @@ class ConfigViewModel :
     }
 
     fun saveYamlConfig() {
-        val yamlText = _uiState.value.yamlText ?: return
+        val state = _uiState.value
+        if (
+            !canSaveYamlDocument(
+                yamlMode = state.yamlMode,
+                yamlText = state.yamlText,
+                isLoading = state.yamlIsLoading,
+                isSaving = state.yamlIsSaving,
+                loadError = state.yamlLoadError,
+            )
+        ) {
+            return
+        }
+        val yamlText = state.yamlText ?: return
+        invalidateLoad()
         _uiState.update { it.copy(yamlIsSaving = true) }
         viewModelScope.launch {
             val result =
@@ -226,15 +525,31 @@ class ConfigViewModel :
                 }
             when (result) {
                 is NetworkResult.Success -> {
+                    // Raw YAML is authoritative; discard stale form edits only after success.
+                    pendingChanges.clear()
                     val configResult =
                         withContext(Dispatchers.IO) {
                             safeApiCall { ApiClient.hermesApi.getConfig() }
                         }
+                    val current = uiState.value
+                    val structuredRefresh =
+                        current.schema?.let { schema ->
+                            structuredRefreshAfterYamlSave(configResult, schema, current.activeCategory)
+                        } ?: StructuredRefreshAfterYamlSave(
+                            values = null,
+                            errorMessage = "Config schema unavailable after YAML save",
+                        )
                     _uiState.update {
                         it.copy(
                             yamlIsSaving = false,
-                            config = (configResult as? NetworkResult.Success)?.data ?: it.config,
-                            toastMessage = "YAML configuration saved",
+                            values = structuredRefresh.values,
+                            uncoveredPaths = structuredRefresh.uncoveredPaths ?: it.uncoveredPaths,
+                            activeCategory = structuredRefresh.activeCategory ?: it.activeCategory,
+                            modifiedKeys = emptySet(),
+                            invalidKeys = emptySet(),
+                            fieldDrafts = emptyMap(),
+                            errorMessage = structuredRefresh.errorMessage,
+                            toastMessage = ConfigUiText(R.string.config_yaml_saved),
                         )
                     }
                 }
@@ -243,7 +558,7 @@ class ConfigViewModel :
                     _uiState.update {
                         it.copy(
                             yamlIsSaving = false,
-                            toastMessage = "Failed to save YAML: ${result.error.message}",
+                            toastMessage = ConfigUiText(R.string.config_save_yaml_failed, listOf(result.error.message)),
                         )
                     }
                 }
@@ -253,6 +568,7 @@ class ConfigViewModel :
 
     fun resetCategoryToDefaults(category: String) {
         val state = _uiState.value
+        if (!canEditConfigForm(state.yamlMode, state.isSaving, state.yamlIsSaving)) return
         val schema = state.schema ?: return
         val defaults = state.defaults ?: return
 
@@ -262,20 +578,29 @@ class ConfigViewModel :
             }
 
         var count = 0
+        val replacedKeys = mutableSetOf<String>()
+        val updatedValues = state.values?.toMutableMap()
         for ((key, _) in categoryFields) {
             val defaultVal = defaults[key]
             if (defaultVal != null) {
                 pendingChanges[key] = defaultVal
+                updatedValues?.set(key, defaultVal)
+                replacedKeys += key
                 count++
             }
         }
         _uiState.update {
-            it.copy(modifiedKeys = pendingChanges.keys.toSet())
+            it.copy(
+                values = updatedValues ?: it.values,
+                modifiedKeys = pendingChanges.keys.toSet(),
+                invalidKeys = invalidKeysAfterReset(it.invalidKeys, replacedKeys),
+                fieldDrafts = it.fieldDrafts - replacedKeys,
+            )
         }
 
         if (count > 0) {
             _uiState.update {
-                it.copy(toastMessage = "Reset $count field(s) to defaults (tap Save to apply)")
+                it.copy(toastMessage = ConfigUiText(R.string.config_reset_count, listOf(count)))
             }
         }
     }
@@ -284,68 +609,10 @@ class ConfigViewModel :
         _uiState.update { it.copy(toastMessage = null) }
     }
 
-    /** Apply a value at a dot-path like "terminal.backend" into a flat config map. */
-    private fun applyNestedValue(
-        config: Map<String, JsonElement>,
-        dotPath: String,
-        value: JsonElement,
-    ): Map<String, JsonElement> {
-        val parts = dotPath.split(".")
-        if (parts.size == 1) {
-            val mutable = config.toMutableMap()
-            mutable[parts[0]] = value
-            return mutable
-        }
-        val topKey = parts.first()
-        val rest = parts.drop(1).joinToString(".")
-        val topValue = config[topKey]
-        val nestedJson = (topValue as? JsonObject) ?: JsonObject(emptyMap())
-        val updatedNested =
-            applyNestedValue(
-                nestedJson,
-                rest,
-                value,
-            )
-        val nestedObj = JsonObject(updatedNested)
-        val mutable = config.toMutableMap()
-        mutable[topKey] = nestedObj
-        return mutable
-    }
-
-    /** Build a nested JSON changeset from dot-path pending changes. */
-    private fun buildChangeset(changes: Map<String, JsonElement>): Map<String, JsonElement> {
-        val root = mutableMapOf<String, Any>()
-        for ((dotPath, value) in changes) {
-            val parts = dotPath.split(".")
-            var current = root
-            for (i in 0 until parts.size - 1) {
-                val key = parts[i]
-                val existing = current[key]
-                if (existing !is MutableMap<*, *>) {
-                    val newMap = mutableMapOf<String, Any>()
-                    current[key] = newMap
-                    current = newMap
-                } else {
-                    @Suppress("UNCHECKED_CAST")
-                    current = existing as MutableMap<String, Any>
-                }
-            }
-            current[parts.last()] = value
-        }
-
-        fun toJsonObject(map: Map<String, Any>): JsonObject {
-            val content =
-                map.mapValues { (_, v) ->
-                    if (v is Map<*, *>) {
-                        @Suppress("UNCHECKED_CAST")
-                        toJsonObject(v as Map<String, Any>)
-                    } else {
-                        v as JsonElement
-                    }
-                }
-            return JsonObject(content)
-        }
-
-        return toJsonObject(root)
+    private fun invalidateLoad() {
+        loadGeneration += 1
+        loadJob?.cancel()
+        loadJob = null
+        _uiState.update { it.copy(isLoading = false) }
     }
 }

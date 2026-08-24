@@ -566,6 +566,28 @@
     <string name="config_action_reset">リセット</string>
     <string name="config_action_save">保存</string>
     <string name="config_action_save_yaml">YAML を保存</string>
+    <string name="config_save_changes">変更を保存</string>
+    <string name="config_path">パス: %1$s</string>
+    <string name="config_mode_form">フォーム</string>
+    <string name="config_mode_yaml">YAML</string>
+    <string name="config_yaml_editor_label">YAML 設定</string>
+    <string name="config_category_other">その他</string>
+    <string name="config_search_placeholder">設定を検索…</string>
+    <string name="config_pending_changes">保留中の変更: %1$d 件</string>
+    <string name="config_search_results">%1$d 件の結果</string>
+    <string name="config_no_search_results">検索に一致する設定はありません。</string>
+    <string name="config_no_category_fields">このカテゴリにフィールドはありません。</string>
+    <string name="config_reset_default">デフォルトに戻す</string>
+    <string name="config_clear_value">値をクリア</string>
+    <string name="config_no_matches">一致なし</string>
+    <string name="config_invalid_json">無効な JSON</string>
+    <string name="config_load_yaml_failed">YAML の読み込みに失敗しました: %1$s</string>
+    <string name="config_load_failed">設定の読み込みに失敗しました: %1$s</string>
+    <string name="config_saved">設定を保存しました</string>
+    <string name="config_save_failed">保存に失敗しました: %1$s</string>
+    <string name="config_yaml_saved">YAML 設定を保存しました</string>
+    <string name="config_save_yaml_failed">YAML の保存に失敗しました: %1$s</string>
+    <string name="config_reset_count">%1$d 個のフィールドをデフォルトに戻しました（保存をタップして適用）</string>
 
     <!-- Profiles Screen -->
     <string name="profiles_empty_title">利用可能なプロファイルはありません</string>
