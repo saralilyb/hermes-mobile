@@ -2,6 +2,8 @@ package com.m57.hermescontrol.ui.config
 
 import com.m57.hermescontrol.data.model.RawConfigResponse
 import com.m57.hermescontrol.data.model.SchemaField
+import com.m57.hermescontrol.data.remote.NetworkError
+import com.m57.hermescontrol.data.remote.NetworkResult
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -303,6 +305,41 @@ class ConfigFormDataTest {
         val malformed = rawYamlLoadResult(RawConfigResponse(yaml = null))
         assertTrue(malformed is RawYamlLoadResult.Error)
         assertTrue((malformed as RawYamlLoadResult.Error).message.isNotBlank())
+    }
+
+    @Test
+    fun `successful YAML save keeps structured form unavailable when refresh fails`() {
+        val outcome =
+            structuredRefreshAfterYamlSave(
+                NetworkResult.Failure(NetworkError.Http(503, "refresh unavailable")),
+                schemaPaths = setOf("model"),
+            )
+
+        assertEquals(null, outcome.values)
+        assertEquals("refresh unavailable", outcome.errorMessage)
+    }
+
+    @Test
+    fun `successful YAML save exposes only successfully refreshed structured values`() {
+        val outcome =
+            structuredRefreshAfterYamlSave(
+                NetworkResult.Success(
+                    mapOf(
+                        "model" to JsonPrimitive("server-authoritative"),
+                        "terminal" to JsonObject(mapOf("backend" to JsonPrimitive("docker"))),
+                    ),
+                ),
+                schemaPaths = setOf("model", "terminal.backend"),
+            )
+
+        assertEquals(
+            mapOf(
+                "model" to JsonPrimitive("server-authoritative"),
+                "terminal.backend" to JsonPrimitive("docker"),
+            ),
+            outcome.values,
+        )
+        assertEquals(null, outcome.errorMessage)
     }
 
     @Test

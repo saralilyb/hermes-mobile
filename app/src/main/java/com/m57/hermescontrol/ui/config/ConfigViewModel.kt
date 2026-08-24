@@ -63,6 +63,29 @@ internal fun rawYamlLoadResult(response: RawConfigResponse): RawYamlLoadResult =
     response.yaml?.let(RawYamlLoadResult::Loaded)
         ?: RawYamlLoadResult.Error("Raw config response did not include YAML")
 
+internal data class StructuredRefreshAfterYamlSave(
+    val values: Map<String, JsonElement>?,
+    val errorMessage: String?,
+)
+
+internal fun structuredRefreshAfterYamlSave(
+    result: NetworkResult<Map<String, JsonElement>>,
+    schemaPaths: Set<String>,
+): StructuredRefreshAfterYamlSave =
+    when (result) {
+        is NetworkResult.Success ->
+            StructuredRefreshAfterYamlSave(
+                values = flattenConfig(result.data, schemaPaths),
+                errorMessage = null,
+            )
+
+        is NetworkResult.Failure ->
+            StructuredRefreshAfterYamlSave(
+                values = null,
+                errorMessage = result.error.message,
+            )
+    }
+
 class ConfigViewModel :
     ViewModel(),
     ToastHost {
@@ -394,16 +417,18 @@ class ConfigViewModel :
                         withContext(Dispatchers.IO) {
                             safeApiCall { ApiClient.hermesApi.getConfig() }
                         }
+                    val structuredRefresh =
+                        structuredRefreshAfterYamlSave(
+                            configResult,
+                            uiState.value.schema?.fields?.keys ?: emptySet(),
+                        )
                     _uiState.update {
                         it.copy(
                             yamlIsSaving = false,
-                            values =
-                                (configResult as? NetworkResult.Success)?.data?.let {
-                                    flattenConfig(it, uiState.value.schema?.fields?.keys ?: emptySet())
-                                }
-                                    ?: it.values,
+                            values = structuredRefresh.values,
                             modifiedKeys = emptySet(),
                             invalidKeys = emptySet(),
+                            errorMessage = structuredRefresh.errorMessage,
                             toastMessage = ConfigUiText(R.string.config_yaml_saved),
                         )
                     }
