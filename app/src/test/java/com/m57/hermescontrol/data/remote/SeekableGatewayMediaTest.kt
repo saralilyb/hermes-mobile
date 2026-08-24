@@ -8,7 +8,11 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import okhttp3.Headers
+import okhttp3.ResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
+import okio.ForwardingSource
+import okio.buffer
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -83,6 +87,44 @@ class SeekableGatewayMediaTest {
             val session = SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { scope }
 
             assertTrue(session.read(100, 5) is GatewayMediaRangeResult.Failure)
+        }
+
+    @Test
+    fun `range response body larger than requested is rejected and closed`() =
+        runTest {
+            val service = mockk<HermesApiService>()
+            var bodyClosed = false
+            val body =
+                object : ResponseBody() {
+                    private val source =
+                        object : ForwardingSource(Buffer().writeUtf8("chunks")) {
+                            override fun close() {
+                                bodyClosed = true
+                                super.close()
+                            }
+                        }.buffer()
+
+                    override fun contentType() = null
+
+                    override fun contentLength() = 6L
+
+                    override fun source() = source
+                }
+            coEvery { service.streamManagedFileRange("/tmp/movie.mp4", "bytes=100-104") } returns
+                Response.success(
+                    body,
+                    okhttp3.Response.Builder()
+                        .request(okhttp3.Request.Builder().url("https://example.test/api/files/stream").build())
+                        .protocol(okhttp3.Protocol.HTTP_1_1)
+                        .code(206)
+                        .message("Partial Content")
+                        .headers(Headers.headersOf("Content-Range", "bytes 100-105/1000"))
+                        .build(),
+                )
+            val session = SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { scope }
+
+            assertEquals(GatewayMediaRangeResult.TooLarge, session.read(100, 5))
+            assertTrue(bodyClosed)
         }
 
     @Test
