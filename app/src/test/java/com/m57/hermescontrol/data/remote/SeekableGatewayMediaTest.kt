@@ -5,8 +5,11 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import okhttp3.Headers
 import okhttp3.ResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -144,6 +147,64 @@ class SeekableGatewayMediaTest {
         }
 
     @Test
+    fun `successful range completes when response body close throws`() =
+        runTest {
+            val service = mockk<HermesApiService>()
+            val started = CompletableDeferred<Unit>()
+            lateinit var callback: Callback<ResponseBody>
+            val call = mockk<Call<ResponseBody>>(relaxed = true)
+            every { call.enqueue(any()) } answers {
+                callback = firstArg()
+                started.complete(Unit)
+            }
+            every { service.streamManagedFileRange(any(), any()) } returns call
+            val body = throwingCloseBody("chunk")
+            val response = partialResponse(body, "bytes 0-4/5")
+            val session = SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { scope }
+            val result = async { session.read(0, 5) }
+            started.await()
+
+            Thread { callback.onResponse(call, response) }.start()
+
+            val success =
+                withContext(Dispatchers.Default) {
+                    withTimeout(1_000) { result.await() }
+                } as GatewayMediaRangeResult.Success
+            assertArrayEquals("chunk".toByteArray(), success.bytes)
+        }
+
+    @Test
+    fun `body and error body are both closed best effort before completion`() =
+        runTest {
+            val service = mockk<HermesApiService>()
+            val started = CompletableDeferred<Unit>()
+            lateinit var callback: Callback<ResponseBody>
+            val call = mockk<Call<ResponseBody>>(relaxed = true)
+            every { call.enqueue(any()) } answers {
+                callback = firstArg()
+                started.complete(Unit)
+            }
+            every { service.streamManagedFileRange(any(), any()) } returns call
+            var errorBodyClosed = false
+            val response = mockk<Response<ResponseBody>>()
+            every { response.code() } returns 500
+            every { response.body() } returns throwingCloseBody("ignored", throwOnClose = 1)
+            every { response.errorBody() } returns closeTrackingBody { errorBodyClosed = true }
+            val session = SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { scope }
+            val result = async { session.read(0, 5) }
+            started.await()
+
+            Thread { callback.onResponse(call, response) }.start()
+
+            val completed =
+                withContext(Dispatchers.Default) {
+                    withTimeout(1_000) { result.await() }
+                }
+            assertTrue(completed is GatewayMediaRangeResult.Failure)
+            assertTrue(errorBodyClosed)
+        }
+
+    @Test
     fun `stale session rejects before issuing another range request`() =
         runTest {
             val service = mockk<HermesApiService>(relaxed = true)
@@ -232,4 +293,58 @@ class SeekableGatewayMediaTest {
         every { call.enqueue(any()) } answers { firstArg<Callback<ResponseBody>>().onResponse(call, response) }
         return call
     }
+
+    private fun throwingCloseBody(
+        content: String,
+        throwOnClose: Int = 2,
+    ): ResponseBody =
+        object : ResponseBody() {
+            private var closeCount = 0
+            private val source =
+                object : ForwardingSource(Buffer().writeUtf8(content)) {
+                    override fun close() {
+                        super.close()
+                        closeCount++
+                        if (closeCount >= throwOnClose) throw java.io.IOException("close failed")
+                    }
+                }.buffer()
+
+            override fun contentType() = null
+
+            override fun contentLength() = content.length.toLong()
+
+            override fun source() = source
+        }
+
+    private fun closeTrackingBody(onClose: () -> Unit): ResponseBody =
+        object : ResponseBody() {
+            private val source =
+                object : ForwardingSource(Buffer()) {
+                    override fun close() {
+                        onClose()
+                        super.close()
+                    }
+                }.buffer()
+
+            override fun contentType() = null
+
+            override fun contentLength() = 0L
+
+            override fun source() = source
+        }
+
+    private fun partialResponse(
+        body: ResponseBody,
+        contentRange: String,
+    ): Response<ResponseBody> =
+        Response.success(
+            body,
+            okhttp3.Response.Builder()
+                .request(okhttp3.Request.Builder().url("https://example.test/api/files/stream").build())
+                .protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(206)
+                .message("Partial Content")
+                .headers(Headers.headersOf("Content-Range", contentRange))
+                .build(),
+        )
 }

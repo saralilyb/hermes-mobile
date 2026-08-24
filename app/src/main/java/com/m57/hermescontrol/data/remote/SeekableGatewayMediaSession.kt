@@ -8,6 +8,7 @@ import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -77,15 +78,19 @@ internal class SeekableGatewayMediaSession(
         requestedCount: Int,
     ): GatewayMediaRangeResult =
         suspendCancellableCoroutine { continuation ->
-            continuation.invokeOnCancellation { cancel() }
+            val completed = AtomicBoolean(false)
+            continuation.invokeOnCancellation {
+                completed.compareAndSet(false, true)
+                cancel()
+            }
             enqueue(
                 object : Callback<ResponseBody> {
                     override fun onResponse(
                         call: Call<ResponseBody>,
                         response: Response<ResponseBody>,
                     ) {
-                        if (!continuation.isActive) {
-                            response.closeBodies()
+                        if (completed.get()) {
+                            response.closeBodiesBestEffort()
                             return
                         }
                         val result =
@@ -98,16 +103,17 @@ internal class SeekableGatewayMediaSession(
                             } catch (throwable: Throwable) {
                                 GatewayMediaRangeResult.Failure(throwable)
                             } finally {
-                                response.closeBodies()
+                                // Cleanup failures must not replace a successfully parsed range or strand its waiter.
+                                response.closeBodiesBestEffort()
                             }
-                        if (continuation.isActive) continuation.resume(result)
+                        if (completed.compareAndSet(false, true)) continuation.resume(result)
                     }
 
                     override fun onFailure(
                         call: Call<ResponseBody>,
                         throwable: Throwable,
                     ) {
-                        if (continuation.isActive) continuation.resumeWithException(throwable)
+                        if (completed.compareAndSet(false, true)) continuation.resumeWithException(throwable)
                     }
                 },
             )
@@ -160,12 +166,9 @@ internal class SeekableGatewayMediaSession(
     }
 }
 
-private fun Response<ResponseBody>.closeBodies() {
-    try {
-        body()?.close()
-    } finally {
-        errorBody()?.close()
-    }
+private fun Response<ResponseBody>.closeBodiesBestEffort() {
+    runCatching { body()?.close() }
+    runCatching { errorBody()?.close() }
 }
 
 internal sealed interface GatewayMediaRangeResult {
