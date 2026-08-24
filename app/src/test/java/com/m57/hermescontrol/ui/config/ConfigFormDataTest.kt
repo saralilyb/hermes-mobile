@@ -94,6 +94,25 @@ class ConfigFormDataTest {
     }
 
     @Test
+    fun `flattenConfig gives nested defaults the same schema terminal semantics as current values`() {
+        val nestedDefaults =
+            mapOf(
+                "terminal" to JsonObject(mapOf("backend" to JsonPrimitive("local"))),
+                "providers" to JsonObject(mapOf("custom" to JsonPrimitive("https://example.test"))),
+                "toolsets" to JsonArray(listOf(JsonPrimitive("terminal"), JsonPrimitive("web"))),
+            )
+
+        assertEquals(
+            mapOf(
+                "terminal.backend" to JsonPrimitive("local"),
+                "providers" to nestedDefaults.getValue("providers"),
+                "toolsets" to nestedDefaults.getValue("toolsets"),
+            ),
+            flattenConfig(nestedDefaults, terminalPaths = setOf("terminal.backend", "providers", "toolsets")),
+        )
+    }
+
+    @Test
     fun `nestConfigChanges round trips flat scalar and object values`() {
         val flat =
             linkedMapOf(

@@ -168,7 +168,10 @@ class ConfigViewModel :
                                     _uiState.value.activeCategory,
                                 )
                             val values = reconciled.values
-                            val defaults = (defaultsResult as? NetworkResult.Success)?.data
+                            val defaults =
+                                (defaultsResult as? NetworkResult.Success)?.data?.let {
+                                    flattenConfig(it, schema.fields.keys)
+                                }
                             val path = (rawResult as? NetworkResult.Success)?.data?.path
 
                             _uiState.update {

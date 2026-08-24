@@ -21,7 +21,9 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
@@ -205,6 +207,66 @@ class ConfigViewModelTest {
             assertEquals("model: submitted", viewModel.uiState.value.yamlText)
             releaseOldLoad.complete(Unit)
             Unit
+        }
+
+    @Test
+    fun `nested defaults support field and category resets without inventing missing defaults`() =
+        runBlocking {
+            val providerDefault = JsonObject(mapOf("custom" to JsonPrimitive("https://default.test")))
+            val toolsetsDefault = JsonArray(listOf(JsonPrimitive("terminal"), JsonPrimitive("web")))
+            val schema =
+                ConfigSchemaResponse(
+                    fields =
+                        mapOf(
+                            "terminal.backend" to SchemaField(type = "string", category = "runtime"),
+                            "providers" to SchemaField(type = "object", category = "runtime"),
+                            "toolsets" to SchemaField(type = "list", category = "runtime"),
+                            "terminal.missing" to SchemaField(type = "string", category = "runtime"),
+                        ),
+                    category_order = listOf("runtime"),
+                )
+            coEvery { mockApi.getConfigSchema() } returns Response.success(schema)
+            coEvery { mockApi.getConfig() } returns
+                Response.success(
+                    mapOf(
+                        "terminal" to
+                            JsonObject(
+                                mapOf(
+                                    "backend" to JsonPrimitive("docker"),
+                                    "missing" to JsonPrimitive("keep-me"),
+                                ),
+                            ),
+                        "providers" to JsonObject(mapOf("custom" to JsonPrimitive("https://current.test"))),
+                        "toolsets" to JsonArray(listOf(JsonPrimitive("terminal"))),
+                    ),
+                )
+            coEvery { mockApi.getConfigDefaults() } returns
+                Response.success(
+                    mapOf(
+                        "terminal" to JsonObject(mapOf("backend" to JsonPrimitive("local"))),
+                        "providers" to providerDefault,
+                        "toolsets" to toolsetsDefault,
+                    ),
+                )
+            coEvery { mockApi.getRawConfig() } returns Response.success(RawConfigResponse(path = "/tmp/config.yaml"))
+
+            val viewModel = ConfigViewModel()
+            withTimeout(5_000) { viewModel.uiState.first { !it.isLoading && it.defaults != null } }
+
+            assertEquals(JsonPrimitive("local"), viewModel.uiState.value.defaults?.get("terminal.backend"))
+            assertEquals(providerDefault, viewModel.uiState.value.defaults?.get("providers"))
+            assertEquals(toolsetsDefault, viewModel.uiState.value.defaults?.get("toolsets"))
+            assertFalse(viewModel.uiState.value.defaults.orEmpty().containsKey("terminal.missing"))
+
+            viewModel.resetField("terminal.backend")
+            assertEquals(JsonPrimitive("local"), viewModel.uiState.value.values?.get("terminal.backend"))
+            assertTrue("terminal.backend" in viewModel.uiState.value.modifiedKeys)
+
+            viewModel.resetCategoryToDefaults("runtime")
+            assertEquals(providerDefault, viewModel.uiState.value.values?.get("providers"))
+            assertEquals(toolsetsDefault, viewModel.uiState.value.values?.get("toolsets"))
+            assertEquals(JsonPrimitive("keep-me"), viewModel.uiState.value.values?.get("terminal.missing"))
+            assertFalse("terminal.missing" in viewModel.uiState.value.modifiedKeys)
         }
 
     private fun stubStableLoadEndpoints() {
