@@ -1,5 +1,9 @@
 package com.m57.hermescontrol.ui.config
 
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.ConfigSchemaResponse
 import com.m57.hermescontrol.data.model.RawConfigResponse
 import com.m57.hermescontrol.data.model.SchemaField
@@ -14,8 +18,10 @@ import io.mockk.unmockkAll
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -41,19 +47,28 @@ import java.util.concurrent.atomic.AtomicInteger
 class ConfigViewModelTest {
     private val testDispatcher = UnconfinedTestDispatcher()
     private val mockApi = mockk<HermesApiService>()
+    private lateinit var viewModelStore: ViewModelStore
+    private val viewModelJobs = mutableListOf<Job>()
+    private var viewModelKey = 0
 
     @Before
     fun setUp() {
+        viewModelStore = ViewModelStore()
+        viewModelJobs.clear()
+        viewModelKey = 0
         Dispatchers.setMain(testDispatcher)
         mockkObject(ApiClient)
         every { ApiClient.hermesApi } returns mockApi
     }
 
     @After
-    fun tearDown() {
-        Dispatchers.resetMain()
-        unmockkAll()
-    }
+    fun tearDown() =
+        runBlocking {
+            viewModelStore.clear()
+            viewModelJobs.joinAll()
+            Dispatchers.resetMain()
+            unmockkAll()
+        }
 
     @Test
     fun `form save rejects an older load and a later refresh still publishes`() =
@@ -78,7 +93,7 @@ class ConfigViewModelTest {
             }
             coEvery { mockApi.updateConfig(any()) } returns Response.success(Unit)
 
-            val viewModel = ConfigViewModel()
+            val viewModel = createViewModel()
             awaitModel(viewModel, "initial")
             viewModel.loadAll()
             withTimeout(5_000) { oldLoadStarted.await() }
@@ -120,7 +135,7 @@ class ConfigViewModelTest {
             }
             coEvery { mockApi.updateRawConfig(any()) } returns Response.success(Unit)
 
-            val viewModel = ConfigViewModel()
+            val viewModel = createViewModel()
             awaitModel(viewModel, "initial")
             viewModel.toggleYamlMode()
             withTimeout(5_000) { viewModel.uiState.first { it.yamlText == "model: initial" } }
@@ -159,7 +174,7 @@ class ConfigViewModelTest {
             }
             coEvery { mockApi.updateConfig(any()) } returns Response.error(500, "save failed".toResponseBody())
 
-            val viewModel = ConfigViewModel()
+            val viewModel = createViewModel()
             awaitModel(viewModel, "initial")
             viewModel.loadAll()
             withTimeout(5_000) { oldLoadStarted.await() }
@@ -193,7 +208,7 @@ class ConfigViewModelTest {
             }
             coEvery { mockApi.updateRawConfig(any()) } returns Response.error(500, "save failed".toResponseBody())
 
-            val viewModel = ConfigViewModel()
+            val viewModel = createViewModel()
             awaitModel(viewModel, "initial")
             viewModel.toggleYamlMode()
             withTimeout(5_000) { viewModel.uiState.first { it.yamlText == "model: initial" } }
@@ -220,7 +235,7 @@ class ConfigViewModelTest {
                 configResponse(if (configCalls.incrementAndGet() == 1) "initial" else "refreshed")
             }
 
-            val viewModel = ConfigViewModel()
+            val viewModel = createViewModel()
             awaitModel(viewModel, "initial")
             viewModel.setFieldDraft("model", "unfinished-", isValid = false)
 
@@ -243,7 +258,7 @@ class ConfigViewModelTest {
                 configResponse(if (configCalls.incrementAndGet() == 1) "initial" else "server-refresh")
             }
 
-            val viewModel = ConfigViewModel()
+            val viewModel = createViewModel()
             awaitModel(viewModel, "initial")
             viewModel.setFieldDraft("model", "draft text  ", isValid = true)
             viewModel.updateField("model", JsonPrimitive("draft text"))
@@ -273,7 +288,7 @@ class ConfigViewModelTest {
                 )
             }
 
-            val viewModel = ConfigViewModel()
+            val viewModel = createViewModel()
             awaitModel(viewModel, "initial")
             viewModel.setFieldDraft("model", "invalid", isValid = false)
             viewModel.updateField("model", JsonPrimitive("pending"))
@@ -311,7 +326,7 @@ class ConfigViewModelTest {
                 )
             }
 
-            val viewModel = ConfigViewModel()
+            val viewModel = createViewModel()
             withTimeout(5_000) { viewModel.uiState.first { !it.isLoading && it.schema != null } }
             viewModel.setFieldDraft("model", "8", isValid = true)
             viewModel.updateField("model", JsonPrimitive(8))
@@ -459,7 +474,7 @@ class ConfigViewModelTest {
                 )
             coEvery { mockApi.getRawConfig() } returns Response.success(RawConfigResponse(path = "/tmp/config.yaml"))
 
-            val viewModel = ConfigViewModel()
+            val viewModel = createViewModel()
             withTimeout(5_000) { viewModel.uiState.first { !it.isLoading && it.defaults != null } }
 
             assertEquals(JsonPrimitive("local"), viewModel.uiState.value.defaults?.get("terminal.backend"))
@@ -483,6 +498,19 @@ class ConfigViewModelTest {
         coEvery { mockApi.getConfigDefaults() } returns configResponse("default")
         coEvery { mockApi.getRawConfig() } returns
             Response.success(RawConfigResponse(path = "/tmp/config.yaml", yaml = "model: initial"))
+    }
+
+    private fun createViewModel(): ConfigViewModel {
+        val viewModel =
+            ViewModelProvider(
+                viewModelStore,
+                object : ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T = ConfigViewModel() as T
+                },
+            )["config-${viewModelKey++}", ConfigViewModel::class.java]
+        viewModelJobs += viewModel.viewModelScope.coroutineContext[Job]!!
+        return viewModel
     }
 
     private suspend fun awaitModel(
