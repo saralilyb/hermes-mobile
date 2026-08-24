@@ -65,19 +65,52 @@ internal fun rawYamlLoadResult(response: RawConfigResponse): RawYamlLoadResult =
 
 internal data class StructuredRefreshAfterYamlSave(
     val values: Map<String, JsonElement>?,
+    val uncoveredPaths: List<String>? = null,
+    val activeCategory: String? = null,
     val errorMessage: String?,
 )
 
+internal data class ReconciledStructuredConfig(
+    val values: Map<String, JsonElement>,
+    val uncoveredPaths: List<String>,
+    val activeCategory: String,
+)
+
+internal fun reconcileStructuredConfig(
+    config: Map<String, JsonElement>,
+    schema: ConfigSchemaResponse,
+    activeCategory: String,
+): ReconciledStructuredConfig {
+    val values = flattenConfig(config, schema.fields.keys)
+    val uncoveredPaths = collectUncoveredPaths(values, schema.fields.keys)
+    val categories =
+        orderedCategories(
+            categoryOrder = schema.category_order,
+            schemaCategories = schema.fields.values.map { it.category ?: "general" },
+            hasUncoveredPaths = uncoveredPaths.isNotEmpty(),
+        )
+    return ReconciledStructuredConfig(
+        values = values,
+        uncoveredPaths = uncoveredPaths,
+        activeCategory = activeCategory.takeIf(categories::contains) ?: categories.firstOrNull().orEmpty(),
+    )
+}
+
 internal fun structuredRefreshAfterYamlSave(
     result: NetworkResult<Map<String, JsonElement>>,
-    schemaPaths: Set<String>,
+    schema: ConfigSchemaResponse,
+    activeCategory: String,
 ): StructuredRefreshAfterYamlSave =
     when (result) {
-        is NetworkResult.Success ->
+        is NetworkResult.Success -> {
+            val reconciled = reconcileStructuredConfig(result.data, schema, activeCategory)
             StructuredRefreshAfterYamlSave(
-                values = flattenConfig(result.data, schemaPaths),
+                values = reconciled.values,
+                uncoveredPaths = reconciled.uncoveredPaths,
+                activeCategory = reconciled.activeCategory,
                 errorMessage = null,
             )
+        }
 
         is NetworkResult.Failure ->
             StructuredRefreshAfterYamlSave(
@@ -128,16 +161,15 @@ class ConfigViewModel :
                             schemaResult is NetworkResult.Success
                         ) {
                             val schema = schemaResult.data
-                            val values = flattenConfig(configResult.data, schema.fields.keys)
+                            val reconciled =
+                                reconcileStructuredConfig(
+                                    configResult.data,
+                                    schema,
+                                    _uiState.value.activeCategory,
+                                )
+                            val values = reconciled.values
                             val defaults = (defaultsResult as? NetworkResult.Success)?.data
                             val path = (rawResult as? NetworkResult.Success)?.data?.path
-                            val categories =
-                                orderedCategories(
-                                    categoryOrder = schema.category_order,
-                                    schemaCategories = schema.fields.values.map { it.category ?: "general" },
-                                    hasUncoveredPaths =
-                                        collectUncoveredPaths(values, schema.fields.keys).isNotEmpty(),
-                                )
 
                             _uiState.update {
                                 it.copy(
@@ -145,15 +177,9 @@ class ConfigViewModel :
                                     values = reapplyPendingChanges(values, pendingChanges),
                                     schema = schema,
                                     defaults = defaults,
-                                    uncoveredPaths =
-                                        collectUncoveredPaths(
-                                            values,
-                                            schema.fields.keys,
-                                        ),
+                                    uncoveredPaths = reconciled.uncoveredPaths,
                                     path = path,
-                                    activeCategory =
-                                        it.activeCategory.takeIf(categories::contains)
-                                            ?: categories.firstOrNull().orEmpty(),
+                                    activeCategory = reconciled.activeCategory,
                                     modifiedKeys = pendingChanges.keys.toSet(),
                                 )
                             }
@@ -417,15 +443,20 @@ class ConfigViewModel :
                         withContext(Dispatchers.IO) {
                             safeApiCall { ApiClient.hermesApi.getConfig() }
                         }
+                    val current = uiState.value
                     val structuredRefresh =
-                        structuredRefreshAfterYamlSave(
-                            configResult,
-                            uiState.value.schema?.fields?.keys ?: emptySet(),
+                        current.schema?.let { schema ->
+                            structuredRefreshAfterYamlSave(configResult, schema, current.activeCategory)
+                        } ?: StructuredRefreshAfterYamlSave(
+                            values = null,
+                            errorMessage = "Config schema unavailable after YAML save",
                         )
                     _uiState.update {
                         it.copy(
                             yamlIsSaving = false,
                             values = structuredRefresh.values,
+                            uncoveredPaths = structuredRefresh.uncoveredPaths ?: it.uncoveredPaths,
+                            activeCategory = structuredRefresh.activeCategory ?: it.activeCategory,
                             modifiedKeys = emptySet(),
                             invalidKeys = emptySet(),
                             errorMessage = structuredRefresh.errorMessage,

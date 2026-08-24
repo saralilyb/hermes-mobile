@@ -1,5 +1,6 @@
 package com.m57.hermescontrol.ui.config
 
+import com.m57.hermescontrol.data.model.ConfigSchemaResponse
 import com.m57.hermescontrol.data.model.RawConfigResponse
 import com.m57.hermescontrol.data.model.SchemaField
 import com.m57.hermescontrol.data.remote.NetworkError
@@ -312,7 +313,8 @@ class ConfigFormDataTest {
         val outcome =
             structuredRefreshAfterYamlSave(
                 NetworkResult.Failure(NetworkError.Http(503, "refresh unavailable")),
-                schemaPaths = setOf("model"),
+                schema = testSchema(),
+                activeCategory = "general",
             )
 
         assertEquals(null, outcome.values)
@@ -329,7 +331,8 @@ class ConfigFormDataTest {
                         "terminal" to JsonObject(mapOf("backend" to JsonPrimitive("docker"))),
                     ),
                 ),
-                schemaPaths = setOf("model", "terminal.backend"),
+                schema = testSchema("model", "terminal.backend"),
+                activeCategory = "general",
             )
 
         assertEquals(
@@ -340,6 +343,59 @@ class ConfigFormDataTest {
             outcome.values,
         )
         assertEquals(null, outcome.errorMessage)
+    }
+
+    @Test
+    fun `YAML refresh adds and removes authoritative Other paths`() {
+        val schema = testSchema()
+        val withOther =
+            reconcileStructuredConfig(
+                mapOf(
+                    "model" to JsonPrimitive("server"),
+                    "plugin" to JsonObject(mapOf("enabled" to JsonPrimitive(true))),
+                ),
+                schema,
+                activeCategory = "general",
+            )
+        assertEquals(listOf("plugin.enabled"), withOther.uncoveredPaths)
+
+        val withoutOther =
+            reconcileStructuredConfig(
+                mapOf("model" to JsonPrimitive("server")),
+                schema,
+                activeCategory = withOther.activeCategory,
+            )
+        assertTrue(withoutOther.uncoveredPaths.isEmpty())
+    }
+
+    @Test
+    fun `YAML refresh falls back when active Other category disappears`() {
+        val schema = testSchema()
+        val withOther =
+            reconcileStructuredConfig(
+                mapOf("model" to JsonPrimitive("server"), "unknown" to JsonPrimitive(true)),
+                schema,
+                activeCategory = "general",
+            )
+        val otherCategory = orderedCategories(emptyList(), emptyList(), true).single()
+
+        val refreshed =
+            reconcileStructuredConfig(
+                mapOf("model" to JsonPrimitive("server")),
+                schema,
+                activeCategory = otherCategory,
+            )
+
+        assertEquals(listOf("unknown"), withOther.uncoveredPaths)
+        assertEquals("general", refreshed.activeCategory)
+    }
+
+    private fun testSchema(vararg paths: String): ConfigSchemaResponse {
+        val effectivePaths = paths.ifEmpty { arrayOf("model") }
+        return ConfigSchemaResponse(
+            fields = effectivePaths.associateWith { SchemaField(type = "string", category = "general") },
+            category_order = listOf("general"),
+        )
     }
 
     @Test
