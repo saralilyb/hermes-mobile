@@ -33,7 +33,7 @@ class ApiClientMediaServiceTest {
             val endpoint = ServerEndpoint.parseForBuild(server.url("/captured/").toString())
             val service = ApiClient.createMediaService(endpoint, gated = false, token = "snapshot-token")
 
-            service.streamManagedFileRange("/tmp/a", "bytes=10-19").body()?.close()
+            service.streamManagedFileRange("/tmp/a", "bytes=10-19").execute().body()?.close()
 
             val request = server.takeRequest()
             assertEquals("Bearer snapshot-token", request.getHeader("Authorization"))
@@ -56,7 +56,7 @@ class ApiClientMediaServiceTest {
                     cookieHeader = "hermes_session=captured; secondary=fixed",
                 )
 
-            val response = service.streamManagedFileRange("/tmp/a", "bytes=0-63")
+            val response = service.streamManagedFileRange("/tmp/a", "bytes=0-63").execute()
             response.errorBody()?.close()
 
             val request = server.takeRequest()

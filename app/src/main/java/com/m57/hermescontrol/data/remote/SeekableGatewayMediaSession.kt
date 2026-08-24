@@ -2,9 +2,14 @@ package com.m57.hermescontrol.data.remote
 
 import com.m57.hermescontrol.data.local.AuthSessionState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.ResponseBody
+import retrofit2.Call
+import retrofit2.Callback
 import retrofit2.Response
 import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * A seekable gateway-media transport captured at one profile credential boundary.
@@ -15,7 +20,10 @@ import java.io.IOException
  * dispatch and again before its response can be consumed.
  */
 internal fun interface SeekableGatewayMediaReader {
-    suspend fun read(position: Long, byteCount: Int): GatewayMediaRangeResult
+    suspend fun read(
+        position: Long,
+        byteCount: Int,
+    ): GatewayMediaRangeResult
 
     fun isCurrent(): Boolean = true
 
@@ -53,33 +61,74 @@ internal class SeekableGatewayMediaSession(
                         IllegalArgumentException("media byte range overflow"),
                     )
                 }
-        var response: Response<ResponseBody>? = null
         return try {
-            response = service.streamManagedFileRange(path, "bytes=$position-$end")
-            if (!isCurrent()) return GatewayMediaRangeResult.Stale
-            when (response.code()) {
-                401 -> {
-                    AuthSessionState.requireSignIn()
-                    GatewayMediaRangeResult.Unauthorized
-                }
-
-                403 -> GatewayMediaRangeResult.Forbidden
-                404 -> GatewayMediaRangeResult.NotFound
-                413 -> GatewayMediaRangeResult.TooLarge
-                206 -> response.toRangeSuccess(position, byteCount)
-                else -> GatewayMediaRangeResult.Failure(IOException("HTTP ${response.code()}"))
-            }
+            service.streamManagedFileRange(path, "bytes=$position-$end").awaitRangeResult(position, byteCount)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
             GatewayMediaRangeResult.Failure(e)
-        } finally {
-            response?.body()?.close()
-            response?.errorBody()?.close()
         }
     }
 
     override fun isCurrent(): Boolean = currentScope() == scope
+
+    private suspend fun Call<ResponseBody>.awaitRangeResult(
+        requestedPosition: Long,
+        requestedCount: Int,
+    ): GatewayMediaRangeResult =
+        suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { cancel() }
+            enqueue(
+                object : Callback<ResponseBody> {
+                    override fun onResponse(
+                        call: Call<ResponseBody>,
+                        response: Response<ResponseBody>,
+                    ) {
+                        if (!continuation.isActive) {
+                            response.closeBodies()
+                            return
+                        }
+                        val result =
+                            try {
+                                if (!isCurrent()) {
+                                    GatewayMediaRangeResult.Stale
+                                } else {
+                                    response.toRangeResult(requestedPosition, requestedCount)
+                                }
+                            } catch (throwable: Throwable) {
+                                GatewayMediaRangeResult.Failure(throwable)
+                            } finally {
+                                response.closeBodies()
+                            }
+                        if (continuation.isActive) continuation.resume(result)
+                    }
+
+                    override fun onFailure(
+                        call: Call<ResponseBody>,
+                        throwable: Throwable,
+                    ) {
+                        if (continuation.isActive) continuation.resumeWithException(throwable)
+                    }
+                },
+            )
+        }
+
+    private fun Response<ResponseBody>.toRangeResult(
+        requestedPosition: Long,
+        requestedCount: Int,
+    ): GatewayMediaRangeResult =
+        when (code()) {
+            401 -> {
+                AuthSessionState.requireSignIn()
+                GatewayMediaRangeResult.Unauthorized
+            }
+
+            403 -> GatewayMediaRangeResult.Forbidden
+            404 -> GatewayMediaRangeResult.NotFound
+            413 -> GatewayMediaRangeResult.TooLarge
+            206 -> toRangeSuccess(requestedPosition, requestedCount)
+            else -> GatewayMediaRangeResult.Failure(IOException("HTTP ${code()}"))
+        }
 
     private fun Response<ResponseBody>.toRangeSuccess(
         requestedPosition: Long,
@@ -108,6 +157,14 @@ internal class SeekableGatewayMediaSession(
 
     companion object {
         private val CONTENT_RANGE = Regex("bytes (\\d+)-(\\d+)/(\\d+|\\*)", RegexOption.IGNORE_CASE)
+    }
+}
+
+private fun Response<ResponseBody>.closeBodies() {
+    try {
+        body()?.close()
+    } finally {
+        errorBody()?.close()
     }
 }
 

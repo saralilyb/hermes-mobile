@@ -1,9 +1,9 @@
 package com.m57.hermescontrol.data.remote
 
 import com.m57.hermescontrol.data.local.AuthSessionState
-import io.mockk.coEvery
-import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -18,6 +18,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import retrofit2.Call
+import retrofit2.Callback
 import retrofit2.Response
 
 class SeekableGatewayMediaTest {
@@ -27,16 +29,25 @@ class SeekableGatewayMediaTest {
     fun `range request returns partial bytes and metadata`() =
         runTest {
             val service = mockk<HermesApiService>()
-            coEvery { service.streamManagedFileRange("/tmp/movie.mp4", "bytes=100-199") } returns
-                Response.success(
-                    "chunk".toResponseBody(),
-                    okhttp3.Response.Builder()
-                        .request(okhttp3.Request.Builder().url("https://example.test/api/files/stream").build())
-                        .protocol(okhttp3.Protocol.HTTP_1_1)
-                        .code(206)
-                        .message("Partial Content")
-                        .headers(Headers.headersOf("Content-Range", "bytes 100-104/1000", "Content-Type", "video/mp4"))
-                        .build(),
+            every { service.streamManagedFileRange("/tmp/movie.mp4", "bytes=100-199") } returns
+                immediateCall(
+                    Response.success(
+                        "chunk".toResponseBody(),
+                        okhttp3.Response.Builder()
+                            .request(okhttp3.Request.Builder().url("https://example.test/api/files/stream").build())
+                            .protocol(okhttp3.Protocol.HTTP_1_1)
+                            .code(206)
+                            .message("Partial Content")
+                            .headers(
+                                Headers.headersOf(
+                                    "Content-Range",
+                                    "bytes 100-104/1000",
+                                    "Content-Type",
+                                    "video/mp4",
+                                ),
+                            )
+                            .build(),
+                    ),
                 )
             val session = SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { scope }
 
@@ -45,7 +56,7 @@ class SeekableGatewayMediaTest {
             assertArrayEquals("chunk".toByteArray(), result.bytes)
             assertEquals(1000L, result.totalLength)
             assertEquals("video/mp4", result.mimeType)
-            coVerify(exactly = 1) { service.streamManagedFileRange("/tmp/movie.mp4", "bytes=100-199") }
+            verify(exactly = 1) { service.streamManagedFileRange("/tmp/movie.mp4", "bytes=100-199") }
         }
 
     @Test
@@ -53,18 +64,19 @@ class SeekableGatewayMediaTest {
         runTest {
             val service = mockk<HermesApiService>()
             val started = CompletableDeferred<Unit>()
-            val release = CompletableDeferred<Unit>()
             var current = scope
-            coEvery { service.streamManagedFileRange(any(), any()) } coAnswers {
+            lateinit var callback: Callback<ResponseBody>
+            val call = mockk<Call<ResponseBody>>(relaxed = true)
+            every { call.enqueue(any()) } answers {
+                callback = firstArg()
                 started.complete(Unit)
-                release.await()
-                Response.success("old-profile".toResponseBody())
             }
+            every { service.streamManagedFileRange(any(), any()) } returns call
             val session = SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { current }
             val result = async { session.read(0, 32) }
             started.await()
             current = scope.copy(profileId = "profile-b", credentialFingerprint = "cred-b")
-            release.complete(Unit)
+            callback.onResponse(call, Response.success("old-profile".toResponseBody()))
 
             assertTrue(result.await() is GatewayMediaRangeResult.Stale)
         }
@@ -73,16 +85,18 @@ class SeekableGatewayMediaTest {
     fun `mismatched content range is rejected`() =
         runTest {
             val service = mockk<HermesApiService>()
-            coEvery { service.streamManagedFileRange(any(), any()) } returns
-                Response.success(
-                    "chunk".toResponseBody(),
-                    okhttp3.Response.Builder()
-                        .request(okhttp3.Request.Builder().url("https://example.test/api/files/stream").build())
-                        .protocol(okhttp3.Protocol.HTTP_1_1)
-                        .code(206)
-                        .message("Partial Content")
-                        .headers(Headers.headersOf("Content-Range", "bytes 0-4/1000"))
-                        .build(),
+            every { service.streamManagedFileRange(any(), any()) } returns
+                immediateCall(
+                    Response.success(
+                        "chunk".toResponseBody(),
+                        okhttp3.Response.Builder()
+                            .request(okhttp3.Request.Builder().url("https://example.test/api/files/stream").build())
+                            .protocol(okhttp3.Protocol.HTTP_1_1)
+                            .code(206)
+                            .message("Partial Content")
+                            .headers(Headers.headersOf("Content-Range", "bytes 0-4/1000"))
+                            .build(),
+                    ),
                 )
             val session = SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { scope }
 
@@ -110,16 +124,18 @@ class SeekableGatewayMediaTest {
 
                     override fun source() = source
                 }
-            coEvery { service.streamManagedFileRange("/tmp/movie.mp4", "bytes=100-104") } returns
-                Response.success(
-                    body,
-                    okhttp3.Response.Builder()
-                        .request(okhttp3.Request.Builder().url("https://example.test/api/files/stream").build())
-                        .protocol(okhttp3.Protocol.HTTP_1_1)
-                        .code(206)
-                        .message("Partial Content")
-                        .headers(Headers.headersOf("Content-Range", "bytes 100-105/1000"))
-                        .build(),
+            every { service.streamManagedFileRange("/tmp/movie.mp4", "bytes=100-104") } returns
+                immediateCall(
+                    Response.success(
+                        body,
+                        okhttp3.Response.Builder()
+                            .request(okhttp3.Request.Builder().url("https://example.test/api/files/stream").build())
+                            .protocol(okhttp3.Protocol.HTTP_1_1)
+                            .code(206)
+                            .message("Partial Content")
+                            .headers(Headers.headersOf("Content-Range", "bytes 100-105/1000"))
+                            .build(),
+                    ),
                 )
             val session = SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { scope }
 
@@ -137,7 +153,7 @@ class SeekableGatewayMediaTest {
                 }
 
             assertTrue(session.read(0, 64) is GatewayMediaRangeResult.Stale)
-            coVerify(exactly = 0) { service.streamManagedFileRange(any(), any()) }
+            verify(exactly = 0) { service.streamManagedFileRange(any(), any()) }
         }
 
     @Test
@@ -146,18 +162,19 @@ class SeekableGatewayMediaTest {
             AuthSessionState.resetForTest()
             val service = mockk<HermesApiService>()
             val started = CompletableDeferred<Unit>()
-            val release = CompletableDeferred<Unit>()
             var current = scope
-            coEvery { service.streamManagedFileRange(any(), any()) } coAnswers {
+            lateinit var callback: Callback<ResponseBody>
+            val call = mockk<Call<ResponseBody>>(relaxed = true)
+            every { call.enqueue(any()) } answers {
+                callback = firstArg()
                 started.complete(Unit)
-                release.await()
-                Response.error(401, ByteArray(0).toResponseBody())
             }
+            every { service.streamManagedFileRange(any(), any()) } returns call
             val session = SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { current }
             val result = async { session.read(0, 64) }
             started.await()
             current = scope.copy(profileId = "profile-b", credentialFingerprint = "cred-b")
-            release.complete(Unit)
+            callback.onResponse(call, Response.error(401, ByteArray(0).toResponseBody()))
 
             assertEquals(GatewayMediaRangeResult.Stale, result.await())
             assertTrue(!AuthSessionState.signInRequired.value)
@@ -169,8 +186,8 @@ class SeekableGatewayMediaTest {
         runTest {
             AuthSessionState.resetForTest()
             val service = mockk<HermesApiService>()
-            coEvery { service.streamManagedFileRange(any(), any()) } returns
-                Response.error(401, ByteArray(0).toResponseBody())
+            every { service.streamManagedFileRange(any(), any()) } returns
+                immediateCall(Response.error(401, ByteArray(0).toResponseBody()))
             val session = SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { scope }
 
             assertEquals(GatewayMediaRangeResult.Unauthorized, session.read(0, 64))
@@ -188,7 +205,7 @@ class SeekableGatewayMediaTest {
             val result = session.read(0, 64)
 
             assertTrue(result is GatewayMediaRangeResult.Failure)
-            coVerify(exactly = 0) { service.streamManagedFileRange(any(), any()) }
+            verify(exactly = 0) { service.streamManagedFileRange(any(), any()) }
         }
 
     @Test
@@ -208,5 +225,11 @@ class SeekableGatewayMediaTest {
         assertEquals(listOf("path"), queryNames)
         assertEquals(listOf("Range"), headerNames)
         assertNull(method.getAnnotation(retrofit2.http.Url::class.java))
+    }
+
+    private fun immediateCall(response: Response<ResponseBody>): Call<ResponseBody> {
+        val call = mockk<Call<ResponseBody>>(relaxed = true)
+        every { call.enqueue(any()) } answers { firstArg<Callback<ResponseBody>>().onResponse(call, response) }
+        return call
     }
 }

@@ -1,13 +1,26 @@
 package com.m57.hermescontrol.ui.common
 
 import com.m57.hermescontrol.data.remote.GatewayMediaRangeResult
+import com.m57.hermescontrol.data.remote.HermesApiService
+import com.m57.hermescontrol.data.remote.MediaCacheScope
 import com.m57.hermescontrol.data.remote.SeekableGatewayMediaReader
+import com.m57.hermescontrol.data.remote.SeekableGatewayMediaSession
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.awaitCancellation
+import okhttp3.ResponseBody
+import okio.Buffer
+import okio.ForwardingSource
+import okio.buffer
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -141,6 +154,76 @@ class GatewayMediaDataReaderTest {
             assertThrows(Exception::class.java) { first.get(1, TimeUnit.SECONDS) }
             assertThrows(Exception::class.java) { second.get(1, TimeUnit.SECONDS) }
         } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `close cancels range call and closes a body stalled during synchronous read`() {
+        val readStarted = CountDownLatch(1)
+        val bodyClosed = CountDownLatch(1)
+        val body =
+            object : ResponseBody() {
+                private val source =
+                    object : ForwardingSource(Buffer()) {
+                        override fun read(
+                            sink: Buffer,
+                            byteCount: Long,
+                        ): Long {
+                            readStarted.countDown()
+                            if (!bodyClosed.await(2, TimeUnit.SECONDS)) {
+                                throw IOException("timed out waiting for body close")
+                            }
+                            throw IOException("closed")
+                        }
+
+                        override fun close() {
+                            bodyClosed.countDown()
+                            super.close()
+                        }
+                    }.buffer()
+
+                override fun contentType() = null
+
+                override fun contentLength() = -1L
+
+                override fun source() = source
+            }
+        val response: Response<ResponseBody> =
+            Response.success(
+                body,
+                okhttp3.Response.Builder()
+                    .request(okhttp3.Request.Builder().url("https://example.test/api/files/stream").build())
+                    .protocol(okhttp3.Protocol.HTTP_1_1)
+                    .code(206)
+                    .message("Partial Content")
+                    .header("Content-Range", "bytes 0-0/1")
+                    .build(),
+            )
+        val call = mockk<Call<ResponseBody>>(relaxed = true)
+        every { call.enqueue(any()) } answers {
+            firstArg<Callback<ResponseBody>>().onResponse(call, response)
+        }
+        every { call.cancel() } answers { body.close() }
+        val service = mockk<HermesApiService>()
+        every { service.streamManagedFileRange(any(), any()) } returns call
+        val scope = MediaCacheScope("profile-a", "https://example.test/", "direct-token", "cred-a")
+        val reader = GatewayMediaDataReader(SeekableGatewayMediaSession("/tmp/movie.mp4", service, scope) { scope })
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val read = executor.submit<Int> { reader.readAt(0, ByteArray(1), 0, 1) }
+            assertTrue(readStarted.await(1, TimeUnit.SECONDS))
+
+            val before = System.nanoTime()
+            reader.close()
+            val closeMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - before)
+
+            assertTrue("close blocked for $closeMillis ms", closeMillis < 100)
+            assertTrue(bodyClosed.await(1, TimeUnit.SECONDS))
+            assertThrows(Exception::class.java) { read.get(1, TimeUnit.SECONDS) }
+            verify(exactly = 1) { call.cancel() }
+        } finally {
+            body.close()
             executor.shutdownNow()
         }
     }
