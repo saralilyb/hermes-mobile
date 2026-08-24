@@ -112,6 +112,12 @@ object GatewayFileClient {
         return fetch(path, context.service, GatewayMediaCache(cacheDir), context.scope, context::isCurrent)
     }
 
+    /** Capture a range transport at the selected profile's current credential boundary. */
+    internal fun openSeekable(path: String): SeekableGatewayMediaSession {
+        val context = currentContext()
+        return SeekableGatewayMediaSession(path, context.service, context.scope, context.currentScope)
+    }
+
     internal suspend fun fetch(
         path: String,
         service: HermesApiService,
