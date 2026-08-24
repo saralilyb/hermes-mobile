@@ -68,6 +68,26 @@ internal fun ConfigUiState.withFieldDraft(
 internal fun ConfigUiState.withoutFieldDraft(key: String): ConfigUiState =
     copy(fieldDrafts = fieldDrafts - key, invalidKeys = invalidKeys - key)
 
+internal data class ReconciledEditorDrafts(
+    val pendingChanges: Map<String, JsonElement>,
+    val fieldDrafts: Map<String, ConfigFieldDraft>,
+    val invalidKeys: Set<String>,
+)
+
+/** Keep uncommitted editor state only for fields the refreshed schema can still edit. */
+internal fun reconcileEditorDrafts(
+    pendingChanges: Map<String, JsonElement>,
+    fieldDrafts: Map<String, ConfigFieldDraft>,
+    editableKeys: Set<String>,
+): ReconciledEditorDrafts {
+    val retainedDrafts = fieldDrafts.filterKeys(editableKeys::contains)
+    return ReconciledEditorDrafts(
+        pendingChanges = pendingChanges.filterKeys(editableKeys::contains),
+        fieldDrafts = retainedDrafts,
+        invalidKeys = retainedDrafts.filterValues { !it.isValid }.keys,
+    )
+}
+
 data class ConfigUiText(
     @StringRes val resourceId: Int,
     val args: List<Any> = emptyList(),
@@ -193,6 +213,14 @@ class ConfigViewModel :
                                     flattenConfig(it, schema.fields.keys)
                                 }
                             val path = (rawResult as? NetworkResult.Success)?.data?.path
+                            val editorDrafts =
+                                reconcileEditorDrafts(
+                                    pendingChanges = pendingChanges,
+                                    fieldDrafts = _uiState.value.fieldDrafts,
+                                    editableKeys = schema.fields.keys,
+                                )
+                            pendingChanges.clear()
+                            pendingChanges.putAll(editorDrafts.pendingChanges)
 
                             _uiState.update {
                                 it.copy(
@@ -204,8 +232,8 @@ class ConfigViewModel :
                                     path = path,
                                     activeCategory = reconciled.activeCategory,
                                     modifiedKeys = pendingChanges.keys.toSet(),
-                                    invalidKeys = emptySet(),
-                                    fieldDrafts = emptyMap(),
+                                    invalidKeys = editorDrafts.invalidKeys,
+                                    fieldDrafts = editorDrafts.fieldDrafts,
                                 )
                             }
                         } else {

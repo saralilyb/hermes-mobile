@@ -6,6 +6,7 @@ import com.m57.hermescontrol.data.model.SchemaField
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.HermesApiService
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
@@ -33,6 +34,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import retrofit2.Response
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -207,6 +209,83 @@ class ConfigViewModelTest {
             assertEquals("model: submitted", viewModel.uiState.value.yamlText)
             releaseOldLoad.complete(Unit)
             Unit
+        }
+
+    @Test
+    fun `invalid field draft survives successful refresh and continues to block save`() =
+        runBlocking {
+            val configCalls = AtomicInteger()
+            stubStableLoadEndpoints()
+            coEvery { mockApi.getConfig() } coAnswers {
+                configResponse(if (configCalls.incrementAndGet() == 1) "initial" else "refreshed")
+            }
+
+            val viewModel = ConfigViewModel()
+            awaitModel(viewModel, "initial")
+            viewModel.setFieldDraft("model", "unfinished-", isValid = false)
+
+            viewModel.loadAll()
+            awaitModel(viewModel, "refreshed")
+
+            assertEquals(ConfigFieldDraft("unfinished-", isValid = false), viewModel.uiState.value.fieldDrafts["model"])
+            assertEquals(setOf("model"), viewModel.uiState.value.invalidKeys)
+            viewModel.updateField("model", JsonPrimitive("must-not-save"))
+            viewModel.saveConfig()
+            coVerify(exactly = 0) { mockApi.updateConfig(any()) }
+        }
+
+    @Test
+    fun `valid text preserving draft and matching pending change survive successful refresh`() =
+        runBlocking {
+            val configCalls = AtomicInteger()
+            stubStableLoadEndpoints()
+            coEvery { mockApi.getConfig() } coAnswers {
+                configResponse(if (configCalls.incrementAndGet() == 1) "initial" else "server-refresh")
+            }
+
+            val viewModel = ConfigViewModel()
+            awaitModel(viewModel, "initial")
+            viewModel.setFieldDraft("model", "draft text  ", isValid = true)
+            viewModel.updateField("model", JsonPrimitive("draft text"))
+
+            viewModel.loadAll()
+            withTimeout(5_000) { viewModel.uiState.first { !it.isLoading && configCalls.get() >= 2 } }
+
+            assertEquals(ConfigFieldDraft("draft text  ", isValid = true), viewModel.uiState.value.fieldDrafts["model"])
+            assertEquals("draft text", viewModel.uiState.value.modelValue())
+            assertEquals(setOf("model"), viewModel.uiState.value.modifiedKeys)
+            assertTrue(viewModel.uiState.value.invalidKeys.isEmpty())
+        }
+
+    @Test
+    fun `refresh prunes draft validation and pending change for removed schema field`() =
+        runBlocking {
+            val useRemovedSchema = AtomicBoolean(false)
+            stubStableLoadEndpoints()
+            coEvery { mockApi.getConfig() } returns configResponse("initial")
+            coEvery { mockApi.getConfigSchema() } coAnswers {
+                Response.success(
+                    if (useRemovedSchema.get()) {
+                        ConfigSchemaResponse(fields = emptyMap(), category_order = emptyList())
+                    } else {
+                        schema()
+                    },
+                )
+            }
+
+            val viewModel = ConfigViewModel()
+            awaitModel(viewModel, "initial")
+            viewModel.setFieldDraft("model", "invalid", isValid = false)
+            viewModel.updateField("model", JsonPrimitive("pending"))
+
+            useRemovedSchema.set(true)
+            viewModel.loadAll()
+            withTimeout(5_000) { viewModel.uiState.first { !it.isLoading && it.schema?.fields?.isEmpty() == true } }
+
+            assertTrue(viewModel.uiState.value.fieldDrafts.isEmpty())
+            assertTrue(viewModel.uiState.value.invalidKeys.isEmpty())
+            assertTrue(viewModel.uiState.value.modifiedKeys.isEmpty())
+            assertEquals("initial", viewModel.uiState.value.modelValue())
         }
 
     @Test
