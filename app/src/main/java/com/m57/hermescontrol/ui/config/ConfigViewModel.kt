@@ -363,6 +363,7 @@ class ConfigViewModel :
         val state = _uiState.value
         if (state.yamlMode || pendingChanges.isEmpty() || state.isSaving || state.invalidKeys.isNotEmpty()) return
         val submitted = pendingChanges.toMap()
+        invalidateLoad()
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
             val changeset = nestConfigChanges(submitted)
@@ -425,6 +426,7 @@ class ConfigViewModel :
             return
         }
         val yamlText = state.yamlText ?: return
+        invalidateLoad()
         _uiState.update { it.copy(yamlIsSaving = true) }
         viewModelScope.launch {
             val result =
@@ -517,5 +519,11 @@ class ConfigViewModel :
 
     override fun clearToast() {
         _uiState.update { it.copy(toastMessage = null) }
+    }
+
+    private fun invalidateLoad() {
+        loadGeneration += 1
+        loadJob?.cancel()
+        loadJob = null
     }
 }
