@@ -265,4 +265,49 @@ class MarkdownTextFeatureTest {
         assertEquals("https://images.example.com/cat.gif", source.model)
         assertNull(source.gatewayPath)
     }
+
+    @Test
+    fun testOrderedList_looseListPreservesNumbers() {
+        val markdown =
+            """
+            1. First
+
+            2. Second
+
+            3. Third
+            """.trimIndent()
+
+        val blocks = parseBlocks(markdown).filterIsInstance<MdBlock.Ordered>()
+
+        assertEquals(3, blocks.size)
+        assertEquals(listOf(1, 2, 3), blocks.map { it.index })
+        assertEquals(listOf("First", "Second", "Third"), blocks.map { it.text })
+    }
+
+    @Test
+    fun testOrderedList_customStartNumberPreserved() {
+        val markdown =
+            """
+            2. Two
+            3. Three
+            """.trimIndent()
+
+        val blocks = parseBlocks(markdown).filterIsInstance<MdBlock.Ordered>()
+
+        assertEquals(listOf(2, 3), blocks.map { it.index })
+    }
+
+    @Test
+    fun testOrderedList_tightListPreservesNumbers() {
+        val markdown =
+            """
+            1. One
+            2. Two
+            3. Three
+            """.trimIndent()
+
+        val blocks = parseBlocks(markdown).filterIsInstance<MdBlock.Ordered>()
+
+        assertEquals(listOf(1, 2, 3), blocks.map { it.index })
+    }
 }
