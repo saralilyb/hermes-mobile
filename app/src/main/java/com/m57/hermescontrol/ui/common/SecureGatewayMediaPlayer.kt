@@ -47,6 +47,7 @@ import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.remote.GatewayFileClient
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -59,6 +60,23 @@ internal suspend fun <T> initializeSecureMedia(
     dispatcher: CoroutineDispatcher,
     initializer: () -> T,
 ): T = withContext(dispatcher) { initializer() }
+
+internal suspend fun <T : Any> initializeAndOwnSecureMedia(
+    dispatcher: CoroutineDispatcher,
+    initializer: () -> T,
+    publish: (T) -> Unit,
+    close: (T) -> Unit,
+) {
+    var initialized: T? = null
+    try {
+        initialized = initializeSecureMedia(dispatcher, initializer)
+        currentCoroutineContext().ensureActive()
+        publish(initialized)
+        awaitCancellation()
+    } finally {
+        initialized?.let(close)
+    }
+}
 
 private sealed interface MediaInitialization {
     data object Loading : MediaInitialization
@@ -75,21 +93,16 @@ internal fun SecureGatewayMediaPlayer(
 ) {
     var initialization by remember(request) { mutableStateOf<MediaInitialization>(MediaInitialization.Loading) }
     LaunchedEffect(request) {
-        var initialized: GatewayMediaDataSource? = null
-        var published = false
         try {
-            initialized =
-                initializeSecureMedia(Dispatchers.IO) {
-                    GatewayMediaDataSource(GatewayFileClient.openSeekable(request.path))
-                }
-            currentCoroutineContext().ensureActive()
-            initialization = MediaInitialization.Ready(initialized)
-            published = true
+            initializeAndOwnSecureMedia(
+                dispatcher = Dispatchers.IO,
+                initializer = { GatewayMediaDataSource(GatewayFileClient.openSeekable(request.path)) },
+                publish = { initialization = MediaInitialization.Ready(it) },
+                close = GatewayMediaDataSource::close,
+            )
         } catch (_: Exception) {
             currentCoroutineContext().ensureActive()
             initialization = MediaInitialization.Error
-        } finally {
-            if (!published) initialized?.close()
         }
     }
 

@@ -1,13 +1,18 @@
 package com.m57.hermescontrol.ui.common
 
 import androidx.lifecycle.Lifecycle
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 class SecureGatewayMediaPlayerPolicyTest {
     @Test
@@ -37,4 +42,26 @@ class SecureGatewayMediaPlayerPolicyTest {
             executor.shutdownNow()
         }
     }
+
+    @Test
+    fun `initialized media remains owned when cancelled immediately after publication`() =
+        runBlocking {
+            val published = CompletableDeferred<Unit>()
+            val closeCount = AtomicInteger()
+            val owner = Any()
+            val job =
+                launch {
+                    initializeAndOwnSecureMedia(
+                        dispatcher = Dispatchers.Unconfined,
+                        initializer = { owner },
+                        publish = { published.complete(Unit) },
+                        close = { closeCount.incrementAndGet() },
+                    )
+                }
+
+            published.await()
+            job.cancelAndJoin()
+
+            assertEquals(1, closeCount.get())
+        }
 }
