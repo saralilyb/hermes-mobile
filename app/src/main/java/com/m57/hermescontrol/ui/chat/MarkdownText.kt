@@ -625,8 +625,12 @@ internal fun splitInlineMath(text: String): List<InlineMathSegment> {
 
     while (i < text.length) {
         if (text[i] == '`' && !text.isEscaped(i)) {
-            val codeEnd = text.indexOf('`', i + 1)
-            i = if (codeEnd == -1) text.length else codeEnd + 1
+            var delimiterEnd = i + 1
+            while (delimiterEnd < text.length && text[delimiterEnd] == '`') delimiterEnd++
+            val delimiterLength = delimiterEnd - i
+            val delimiter = "`".repeat(delimiterLength)
+            val codeEnd = text.indexOf(delimiter, delimiterEnd)
+            i = if (codeEnd == -1) text.length else codeEnd + delimiterLength
             continue
         }
         if (text.startsWith("\\(", i) && !text.isEscaped(i)) {

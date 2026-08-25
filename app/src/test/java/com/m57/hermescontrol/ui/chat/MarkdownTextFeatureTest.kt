@@ -151,6 +151,19 @@ class MarkdownTextFeatureTest {
         assertEquals("\$\$x\$\$", block.code)
     }
 
+    @Test
+    fun testMultiBacktickCodeSpans_doNotParseMath() {
+        val samples =
+            listOf(
+                "``\$x\$``",
+                "```\\(x\\)```",
+            )
+
+        samples.forEach { sample ->
+            assertEquals(listOf(InlineMathSegment.Text(sample)), splitInlineMath(sample))
+        }
+    }
+
     // 3. STRIKETHROUGH
     @Test
     fun testStrikethrough_parses() {
