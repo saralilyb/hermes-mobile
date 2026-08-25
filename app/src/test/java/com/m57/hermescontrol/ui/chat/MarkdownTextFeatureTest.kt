@@ -36,8 +36,8 @@ private val DEFAULT_HIGHLIGHTS =
     )
 
 /**
- * Verifies the hand-rolled Markdown parser covers the feature set requested for issue #572
- * (math excluded by decision). Each test asserts the block/inline structure actually parses —
+ * Verifies the hand-rolled Markdown parser covers the feature set requested for issue #572.
+ * Each test asserts the block/inline structure actually parses —
  * not just that it compiles. Inline assertions avoid referencing Compose text types (FontWeight,
  * BaselineShift, etc.) that aren't on the unit-test classpath; we inspect SpanStyle fields
  * structurally instead.
@@ -65,12 +65,103 @@ class MarkdownTextFeatureTest {
         assertEquals(TableAlign.RIGHT, table.alignments[2])
     }
 
-    // 2. MATH — excluded; ensure a math-looking string stays plain, not crashed
+    // 2. MATH
     @Test
-    fun testMath_isTreatedAsPlainText() {
-        val md = "E = mc^2^ and `x = (-b ± √(b²-4ac)) / 2a`"
-        val block = parseBlocks(md).single() as MdBlock.Paragraph
-        assertEquals(md, block.text)
+    fun testDisplayMath_parsesFormula() {
+        val block = parseBlocks("\$\$\\frac{1}{2}\$\$").single() as MdBlock.Math
+
+        assertEquals("\\frac{1}{2}", block.latex)
+    }
+
+    @Test
+    fun testMultilineDisplayMath_preservesFormula() {
+        val block = parseBlocks("\$\$\n\\frac{1}{2}\n+ x\n\$\$").single() as MdBlock.Math
+
+        assertEquals("\\frac{1}{2}\n+ x", block.latex)
+    }
+
+    @Test
+    fun testInlineMath_stripsDelimitersFromFallbackText() {
+        val parsed = parseInline("Energy \$E=mc^2\$.", Color.Black, "", false, Color.Blue, DEFAULT_HIGHLIGHTS)
+
+        assertEquals("Energy E=mc^2.", parsed.toString())
+    }
+
+    @Test
+    fun testInlineMath_insideBold_preservesStyle() {
+        val markup = buildInlineMathMarkup("**Energy \$E\$**")
+        val marker = markup.math.single().marker
+        val parsed = parseInline(markup.source, Color.Black, "", false, Color.Blue, DEFAULT_HIGHLIGHTS)
+        val markerIndex = parsed.indexOf(marker)
+
+        assertEquals("Energy $marker", parsed.toString())
+        assertTrue(parsed.spanStyles.any { markerIndex in it.start until it.end })
+    }
+
+    @Test
+    fun testInlineMath_insideLink_preservesLink() {
+        val markup = buildInlineMathMarkup("[Energy \$E\$](https://example.com)")
+        val marker = markup.math.single().marker
+        val parsed = parseInline(markup.source, Color.Black, "", false, Color.Blue, DEFAULT_HIGHLIGHTS)
+        val markerIndex = parsed.indexOf(marker)
+
+        assertEquals("Energy $marker", parsed.toString())
+        assertTrue(parsed.getLinkAnnotations(markerIndex, markerIndex + 1).isNotEmpty())
+    }
+
+    @Test
+    fun testBracketDisplayMath_parsesFormula() {
+        val block = parseBlocks("\\[\n\\frac{1}{2}\n\\]").single() as MdBlock.Math
+
+        assertEquals("\\frac{1}{2}", block.latex)
+    }
+
+    @Test
+    fun testParenthesizedInlineMath_stripsDelimitersFromFallbackText() {
+        val parsed = parseInline("Energy \\(E=mc^2\\).", Color.Black, "", false, Color.Blue, DEFAULT_HIGHLIGHTS)
+
+        assertEquals("Energy E=mc^2.", parsed.toString())
+    }
+
+    @Test
+    fun testEscapedParenthesizedDelimiter_staysText() {
+        val segments = splitInlineMath("""\\(not math\\)""")
+
+        assertEquals(listOf(InlineMathSegment.Text("""\\(not math\\)""")), segments)
+    }
+
+    @Test
+    fun testEscapedParenthesizedClose_doesNotEndMath() {
+        val segments = splitInlineMath("""\(a\\)b\)""")
+
+        assertEquals(listOf(InlineMathSegment.Math("""a\\)b""")), segments)
+    }
+
+    @Test
+    fun testUnmatchedDisplayDelimiter_staysParagraph() {
+        val block = parseBlocks("\$\$\n\\frac{1}{2}").single() as MdBlock.Paragraph
+
+        assertEquals("\$\$\n\\frac{1}{2}", block.text)
+    }
+
+    @Test
+    fun testFencedMathDelimiter_staysCode() {
+        val block = parseBlocks("```latex\n\$\$x\$\$\n```").single() as MdBlock.Code
+
+        assertEquals("\$\$x\$\$", block.code)
+    }
+
+    @Test
+    fun testMultiBacktickCodeSpans_doNotParseMath() {
+        val samples =
+            listOf(
+                "``\$x\$``",
+                "```\\(x\\)```",
+            )
+
+        samples.forEach { sample ->
+            assertEquals(listOf(InlineMathSegment.Text(sample)), splitInlineMath(sample))
+        }
     }
 
     // 3. STRIKETHROUGH
