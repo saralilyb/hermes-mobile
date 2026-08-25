@@ -37,6 +37,9 @@ import com.m57.hermescontrol.data.ws.JsonRpcError
 import com.m57.hermescontrol.data.ws.WsEvent
 import com.m57.hermescontrol.data.ws.WsMethods
 import com.m57.hermescontrol.data.ws.toJsonElement
+import com.m57.hermescontrol.ui.common.SecureGatewayMediaRequest
+import com.m57.hermescontrol.ui.common.SecureMediaOpenRoute
+import com.m57.hermescontrol.ui.common.routeAttachmentOpen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -114,6 +117,7 @@ data class ChatUiState(
     // Attachment open failure — surfaced as a non-blocking snackbar (issue #724)
     val openError: String? = null,
     val openingAttachmentPath: String? = null,
+    val mediaPlayerRequest: SecureGatewayMediaRequest? = null,
     val clarifyRequest: ClarifyUi? = null,
     // Sudo / secret prompts — surfaced as dialogs (issue #524)
     val sudoPrompt: SudoPromptUi? = null,
@@ -2526,10 +2530,11 @@ class ChatViewModel(
      *   already grants read access for the picked document. If that fails
      *   (e.g. the permission lapsed), we copy to cache and retry via
      *   FileProvider so the tap is never a silent no-op.
-     * - GATEWAY (agent `MEDIA:`) files: fetch the bytes via
+     * - GATEWAY audio/video: hand a profile-fenced range session to the in-app
+     *   player, without materializing the full file or exposing credentials.
+     * - Other GATEWAY (agent `MEDIA:`) files: fetch the bytes via
      *   [GatewayFileClient], write them to a cache file, and open with
-     *   [android.content.Intent.ACTION_VIEW] through FileProvider — so a
-     *   remote phone can view agent-delivered files in-place.
+     *   [android.content.Intent.ACTION_VIEW] through FileProvider.
      *
      * Failures surface through [ChatUiState.openError] (non-blocking
      * snackbar); the tap is never swallowed.
@@ -2538,6 +2543,15 @@ class ChatViewModel(
         val application = getApplication<Application>()
         val ctx = application.applicationContext
         val cacheDir = application.cacheDir
+        when (val route = routeAttachmentOpen(attachment)) {
+            is SecureMediaOpenRoute.Player -> {
+                _uiState.update { it.copy(mediaPlayerRequest = route.request) }
+                return
+            }
+
+            SecureMediaOpenRoute.OpenLocal -> Unit
+            SecureMediaOpenRoute.DownloadAndOpen -> Unit
+        }
         if (attachment.source == AttachmentSource.LOCAL) {
             // Best-effort direct open of the picked content URI.
             runCatching { openWithView(ctx, android.net.Uri.parse(attachment.uri), attachment.mimeType) }
@@ -2669,6 +2683,10 @@ class ChatViewModel(
 
     fun clearOpenError() {
         _uiState.update { it.copy(openError = null) }
+    }
+
+    fun closeMediaPlayer() {
+        _uiState.update { it.copy(mediaPlayerRequest = null) }
     }
 
     private fun serverMessageIndex(

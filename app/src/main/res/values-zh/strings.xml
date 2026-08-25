@@ -1,6 +1,11 @@
 <!-- Modified from Hy4ri/hermes-mobile for this fork; see NOTICE. -->
 
 <resources>
+    <string name="media_player_play">播放</string>
+    <string name="media_player_pause">暂停</string>
+    <string name="media_player_close">关闭播放器</string>
+    <string name="media_player_seek">播放位置</string>
+    <string name="media_player_error">无法读取媒体，播放已停止。请关闭播放器后重试。</string>
     <string name="chat_terminal_backend_content_description">终端后端：%1$s</string>
     <string name="app_name">Hermes Mobile</string>
 

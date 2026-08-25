@@ -50,6 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -102,6 +103,7 @@ import com.m57.hermescontrol.ui.common.AutoScrollingTitleText
 import com.m57.hermescontrol.ui.common.CredentialWarningBanner
 import com.m57.hermescontrol.ui.common.HermesScaffold
 import com.m57.hermescontrol.ui.common.NavIcon
+import com.m57.hermescontrol.ui.common.SecureGatewayMediaPlayer
 import com.m57.hermescontrol.ui.model.components.ModelPickerDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -133,6 +135,9 @@ fun ChatScreen(
     sessionId: String? = null,
     viewModel: ChatViewModel = viewModel(),
 ) {
+    DisposableEffect(viewModel) {
+        onDispose(viewModel::closeMediaPlayer)
+    }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val streamingState by viewModel.streamingState.collectAsStateWithLifecycle()
     val currentModelCapabilities =
@@ -759,6 +764,13 @@ fun ChatScreen(
             ImageViewerDialog(
                 image = image,
                 onDismiss = { viewingImage = null },
+            )
+        }
+
+        state.mediaPlayerRequest?.let { request ->
+            SecureGatewayMediaPlayer(
+                request = request,
+                onClose = viewModel::closeMediaPlayer,
             )
         }
     }

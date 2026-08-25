@@ -1,6 +1,11 @@
 <!-- Modified from Hy4ri/hermes-mobile for this fork; see NOTICE. -->
 
 <resources>
+    <string name="media_player_play">재생</string>
+    <string name="media_player_pause">일시중지</string>
+    <string name="media_player_close">플레이어 닫기</string>
+    <string name="media_player_seek">재생 위치</string>
+    <string name="media_player_error">미디어를 읽을 수 없어 재생이 중지되었습니다. 플레이어를 닫고 다시 시도하세요.</string>
     <string name="chat_terminal_backend_content_description">터미널 백엔드: %1$s</string>
     <string name="app_name">Hermes Mobile</string>
 
