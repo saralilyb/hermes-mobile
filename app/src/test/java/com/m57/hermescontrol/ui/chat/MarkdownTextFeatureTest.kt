@@ -401,4 +401,152 @@ class MarkdownTextFeatureTest {
 
         assertEquals(listOf(1, 2, 3), blocks.map { it.index })
     }
+
+    @Test
+    fun testNestedLists_preserveMixedTypesAndLevels() {
+        val markdown =
+            """
+            - top bullet
+              1. nested number
+                - deep bullet
+              2. second number
+            - second bullet
+            """.trimIndent()
+
+        val blocks = parseBlocks(markdown)
+
+        assertEquals(
+            listOf(
+                MdBlock.Bullet("top bullet", level = 0),
+                MdBlock.Ordered(1, "nested number", level = 1),
+                MdBlock.Bullet("deep bullet", level = 2),
+                MdBlock.Ordered(2, "second number", level = 1),
+                MdBlock.Bullet("second bullet", level = 0),
+            ),
+            blocks,
+        )
+    }
+
+    @Test
+    fun testNestedTasks_preserveCheckedStateAndLevels() {
+        val markdown =
+            """
+            - [ ] parent
+              - [x] child
+                - [ ] grandchild
+            """.trimIndent()
+
+        val blocks = parseBlocks(markdown).filterIsInstance<MdBlock.Task>()
+
+        assertEquals(
+            listOf(
+                MdBlock.Task(checked = false, text = "parent", level = 0),
+                MdBlock.Task(checked = true, text = "child", level = 1),
+                MdBlock.Task(checked = false, text = "grandchild", level = 2),
+            ),
+            blocks,
+        )
+    }
+
+    @Test
+    fun testNestedLists_preserveSourceNumbers() {
+        val markdown =
+            """
+            3. Three
+            1. One
+            1. One again
+            """.trimIndent()
+
+        val blocks = parseBlocks(markdown).filterIsInstance<MdBlock.Ordered>()
+
+        assertEquals(listOf(3, 1, 1), blocks.map { it.index })
+    }
+
+    @Test
+    fun testNestedLists_supportTabsAndContinuationLines() {
+        val markdown = "- root\n\t- child\n\t  continued line"
+
+        val blocks = parseBlocks(markdown).filterIsInstance<MdBlock.Bullet>()
+
+        assertEquals(
+            listOf(
+                MdBlock.Bullet("root", level = 0),
+                MdBlock.Bullet("child continued line", level = 1),
+            ),
+            blocks,
+        )
+    }
+
+    @Test
+    fun testNestedLists_doNotFlattenIndentedBlockContent() {
+        val markdown =
+            """
+            - item
+              > quoted block
+            """.trimIndent()
+
+        val blocks = parseBlocks(markdown)
+
+        assertEquals(MdBlock.Bullet("item"), blocks.first())
+        assertEquals(MdBlock.Paragraph("  > quoted block"), blocks.last())
+    }
+
+    @Test
+    fun testNestedLists_doNotFlattenIndentedCodeFence() {
+        val markdown =
+            """
+            - item
+              ```kotlin
+              val answer = 42
+              ```
+            """.trimIndent()
+
+        val blocks = parseBlocks(markdown)
+
+        assertEquals(MdBlock.Bullet("item"), blocks.first())
+        assertTrue(blocks.last() is MdBlock.Paragraph)
+    }
+
+    @Test
+    fun testNestedLists_doNotAttachContentThatDedentsPastCurrentItem() {
+        val markdown =
+            """
+            - root
+                - child
+              outside child
+            """.trimIndent()
+
+        val blocks = parseBlocks(markdown)
+
+        assertEquals(MdBlock.Bullet("root", level = 0), blocks[0])
+        assertEquals(MdBlock.Bullet("child", level = 1), blocks[1])
+        assertEquals(MdBlock.Paragraph("  outside child"), blocks[2])
+    }
+
+    @Test
+    fun testNestedLists_useActualMarkerWidthForContinuations() {
+        val cases =
+            listOf(
+                "-   item\n  too shallow" to MdBlock.Bullet("item"),
+                "10.   item\n    too shallow" to MdBlock.Ordered(10, "item"),
+                "- [ ]   item\n      too shallow" to MdBlock.Task(false, "item"),
+            )
+
+        cases.forEach { (markdown, expectedItem) ->
+            val blocks = parseBlocks(markdown)
+
+            assertEquals(expectedItem, blocks.first())
+            assertTrue(blocks.last() is MdBlock.Paragraph)
+        }
+    }
+
+    @Test
+    fun testNestedLists_doNotFlattenIndentedCodeBlock() {
+        val markdown = "- item\n      val answer = 42"
+
+        val blocks = parseBlocks(markdown)
+
+        assertEquals(MdBlock.Bullet("item"), blocks.first())
+        assertEquals(MdBlock.Paragraph("      val answer = 42"), blocks.last())
+    }
 }
