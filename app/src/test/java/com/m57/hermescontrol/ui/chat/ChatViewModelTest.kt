@@ -1092,7 +1092,10 @@ class ChatViewModelTest {
             verify {
                 HermesWsClient.send(
                     WsMethods.SESSION_RESUME,
-                    mapOf("session_id" to "session-from-notification"),
+                    mapOf(
+                        "session_id" to "session-from-notification",
+                        "omit_messages" to true,
+                    ),
                     any(),
                 )
             }
@@ -1870,7 +1873,13 @@ class ChatViewModelTest {
                     .isEmpty(),
             )
 
-            verify { HermesWsClient.send(WsMethods.SESSION_RESUME, mapOf("session_id" to "session-456"), any()) }
+            verify {
+                HermesWsClient.send(
+                    WsMethods.SESSION_RESUME,
+                    mapOf("session_id" to "session-456", "omit_messages" to true),
+                    any(),
+                )
+            }
         }
 
     @Test
@@ -1895,7 +1904,7 @@ class ChatViewModelTest {
             every {
                 HermesWsClient.send(
                     WsMethods.SESSION_RESUME,
-                    mapOf("session_id" to "session-root"),
+                    mapOf("session_id" to "session-root", "omit_messages" to true),
                     any(),
                 )
             } answers {
@@ -2031,7 +2040,7 @@ class ChatViewModelTest {
                     ),
                 )
             coEvery {
-                api.getSessionMessages("session-root", 150, 50, true, true)
+                api.getSessionMessages("session-root", 150, 0, true, "latest")
             } returns
                 retrofit2.Response.success(
                     com.m57.hermescontrol.data.model.SessionMessagesResponse(
@@ -2047,11 +2056,18 @@ class ChatViewModelTest {
                                     reasoning = "REST reasoning",
                                 ),
                             ),
+                        pagination =
+                            com.m57.hermescontrol.data.model.SessionMessagePagination(
+                                limit = 150,
+                                offset = 0,
+                                order = "latest",
+                                returned = 150,
+                            ),
                     ),
                 )
             var olderPageRequested = false
             coEvery {
-                api.getSessionMessages("session-root", 50, 0, true, null)
+                api.getSessionMessages("session-root", 150, 150, true, "latest")
             } answers {
                 olderPageRequested = true
                 retrofit2.Response.success(
@@ -2064,7 +2080,7 @@ class ChatViewModelTest {
             every {
                 HermesWsClient.send(
                     WsMethods.SESSION_RESUME,
-                    mapOf("session_id" to "session-root"),
+                    mapOf("session_id" to "session-root", "omit_messages" to true),
                     any(),
                 )
             } answers {
@@ -2095,6 +2111,11 @@ class ChatViewModelTest {
             advanceUntilIdle()
 
             assertTrue(olderPageRequested)
+            assertFalse(
+                viewModel.uiState.value.messages.any {
+                    it.content == "Fallback answer"
+                },
+            )
             assertEquals(
                 "REST reasoning",
                 viewModel.uiState.value.messages
@@ -2104,7 +2125,7 @@ class ChatViewModelTest {
         }
 
     @Test
-    fun testCompactedHistory_usesServerTailOffsetAndPagesBackward() =
+    fun testCompactedHistory_usesLatestOrderAndPagesBackward() =
         runTest {
             val (viewModel, _) = createViewModelWithSession()
             val api = ApiClient.hermesApi
@@ -2125,7 +2146,7 @@ class ChatViewModelTest {
                 val limit: Int?,
                 val offset: Int,
                 val includeCompacted: Boolean?,
-                val fromEnd: Boolean?,
+                val order: String?,
             )
 
             val pageRequests = mutableListOf<PageRequest>()
@@ -2137,19 +2158,21 @@ class ChatViewModelTest {
                         limit = arg(1),
                         offset = arg(2),
                         includeCompacted = arg(3),
-                        fromEnd = arg(4),
+                        order = arg(4),
                     )
                 pageRequests += request
-                if (request.fromEnd == true) {
+                if (request.offset == 0) {
                     retrofit2.Response.success(
                         com.m57.hermescontrol.data.model.SessionMessagesResponse(
                             messages =
                                 listOf(
                                     com.m57.hermescontrol.data.model.SessionMessage(
+                                        id = 2836,
                                         role = "user",
                                         content = "Recent turn",
                                     ),
                                     com.m57.hermescontrol.data.model.SessionMessage(
+                                        id = 2837,
                                         role = "assistant",
                                         content = "Recent reply",
                                     ),
@@ -2157,9 +2180,9 @@ class ChatViewModelTest {
                             pagination =
                                 com.m57.hermescontrol.data.model.SessionMessagePagination(
                                     limit = 150,
-                                    offset = 2835,
-                                    returned = 2,
-                                    total = 2885,
+                                    offset = 0,
+                                    order = "latest",
+                                    returned = 150,
                                 ),
                         ),
                     )
@@ -2169,6 +2192,7 @@ class ChatViewModelTest {
                             messages =
                                 listOf(
                                     com.m57.hermescontrol.data.model.SessionMessage(
+                                        id = 2686,
                                         role = "user",
                                         content = "Archived turn",
                                     ),
@@ -2176,9 +2200,9 @@ class ChatViewModelTest {
                             pagination =
                                 com.m57.hermescontrol.data.model.SessionMessagePagination(
                                     limit = 150,
-                                    offset = 2600,
+                                    offset = 150,
+                                    order = "latest",
                                     returned = 1,
-                                    total = 2885,
                                 ),
                         ),
                     )
@@ -2192,8 +2216,8 @@ class ChatViewModelTest {
 
             assertEquals(
                 listOf(
-                    PageRequest(150, 50, true, true),
-                    PageRequest(150, 2685, true, null),
+                    PageRequest(150, 0, true, "latest"),
+                    PageRequest(150, 150, true, "latest"),
                 ),
                 pageRequests,
             )
@@ -2202,10 +2226,10 @@ class ChatViewModelTest {
                 viewModel.uiState.value.messages.map { it.content },
             )
             assertEquals(
-                "rest-session-root-2600",
+                "rest-session-root-2686",
                 viewModel.uiState.value.messages.first().id,
             )
-            assertTrue(viewModel.uiState.value.hasOlderMessages)
+            assertFalse(viewModel.uiState.value.hasOlderMessages)
         }
 
     @Test
@@ -2244,7 +2268,13 @@ class ChatViewModelTest {
             advanceUntilIdle()
 
             assertTrue(countRequested)
-            assertEquals(listOf(Triple("session-root", 150, 50)), pageRequests)
+            assertEquals(
+                listOf(
+                    Triple("session-root", 150, 0),
+                    Triple("session-root", 150, 50),
+                ),
+                pageRequests,
+            )
             assertFalse(viewModel.uiState.value.isLoading)
             assertTrue(viewModel.uiState.value.messages.isEmpty())
             assertFalse(viewModel.uiState.value.hasOlderMessages)
