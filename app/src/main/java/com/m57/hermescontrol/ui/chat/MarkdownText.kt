@@ -59,9 +59,10 @@ import com.m57.hermescontrol.theme.searchHighlightColors
 private val URL_PATTERN = Regex("""https?://[^\s)>\[\]"'‘’]+""")
 private val TABLE_COL_WIDTH = 160.dp
 private val FN_DEF_RE = Regex("""^\[\^([^\]]+)\]:\s*(.*)$""")
-private val BULLET_RE = Regex("""^\s*[-*+]\s+(.*)""")
-private val TASK_RE = Regex("""^\s*[-*+]\s+\[([ xX])\]\s+(.*)""")
-private val ORDERED_RE = Regex("""^\s*(\d+)\.\s+(.*)""")
+private val TASK_LINE_RE = Regex("""^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$""")
+private val BULLET_LINE_RE = Regex("""^(\s*)[-*+]\s+(.*)$""")
+private val ORDERED_LINE_RE = Regex("""^(\s*)(\d+)\.\s+(.*)$""")
+private val LIST_ITEM_LINE_RE = Regex("""^(\s*)(?:[-*+]\s+(?:\[([ xX])\]\s+)?|(\d+)\.\s+)(.*)$""")
 
 /**
  * Renders chat assistant text as Markdown — but ONLY once the message has finished streaming.
@@ -170,12 +171,23 @@ fun MarkdownText(
                 }
 
                 is MdBlock.Bullet -> {
+                    val indent = (block.level * 16).dp
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(start = indent)
+                                .padding(vertical = 1.dp),
                         verticalAlignment = Alignment.Top,
                     ) {
+                        val bulletChar =
+                            when (block.level % 3) {
+                                0 -> "•"
+                                1 -> "◦"
+                                else -> "▪"
+                            }
                         Text(
-                            text = "•",
+                            text = bulletChar,
                             color = textColor,
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(end = 6.dp),
@@ -195,8 +207,13 @@ fun MarkdownText(
                 }
 
                 is MdBlock.Task -> {
+                    val indent = (block.level * 16).dp
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(start = indent)
+                                .padding(vertical = 1.dp),
                         verticalAlignment = Alignment.Top,
                     ) {
                         Icon(
@@ -232,8 +249,13 @@ fun MarkdownText(
                 }
 
                 is MdBlock.Ordered -> {
+                    val indent = (block.level * 16).dp
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(start = indent)
+                                .padding(vertical = 1.dp),
                         verticalAlignment = Alignment.Top,
                     ) {
                         Text(
@@ -807,42 +829,10 @@ internal fun parseBlocks(src: String): List<MdBlock> {
                 blocks.add(MdBlock.DefList(listOf(DefItem(term, defs))))
             }
 
-            TASK_RE.matches(line) -> {
-                val m = TASK_RE.find(line)!!
-                blocks.add(MdBlock.Task(m.groupValues[1].equals("x", ignoreCase = true), m.groupValues[2]))
-                i++
-            }
-
-            BULLET_RE.matches(line) -> {
-                val items = mutableListOf<String>()
-                while (i < lines.size && BULLET_RE.matches(lines[i]) && !TASK_RE.matches(lines[i])) {
-                    items.add(BULLET_RE.find(lines[i])!!.groupValues[1])
-                    i++
-                }
-                items.forEach { blocks.add(MdBlock.Bullet(it)) }
-            }
-
-            ORDERED_RE.matches(line) -> {
-                val items = mutableListOf<Pair<Int, String>>()
-                var j = i
-                while (j < lines.size) {
-                    val match = ORDERED_RE.find(lines[j])
-                    if (match != null) {
-                        val number = match.groupValues[1].toIntOrNull() ?: (items.size + 1)
-                        items.add(number to match.groupValues[2])
-                        j++
-                    } else if (
-                        lines[j].isBlank() &&
-                        j + 1 < lines.size &&
-                        ORDERED_RE.matches(lines[j + 1])
-                    ) {
-                        j++
-                    } else {
-                        break
-                    }
-                }
-                items.forEach { (number, text) -> blocks.add(MdBlock.Ordered(number, text)) }
-                i = j
+            LIST_ITEM_LINE_RE.matches(line) -> {
+                val (listBlocks, nextIndex) = parseList(lines, i)
+                blocks.addAll(listBlocks)
+                i = nextIndex
             }
 
             // Standalone Markdown image: ![alt](uri) on its own line.
@@ -863,6 +853,204 @@ internal fun parseBlocks(src: String): List<MdBlock> {
         blocks.add(MdBlock.Footnotes(footnotes.map { FnNote(it.id, it.text) }))
     }
     return blocks
+}
+
+private sealed interface ParsedListItem {
+    val indent: Int
+    val contentIndent: Int
+    val text: String
+    val continuationLines: MutableList<String>
+
+    data class Bullet(
+        override val indent: Int,
+        override val contentIndent: Int,
+        override val text: String,
+        override val continuationLines: MutableList<String> = mutableListOf(),
+    ) : ParsedListItem
+
+    data class Task(
+        override val indent: Int,
+        override val contentIndent: Int,
+        val checked: Boolean,
+        override val text: String,
+        override val continuationLines: MutableList<String> = mutableListOf(),
+    ) : ParsedListItem
+
+    data class Ordered(
+        override val indent: Int,
+        override val contentIndent: Int,
+        val number: Int,
+        override val text: String,
+        override val continuationLines: MutableList<String> = mutableListOf(),
+    ) : ParsedListItem
+}
+
+private fun computeListIndent(prefix: String): Int {
+    var count = 0
+    for (character in prefix) {
+        count =
+            if (character == '\t') {
+                count + 4 - (count % 4)
+            } else {
+                count + 1
+            }
+    }
+    return count
+}
+
+private fun computeListContentIndent(
+    line: String,
+    match: MatchResult,
+    textGroup: Int,
+): Int {
+    val textStart = match.groups[textGroup]?.range?.first ?: line.length
+    return computeListIndent(line.substring(0, textStart))
+}
+
+private fun parseList(
+    lines: List<String>,
+    startIndex: Int,
+): Pair<List<MdBlock>, Int> {
+    val items = mutableListOf<ParsedListItem>()
+    var index = startIndex
+
+    while (index < lines.size) {
+        val line = lines[index]
+        val taskMatch = TASK_LINE_RE.matchEntire(line)
+        val bulletMatch = if (taskMatch == null) BULLET_LINE_RE.matchEntire(line) else null
+        val orderedMatch =
+            if (taskMatch == null && bulletMatch == null) {
+                ORDERED_LINE_RE.matchEntire(line)
+            } else {
+                null
+            }
+
+        when {
+            taskMatch != null -> {
+                val indent = computeListIndent(taskMatch.groupValues[1])
+                items.add(
+                    ParsedListItem.Task(
+                        indent = indent,
+                        contentIndent = computeListContentIndent(line, taskMatch, textGroup = 3),
+                        checked = taskMatch.groupValues[2].equals("x", ignoreCase = true),
+                        text = taskMatch.groupValues[3],
+                    ),
+                )
+                index++
+            }
+
+            bulletMatch != null -> {
+                val indent = computeListIndent(bulletMatch.groupValues[1])
+                items.add(
+                    ParsedListItem.Bullet(
+                        indent = indent,
+                        contentIndent = computeListContentIndent(line, bulletMatch, textGroup = 2),
+                        text = bulletMatch.groupValues[2],
+                    ),
+                )
+                index++
+            }
+
+            orderedMatch != null -> {
+                val indent = computeListIndent(orderedMatch.groupValues[1])
+                val numberText = orderedMatch.groupValues[2]
+                items.add(
+                    ParsedListItem.Ordered(
+                        indent = indent,
+                        contentIndent = computeListContentIndent(line, orderedMatch, textGroup = 3),
+                        number = numberText.toIntOrNull() ?: 1,
+                        text = orderedMatch.groupValues[3],
+                    ),
+                )
+                index++
+            }
+
+            line.isBlank() -> {
+                val nextItem = lines.indexOfFirstFrom(index + 1) { it.isNotBlank() }
+                if (nextItem < 0 || !LIST_ITEM_LINE_RE.matches(lines[nextItem])) break
+                index = nextItem
+            }
+
+            else -> {
+                val prefix = line.takeWhile { it == ' ' || it == '\t' }
+                val continuationIndent = computeListIndent(prefix)
+                if (
+                    items.isEmpty() ||
+                    continuationIndent < items.last().contentIndent ||
+                    continuationIndent >= items.last().contentIndent + 4 ||
+                    isListBlockBoundary(lines, index)
+                ) {
+                    break
+                }
+                items.last().continuationLines.add(line.trim())
+                index++
+            }
+        }
+    }
+
+    val indentStack = mutableListOf<Int>()
+    val blocks =
+        items.map { item ->
+            val level = resolveListLevel(indentStack, item.indent)
+            val fullText =
+                buildList {
+                    add(item.text)
+                    addAll(item.continuationLines)
+                }.joinToString(" ")
+            when (item) {
+                is ParsedListItem.Bullet -> MdBlock.Bullet(fullText, level)
+                is ParsedListItem.Task -> MdBlock.Task(item.checked, fullText, level)
+                is ParsedListItem.Ordered -> MdBlock.Ordered(item.number, fullText, level)
+            }
+        }
+    return blocks to index
+}
+
+private fun isListBlockBoundary(
+    lines: List<String>,
+    index: Int,
+): Boolean {
+    val trimmed = lines[index].trimStart()
+    return trimmed.startsWith("```") ||
+        trimmed.startsWith(">") ||
+        trimmed.startsWith("$$") ||
+        isValidHeading(trimmed) ||
+        isHorizontalRule(trimmed) ||
+        isTableStart(lines, index) ||
+        isDefListStart(lines, index) ||
+        tryParseImage(trimmed) != null ||
+        FN_DEF_RE.matchAt(trimmed, 0) != null
+}
+
+private fun List<String>.indexOfFirstFrom(
+    startIndex: Int,
+    predicate: (String) -> Boolean,
+): Int {
+    for (index in startIndex until size) {
+        if (predicate(this[index])) return index
+    }
+    return -1
+}
+
+private fun resolveListLevel(
+    indentStack: MutableList<Int>,
+    indent: Int,
+): Int {
+    if (indentStack.isEmpty()) {
+        indentStack.add(indent)
+        return 0
+    }
+    while (indentStack.size > 1 && indent < indentStack.last()) {
+        indentStack.removeAt(indentStack.lastIndex)
+    }
+    if (indent > indentStack.last()) {
+        indentStack.add(indent)
+        return indentStack.lastIndex
+    }
+    if (indent < indentStack.last()) {
+        indentStack[0] = indent
+    }
+    return indentStack.lastIndex
 }
 
 private fun isHorizontalRule(line: String): Boolean {
@@ -927,7 +1115,7 @@ private fun isDefListStart(
 ): Boolean {
     val l = lines[i].trim()
     if (l.isBlank() || l.startsWith("#") || l.startsWith(">") || l.startsWith("```")) return false
-    if (BULLET_RE.matches(lines[i]) || ORDERED_RE.matches(lines[i])) return false
+    if (LIST_ITEM_LINE_RE.matches(lines[i])) return false
     if (i + 1 >= lines.size) return false
     return lines[i + 1].trim().startsWith(":")
 }
@@ -951,8 +1139,7 @@ private fun fallthroughToParagraph(
         !lines[i].startsWith("```") &&
         !isValidHeading(lines[i]) &&
         !lines[i].startsWith(">") &&
-        !BULLET_RE.matches(lines[i]) &&
-        !ORDERED_RE.matches(lines[i]) &&
+        !LIST_ITEM_LINE_RE.matches(lines[i]) &&
         !isHorizontalRule(lines[i]) &&
         !isTableStart(lines, i) &&
         !isDefListStart(lines, i) &&
@@ -1258,16 +1445,19 @@ internal sealed interface MdBlock {
 
     data class Bullet(
         val text: String,
+        val level: Int = 0,
     ) : MdBlock
 
     data class Task(
         val checked: Boolean,
         val text: String,
+        val level: Int = 0,
     ) : MdBlock
 
     data class Ordered(
         val index: Int,
         val text: String,
+        val level: Int = 0,
     ) : MdBlock
 
     data class Image(
