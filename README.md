@@ -78,7 +78,7 @@ through F-Droid. Manual source builds remain supported below.
 Prerequisites:
 
 - **JDK 21+**
-- **Android Studio** or an Android SDK with platform 36
+- **Android Studio** or an Android SDK with platform 37
 
 ```sh
 git clone https://github.com/saralilyb/hermes-mobile.git
