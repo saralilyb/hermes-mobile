@@ -260,6 +260,7 @@ class ChatViewModel(
     /** Runtime TUI session returned by session.resume; Desktop storage keeps the original ID. */
     private var runtimeSessionId: String? = null
     private var loadedMessageOffset = 0
+    private var latestPaging = false
     private var isSyncingMessages = false
     val streamingState: StateFlow<StreamingState> = _streamingState.asStateFlow()
 
@@ -434,7 +435,7 @@ class ChatViewModel(
             viewModelScope.launch(Dispatchers.IO) {
                 wsClient.send(
                     WsMethods.SESSION_RESUME,
-                    mapOf("session_id" to currentId),
+                    mapOf("session_id" to currentId, "omit_messages" to true),
                     onSent = { id -> trackResumeRequest(id, currentId) },
                 )
             }
@@ -1495,6 +1496,8 @@ class ChatViewModel(
         sessionCreateJob?.cancel()
         sessionCreateJob = null
         runtimeSessionId = null
+        loadedMessageOffset = 0
+        latestPaging = false
         ActiveSessionHolder.set(null)
         _uiState.update {
             it.copy(
@@ -1947,6 +1950,7 @@ class ChatViewModel(
         // Reset streaming and pagination state before resuming the Desktop session.
         runtimeSessionId = null
         loadedMessageOffset = 0
+        latestPaging = false
         streamingController.resetStreaming()
         _uiState.update {
             val title = it.sessions.find { s -> s.id == sessionId }?.title ?: "Hermes"
@@ -1980,7 +1984,7 @@ class ChatViewModel(
             launch(Dispatchers.IO) {
                 wsClient.send(
                     WsMethods.SESSION_RESUME,
-                    mapOf("session_id" to sessionId),
+                    mapOf("session_id" to sessionId, "omit_messages" to true),
                     onSent = { id -> trackResumeRequest(id, sessionId) },
                 )
             }
@@ -2008,16 +2012,29 @@ class ChatViewModel(
 
     private fun loadSessionMessages(sessionId: String) {
         viewModelScope.launch {
-            val messageCount = fetchServerMessageCount(sessionId)
-            val requestedOffset =
-                (messageCount - MESSAGE_PAGE_SIZE).coerceAtLeast(0)
-            val result =
+            val latestResult =
                 fetchMessagePage(
                     sessionId,
-                    requestedOffset,
-                    MESSAGE_PAGE_SIZE,
-                    fromEnd = true,
+                    offset = 0,
+                    limit = MESSAGE_PAGE_SIZE,
+                    order = "latest",
                 )
+            val (result, requestedOffset) =
+                if (
+                    latestResult is NetworkResult.Success &&
+                    latestResult.data.pagination?.order == "latest"
+                ) {
+                    latestPaging = true
+                    latestResult to 0
+                } else if (latestResult is NetworkResult.Success) {
+                    latestPaging = false
+                    val messageCount = fetchServerMessageCount(sessionId)
+                    val offset = (messageCount - MESSAGE_PAGE_SIZE).coerceAtLeast(0)
+                    fetchMessagePage(sessionId, offset, MESSAGE_PAGE_SIZE) to offset
+                } else {
+                    latestPaging = false
+                    latestResult to 0
+                }
             when (result) {
                 is NetworkResult.Success -> {
                     val offset =
@@ -2043,12 +2060,21 @@ class ChatViewModel(
                                 isLoadingOlder = false,
                             )
                         } else {
+                            val hasOlder =
+                                if (latestPaging) {
+                                    val returned =
+                                        result.data.pagination?.returned
+                                            ?: chatMessages.size
+                                    returned >= MESSAGE_PAGE_SIZE &&
+                                        chatMessages.isNotEmpty()
+                                } else {
+                                    offset > 0 && chatMessages.isNotEmpty()
+                                }
                             state.copy(
                                 messages = chatMessages,
                                 todos = restoredTodos(state.todos, chatMessages),
                                 isLoading = false,
-                                hasOlderMessages =
-                                    offset > 0 && chatMessages.isNotEmpty(),
+                                hasOlderMessages = hasOlder,
                                 isLoadingOlder = false,
                             )
                         }
@@ -2079,13 +2105,26 @@ class ChatViewModel(
     fun loadOlderMessages() {
         val state = _uiState.value
         val sessionId = state.currentSessionId ?: return
-        if (!state.hasOlderMessages || state.isLoadingOlder || loadedMessageOffset <= 0) return
+        if (!state.hasOlderMessages || state.isLoadingOlder) return
+        if (!latestPaging && loadedMessageOffset <= 0) return
         val oldOffset = loadedMessageOffset
-        val newOffset = (oldOffset - MESSAGE_PAGE_SIZE).coerceAtLeast(0)
-        val limit = oldOffset - newOffset
+        val newOffset =
+            if (latestPaging) {
+                oldOffset + MESSAGE_PAGE_SIZE
+            } else {
+                (oldOffset - MESSAGE_PAGE_SIZE).coerceAtLeast(0)
+            }
+        val limit = if (latestPaging) MESSAGE_PAGE_SIZE else oldOffset - newOffset
         _uiState.update { it.copy(isLoadingOlder = true) }
         viewModelScope.launch {
-            when (val result = fetchMessagePage(sessionId, newOffset, limit)) {
+            val result =
+                fetchMessagePage(
+                    sessionId,
+                    newOffset,
+                    limit,
+                    order = if (latestPaging) "latest" else null,
+                )
+            when (result) {
                 is NetworkResult.Success -> {
                     val effectiveOffset =
                         result.data.pagination?.offset ?: newOffset
@@ -2105,6 +2144,15 @@ class ChatViewModel(
                         loadedMessageOffset = effectiveOffset
                         val mergedMessages =
                             (older + current.messages).distinctBy { it.id }
+                        val hasOlder =
+                            if (latestPaging) {
+                                val returned =
+                                    result.data.pagination?.returned
+                                        ?: older.size
+                                returned >= limit && older.isNotEmpty()
+                            } else {
+                                effectiveOffset > 0 && older.isNotEmpty()
+                            }
                         current.copy(
                             messages = mergedMessages,
                             todos =
@@ -2113,8 +2161,7 @@ class ChatViewModel(
                                     mergedMessages,
                                 ),
                             isLoadingOlder = false,
-                            hasOlderMessages =
-                                effectiveOffset > 0 && older.isNotEmpty(),
+                            hasOlderMessages = hasOlder,
                         )
                     }
                 }
@@ -2135,15 +2182,26 @@ class ChatViewModel(
             return
         }
         val nextOffset =
-            state.messages
-                .mapNotNull { serverMessageIndex(it.id, sessionId) }
-                .maxOrNull()
-                ?.plus(1)
-                ?: loadedMessageOffset
+            if (latestPaging) {
+                0
+            } else {
+                state.messages
+                    .mapNotNull { serverMessageIndex(it.id, sessionId) }
+                    .maxOrNull()
+                    ?.plus(1)
+                    ?: loadedMessageOffset
+            }
         isSyncingMessages = true
         viewModelScope.launch {
             try {
-                when (val result = fetchMessagePage(sessionId, nextOffset, MESSAGE_PAGE_SIZE)) {
+                val result =
+                    fetchMessagePage(
+                        sessionId,
+                        nextOffset,
+                        MESSAGE_PAGE_SIZE,
+                        order = if (latestPaging) "latest" else null,
+                    )
+                when (result) {
                     is NetworkResult.Success -> {
                         val incoming = mapServerMessages(sessionId, result.data.messages.orEmpty(), nextOffset)
                         if (incoming.isEmpty()) return@launch
@@ -2220,7 +2278,7 @@ class ChatViewModel(
         sessionId: String,
         offset: Int,
         limit: Int,
-        fromEnd: Boolean? = null,
+        order: String? = null,
     ) = withContext(Dispatchers.IO) {
         safeApiCall {
             ApiClient.hermesApi.getSessionMessages(
@@ -2228,7 +2286,7 @@ class ChatViewModel(
                 limit = limit,
                 offset = offset,
                 includeCompacted = true,
-                fromEnd = fromEnd,
+                order = order,
             )
         }
     }
@@ -2274,7 +2332,13 @@ class ChatViewModel(
                     else -> MessageRole.ASSISTANT
                 }
             val globalIndex = offset + index
-            val id = "rest-$sessionId-$globalIndex"
+            val id =
+                if (latestPaging) {
+                    msg.id?.let { "rest-$sessionId-$it" }
+                        ?: "rest-$sessionId-$globalIndex"
+                } else {
+                    "rest-$sessionId-$globalIndex"
+                }
             val content = msg.contentText
             val roleAndContent = role to content
             val preservedReasoning =

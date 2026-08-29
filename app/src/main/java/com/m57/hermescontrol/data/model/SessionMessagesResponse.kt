@@ -23,12 +23,14 @@ data class SessionMessagesResponse(
 data class SessionMessagePagination(
     val limit: Int? = null,
     val offset: Int = 0,
+    val order: String? = null,
     val returned: Int = 0,
     val total: Int? = null,
 )
 
 @Serializable
 data class SessionMessage(
+    val id: Int? = null,
     val role: String? = null,
     @Serializable(with = JsonElementStringSerializer::class)
     val content: String? = null,
