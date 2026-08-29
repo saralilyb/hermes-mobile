@@ -16,10 +16,13 @@ android {
     lint {
         disable += "MissingTranslation"
     }
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         applicationId = "sh.slb.hermesmobile"
         minSdk = 26
+        // Android 17 target behavior requires a profile-aware local-network
+        // permission flow. Compile against API 37 without opting into that
+        // behavior until the product path is implemented and tested.
         targetSdk = 36
         // Version overrides passed from CI via -PversionName / -PversionCode.
         versionCode =

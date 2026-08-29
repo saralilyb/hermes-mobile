@@ -55,7 +55,11 @@ private fun Any?.asUsageLong(): Long? =
     when (this) {
         is Number -> {
             try {
-                toString().toBigDecimalOrNull()?.toBigIntegerExact()?.longValueExact()
+                toString()
+                    .toBigDecimalOrNull()
+                    ?.toBigIntegerExact()
+                    ?.toString()
+                    ?.toLongOrNull()
             } catch (_: ArithmeticException) {
                 null
             }

@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.math.BigInteger
 
 class ContextUsageTest {
     @Test
@@ -54,6 +55,23 @@ class ContextUsageTest {
                     ),
                 )
             assertNull(invalidWindow?.usedTokens)
+        }
+    }
+
+    @Test
+    fun parseContextUsage_rejectsIntegralNumbersOutsideLongRange() {
+        val tooLarge = BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.ONE)
+        val tooSmall = BigInteger.valueOf(Long.MIN_VALUE).subtract(BigInteger.ONE)
+
+        listOf(tooLarge, tooSmall).forEach { invalidValue ->
+            val usage =
+                parseContextUsage(
+                    mapOf(
+                        "context_used" to invalidValue,
+                        "context_max" to 272_000,
+                    ),
+                )
+            assertNull(usage?.usedTokens)
         }
     }
 
