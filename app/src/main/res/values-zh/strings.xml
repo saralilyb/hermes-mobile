@@ -478,6 +478,13 @@
     <string name="system_action_log_done">已完成</string>
     <string name="system_action_log_exit">退出码 %1$d</string>
     <string name="system_action_log_starting">启动中…</string>
+    <string name="system_update_receipt_title">更新结果</string>
+    <string name="system_update_receipt_outcome">结果：%1$s</string>
+    <string name="system_update_receipt_success">成功</string>
+    <string name="system_update_receipt_partial">部分完成</string>
+    <string name="system_update_receipt_running">进行中</string>
+    <string name="system_update_receipt_version">版本：%1$s</string>
+    <string name="system_update_receipt_version_transition">版本：%1$s → %2$s</string>
 
     <!-- Confirmation dialog -->
     <string name="system_confirm_cancel">取消</string>

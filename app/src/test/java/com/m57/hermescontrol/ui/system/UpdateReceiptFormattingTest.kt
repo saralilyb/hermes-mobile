@@ -6,62 +6,55 @@ import com.m57.hermescontrol.data.model.UpdateReceiptResponse
 import com.m57.hermescontrol.data.model.UpdateReceiptSummary
 import com.m57.hermescontrol.data.model.UpdateReceiptVersion
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Test
 
-/**
- * Pure-logic tests for [formatUpdateReceiptLines] (issue #958). Mockk cannot
- * self-attach its agent in this sandbox, so these avoid the API layer entirely
- * and exercise the formatting directly.
- */
 class UpdateReceiptFormattingTest {
     @Test
-    fun `null receipt yields empty list`() {
-        assertTrue(formatUpdateReceiptLines(null).isEmpty())
+    fun `null and empty receipts yield no display`() {
+        assertNull(summarizeUpdateReceipt(null))
+        assertNull(summarizeUpdateReceipt(UpdateReceiptResponse()))
     }
 
     @Test
-    fun `empty receipt (no summary, no record) yields empty list`() {
-        assertTrue(formatUpdateReceiptLines(UpdateReceiptResponse()).isEmpty())
-    }
-
-    @Test
-    fun `full receipt renders outcome version and fleet`() {
+    fun `full receipt keeps outcome and version but omits fleet metadata`() {
         val receipt =
             UpdateReceiptResponse(
                 receipt =
                     UpdateReceipt(
                         outcome = "success",
-                        preUpdate = UpdateReceiptVersion(version = "0.20.4", sha = "a".repeat(40)),
-                        postUpdate = UpdateReceiptVersion(version = "0.20.5", sha = "b".repeat(40)),
+                        preUpdate =
+                            UpdateReceiptVersion(
+                                version = "0.20.4",
+                                sha = "a".repeat(40),
+                            ),
+                        postUpdate =
+                            UpdateReceiptVersion(
+                                version = "0.20.5",
+                                sha = "b".repeat(40),
+                            ),
                         fleet =
                             listOf(
-                                UpdateReceiptFleetEntry(profile = "default", state = "current"),
-                                UpdateReceiptFleetEntry(profile = "work", state = "stale"),
+                                UpdateReceiptFleetEntry(
+                                    profile = "private-profile",
+                                    state = "current",
+                                ),
                             ),
-                    ),
-                summary =
-                    UpdateReceiptSummary(
-                        outcome = "success",
-                        postVersion = "0.20.5",
-                        fleetStates = listOf("current", "stale"),
                     ),
             )
 
-        val lines = formatUpdateReceiptLines(receipt)
         assertEquals(
-            listOf(
-                "Update receipt",
-                "Outcome: success",
-                "Version: 0.20.4 → 0.20.5",
-                "Fleet: default: current, work: stale",
+            UpdateReceiptDisplay(
+                outcome = UpdateReceiptOutcome.SUCCESS,
+                fromVersion = "0.20.4",
+                toVersion = "0.20.5",
             ),
-            lines,
+            summarizeUpdateReceipt(receipt),
         )
     }
 
     @Test
-    fun `summary-only receipt falls back to postVersion and fleetStates`() {
+    fun `summary-only receipt keeps supported outcome and post version`() {
         val receipt =
             UpdateReceiptResponse(
                 summary =
@@ -72,38 +65,54 @@ class UpdateReceiptFormattingTest {
                     ),
             )
 
-        val lines = formatUpdateReceiptLines(receipt)
         assertEquals(
-            listOf(
-                "Update receipt",
-                "Outcome: partial",
-                "Version: → 0.21.0",
-                "Fleet: current",
+            UpdateReceiptDisplay(
+                outcome = UpdateReceiptOutcome.PARTIAL,
+                toVersion = "0.21.0",
             ),
-            lines,
+            summarizeUpdateReceipt(receipt),
         )
     }
 
     @Test
-    fun `version falls back to short sha when version is missing`() {
+    fun `version falls back to short sha`() {
         val receipt =
             UpdateReceiptResponse(
                 receipt =
                     UpdateReceipt(
-                        outcome = "success",
-                        preUpdate = UpdateReceiptVersion(sha = "abcdef1234567890deadbeef"),
+                        outcome = "running",
+                        preUpdate =
+                            UpdateReceiptVersion(
+                                sha = "abcdef1234567890deadbeef",
+                            ),
                         postUpdate = UpdateReceiptVersion(sha = "11112222"),
                     ),
             )
 
-        val lines = formatUpdateReceiptLines(receipt)
         assertEquals(
-            listOf(
-                "Update receipt",
-                "Outcome: success",
-                "Version: abcdef12 → 11112222",
+            UpdateReceiptDisplay(
+                outcome = UpdateReceiptOutcome.RUNNING,
+                fromVersion = "abcdef12",
+                toVersion = "11112222",
             ),
-            lines,
+            summarizeUpdateReceipt(receipt),
+        )
+    }
+
+    @Test
+    fun `unknown backend outcome is not exposed as raw UI text`() {
+        val receipt =
+            UpdateReceiptResponse(
+                summary =
+                    UpdateReceiptSummary(
+                        outcome = "future-state",
+                        postVersion = "0.22.0",
+                    ),
+            )
+
+        assertEquals(
+            UpdateReceiptDisplay(toVersion = "0.22.0"),
+            summarizeUpdateReceipt(receipt),
         )
     }
 }

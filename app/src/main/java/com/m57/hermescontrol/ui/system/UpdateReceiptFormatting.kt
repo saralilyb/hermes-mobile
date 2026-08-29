@@ -1,46 +1,59 @@
 package com.m57.hermescontrol.ui.system
 
-import com.m57.hermescontrol.data.model.UpdateReceipt
 import com.m57.hermescontrol.data.model.UpdateReceiptResponse
-import com.m57.hermescontrol.data.model.UpdateReceiptSummary
+import com.m57.hermescontrol.data.model.UpdateReceiptVersion
+
+enum class UpdateReceiptOutcome {
+    SUCCESS,
+    PARTIAL,
+    RUNNING,
+}
+
+/** Localizable, privacy-safe subset of a backend update receipt. */
+data class UpdateReceiptDisplay(
+    val outcome: UpdateReceiptOutcome? = null,
+    val fromVersion: String? = null,
+    val toVersion: String? = null,
+)
 
 /**
- * Render a compact, popup-friendly summary of an update receipt (issue #958).
+ * Extracts only the backend update outcome and version transition.
  *
- * Returns an empty list when there is nothing to show (no receipt, old
- * backend, or any malformed payload) so callers can skip appending entirely.
- *
- * Pure + [internal] so it is unit-testable without mocking the API layer.
+ * Fleet/profile data, command arguments, process identifiers, timestamps, and
+ * backend-supplied prose are intentionally excluded from the mobile UI.
  */
-internal fun formatUpdateReceiptLines(receipt: UpdateReceiptResponse?): List<String> {
-    if (receipt == null) return emptyList()
-    val summary: UpdateReceiptSummary? = receipt.summary
-    val full: UpdateReceipt? = receipt.receipt
-    if (summary == null && full == null) return emptyList()
+internal fun summarizeUpdateReceipt(response: UpdateReceiptResponse?): UpdateReceiptDisplay? {
+    if (response == null) return null
 
-    val lines = mutableListOf<String>()
-    lines.add("Update receipt")
+    val receipt = response.receipt
+    val summary = response.summary
+    val outcome =
+        when ((summary?.outcome ?: receipt?.outcome)?.lowercase()) {
+            "success" -> UpdateReceiptOutcome.SUCCESS
+            "partial" -> UpdateReceiptOutcome.PARTIAL
+            "running" -> UpdateReceiptOutcome.RUNNING
+            else -> null
+        }
+    val fromVersion =
+        receipt?.preUpdate.displayVersion()
+            ?: summary?.preSha.shortSha()
+    val toVersion =
+        receipt?.postUpdate.displayVersion()
+            ?: summary?.postVersion
+            ?: summary?.postSha.shortSha()
 
-    val outcome = summary?.outcome ?: full?.outcome
-    if (outcome != null) lines.add("Outcome: $outcome")
-
-    val pre = full?.preUpdate
-    val post = full?.postUpdate
-    if (pre != null || post != null) {
-        val from = pre?.version ?: pre?.sha?.take(8) ?: "?"
-        val to = post?.version ?: post?.sha?.take(8) ?: "?"
-        lines.add("Version: $from → $to")
-    } else if (summary?.postVersion != null) {
-        lines.add("Version: → ${summary.postVersion}")
-    }
-
-    val fleet = full?.fleet
-    if (!fleet.isNullOrEmpty()) {
-        val states = fleet.map { "${it.profile ?: "?"}: ${it.state ?: "?"}" }
-        lines.add("Fleet: ${states.joinToString(", ")}")
-    } else if (summary != null && !summary.fleetStates.isNullOrEmpty()) {
-        lines.add("Fleet: ${summary.fleetStates.joinToString(", ")}")
-    }
-
-    return lines
+    if (outcome == null && fromVersion == null && toVersion == null) return null
+    return UpdateReceiptDisplay(
+        outcome = outcome,
+        fromVersion = fromVersion,
+        toVersion = toVersion,
+    )
 }
+
+private fun UpdateReceiptVersion?.displayVersion(): String? =
+    this?.version?.takeIf(String::isNotBlank) ?: this?.sha.shortSha()
+
+private fun String?.shortSha(): String? =
+    this
+        ?.takeIf(String::isNotBlank)
+        ?.take(8)

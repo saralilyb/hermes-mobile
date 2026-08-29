@@ -53,6 +53,7 @@ data class SystemUiState(
     val doctorReport: DoctorResponse? = null,
     val activeAction: String? = null,
     val actionLog: ActionStatusResponse? = null,
+    val updateReceipt: UpdateReceiptDisplay? = null,
     val backupArchive: String? = null,
     val downloadableBackup: String? = null,
     val debugShare: DebugShareResponse? = null,
@@ -662,7 +663,13 @@ class SystemViewModel(
 
     private fun pollActionStatus(name: String) {
         actionPollingJob?.cancel()
-        _uiState.update { it.copy(activeAction = name, actionLog = null) }
+        _uiState.update {
+            it.copy(
+                activeAction = name,
+                actionLog = null,
+                updateReceipt = null,
+            )
+        }
         actionPollingJob =
             viewModelScope.launch {
                 while (isActive) {
@@ -674,6 +681,9 @@ class SystemViewModel(
                     if (result is NetworkResult.Success) {
                         _uiState.update { it.copy(actionLog = result.data) }
                         if (result.data.running != true) {
+                            if (name == "hermes-update") {
+                                loadUpdateReceipt()
+                            }
                             loadAll()
                             break
                         }
@@ -684,7 +694,23 @@ class SystemViewModel(
 
     fun closeActionLog() {
         actionPollingJob?.cancel()
-        _uiState.update { it.copy(activeAction = null, actionLog = null) }
+        _uiState.update {
+            it.copy(
+                activeAction = null,
+                actionLog = null,
+                updateReceipt = null,
+            )
+        }
+    }
+
+    private suspend fun loadUpdateReceipt() {
+        val result =
+            withContext(ioDispatcher) {
+                safeApiCall { ApiClient.hermesApi.getUpdateReceipt() }
+            }
+        if (result !is NetworkResult.Success) return
+        val display = summarizeUpdateReceipt(result.data) ?: return
+        _uiState.update { it.copy(updateReceipt = display) }
     }
 
     // ── Helpers ────────────────────────────────────────────────────────
