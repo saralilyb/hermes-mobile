@@ -340,7 +340,7 @@ class HermesApiServiceMockWebServerTest {
         }
 
     @Test
-    fun getSessionMessages_requestsAndParsesCompactedTailPage() =
+    fun getSessionMessages_requestsAndParsesLatestCompactedPage() =
         runBlocking {
             mockServer.enqueue(
                 MockResponse()
@@ -351,9 +351,9 @@ class HermesApiServiceMockWebServerTest {
                             "messages": [],
                             "pagination": {
                                 "limit": 50,
-                                "offset": 2835,
-                                "returned": 50,
-                                "total": 2885
+                                "offset": 0,
+                                "order": "latest",
+                                "returned": 50
                             }
                         }
                         """.trimIndent(),
@@ -364,17 +364,17 @@ class HermesApiServiceMockWebServerTest {
                 api.getSessionMessages(
                     sessionId = "long-session",
                     limit = 50,
-                    offset = 66,
+                    offset = 0,
                     includeCompacted = true,
-                    fromEnd = true,
+                    order = "latest",
                 )
 
             assertTrue(response.isSuccessful)
-            assertEquals(2835, response.body()!!.pagination!!.offset)
-            assertEquals(2885, response.body()!!.pagination!!.total)
+            assertEquals(0, response.body()!!.pagination!!.offset)
+            assertEquals("latest", response.body()!!.pagination!!.order)
             assertEquals(
-                "/api/sessions/long-session/messages?limit=50&offset=66" +
-                    "&include_compacted=true&from_end=true",
+                "/api/sessions/long-session/messages?limit=50&offset=0" +
+                    "&include_compacted=true&order=latest",
                 mockServer.takeRequest().path,
             )
         }
