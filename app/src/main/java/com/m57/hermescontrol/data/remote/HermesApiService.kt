@@ -168,7 +168,7 @@ interface HermesApiService {
         @Query("limit") limit: Int? = null,
         @Query("offset") offset: Int = 0,
         @Query("include_compacted") includeCompacted: Boolean? = null,
-        @Query("from_end") fromEnd: Boolean? = null,
+        @Query("order") order: String? = null,
     ): Response<SessionMessagesResponse>
 
     @GET("api/sessions/stats")
