@@ -99,7 +99,7 @@ class HermesWsClientTest {
     }
 
     @Test
-    fun testBackgroundWithoutPendingWorkDisconnects() {
+    fun testBackgroundWithoutPendingWorkWaitsForGraceBeforeDisconnecting() {
         mockWebServer.enqueue(
             MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}),
         )
@@ -108,9 +108,33 @@ class HermesWsClientTest {
 
         HermesWsClient.setAppForeground(false)
 
+        assertTrue(HermesWsClient.isConnected)
+        assertTrue(HermesWsClient.hasScheduledBackgroundIdleCloseForTest())
+
+        HermesWsClient.expireBackgroundIdleGraceForTest()
+
         assertFalse(HermesWsClient.isConnected)
         assertEquals(ConnectionStatus.DISCONNECTED, HermesWsClient.connectionStatus.value)
         assertFalse(HermesWsClient.shouldReconnectAfterNetworkRestore(autoReconnect = true))
+    }
+
+    @Test
+    fun testForegroundReturnCancelsBackgroundIdleClose() {
+        mockWebServer.enqueue(
+            MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}),
+        )
+        HermesWsClient.connect()
+        runBlocking { withTimeout(5000) { HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED } } }
+
+        HermesWsClient.setAppForeground(false)
+        assertTrue(HermesWsClient.hasScheduledBackgroundIdleCloseForTest())
+
+        HermesWsClient.setAppForeground(true)
+
+        assertFalse(HermesWsClient.hasScheduledBackgroundIdleCloseForTest())
+        HermesWsClient.expireBackgroundIdleGraceForTest()
+        assertTrue(HermesWsClient.isConnected)
+        assertEquals(ConnectionStatus.CONNECTED, HermesWsClient.connectionStatus.value)
     }
 
     @Test
@@ -121,6 +145,7 @@ class HermesWsClientTest {
         HermesWsClient.connect()
         runBlocking { withTimeout(5000) { HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED } } }
         HermesWsClient.setAppForeground(false)
+        HermesWsClient.expireBackgroundIdleGraceForTest()
         runBlocking {
             withTimeout(5000) {
                 HermesWsClient.connectionStatus.first { it == ConnectionStatus.DISCONNECTED }
@@ -158,6 +183,7 @@ class HermesWsClientTest {
             }
         }
         HermesWsClient.setAppForeground(false)
+        HermesWsClient.expireBackgroundIdleGraceForTest()
         runBlocking {
             withTimeout(5000) {
                 HermesWsClient.connectionStatus.first { it == ConnectionStatus.DISCONNECTED }
@@ -218,6 +244,10 @@ class HermesWsClientTest {
                     HermesWsClient.sourcedEvents.first { it.event is WsEvent.MessageComplete }
                 }
             }
+
+        assertTrue(HermesWsClient.isConnected)
+        assertTrue(HermesWsClient.hasScheduledBackgroundIdleCloseForTest())
+        HermesWsClient.expireBackgroundIdleGraceForTest()
 
         runBlocking {
             withTimeout(5000) {
