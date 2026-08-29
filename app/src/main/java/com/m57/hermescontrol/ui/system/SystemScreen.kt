@@ -1753,7 +1753,68 @@ private fun LazyListScope.actionLogSection(
                         }
                     }
                 }
+
+                state.updateReceipt?.let { receipt ->
+                    UpdateReceiptSummary(
+                        receipt = receipt,
+                        spacing = spacing,
+                    )
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun UpdateReceiptSummary(
+    receipt: UpdateReceiptDisplay,
+    spacing: com.m57.hermescontrol.theme.Spacing,
+) {
+    val outcome =
+        receipt.outcome?.let {
+            stringResource(
+                when (it) {
+                    UpdateReceiptOutcome.SUCCESS -> R.string.system_update_receipt_success
+                    UpdateReceiptOutcome.PARTIAL -> R.string.system_update_receipt_partial
+                    UpdateReceiptOutcome.RUNNING -> R.string.system_update_receipt_running
+                },
+            )
+        }
+
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = spacing.sm),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+        Text(
+            text = stringResource(R.string.system_update_receipt_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        outcome?.let {
+            Text(
+                text = stringResource(R.string.system_update_receipt_outcome, it),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        receipt.toVersion?.let { toVersion ->
+            val text =
+                receipt.fromVersion?.let { fromVersion ->
+                    stringResource(
+                        R.string.system_update_receipt_version_transition,
+                        fromVersion,
+                        toVersion,
+                    )
+                } ?: stringResource(
+                    R.string.system_update_receipt_version,
+                    toVersion,
+                )
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
