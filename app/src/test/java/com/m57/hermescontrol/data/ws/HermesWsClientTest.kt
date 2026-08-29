@@ -138,6 +138,27 @@ class HermesWsClientTest {
     }
 
     @Test
+    fun testNoOpConnectKeepsBackgroundIdleCloseScheduled() {
+        mockWebServer.enqueue(
+            MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}),
+        )
+        HermesWsClient.connect()
+        runBlocking {
+            withTimeout(5000) {
+                HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED }
+            }
+        }
+        HermesWsClient.setAppForeground(false)
+        assertTrue(HermesWsClient.hasScheduledBackgroundIdleCloseForTest())
+
+        HermesWsClient.connect()
+
+        assertTrue(HermesWsClient.hasScheduledBackgroundIdleCloseForTest())
+        HermesWsClient.expireBackgroundIdleGraceForTest()
+        assertFalse(HermesWsClient.isConnected)
+    }
+
+    @Test
     fun testPromptAfterBackgroundIdleCloseReconnectsAndFlushes() {
         mockWebServer.enqueue(
             MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}),

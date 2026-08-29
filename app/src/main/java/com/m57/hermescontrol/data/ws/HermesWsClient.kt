@@ -353,7 +353,6 @@ object HermesWsClient {
     fun connect() {
         val generation =
             synchronized(connectionLock) {
-                cancelBackgroundIdleCloseLocked()
                 if (connected.get()) {
                     Log.d(TAG, "Already connected — skipping")
                     return
@@ -374,6 +373,7 @@ object HermesWsClient {
                     Log.d(TAG, "Connection is AUTH_EXPIRED — skipping reconnect; re-auth required")
                     return
                 }
+                cancelBackgroundIdleCloseLocked()
                 intentionalClose.set(false)
                 backgroundIdleClosed.set(false)
                 ticketAuthRetryUsed.set(false)
