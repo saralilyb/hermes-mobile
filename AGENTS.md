@@ -10,7 +10,7 @@ This complements [README.md](README.md) (for humans) with agent-focused context.
 dashboard's REST API and WebSocket TUI Gateway (JSON-RPC 2.0) over HTTPS/WSS in
 release builds. Debug builds may use HTTP/WS on a trusted development network.
 
-- **Min SDK 26 / Target SDK 36 / Compile SDK 36**
+- **Min SDK 26 / Target SDK 36 / Compile SDK 37**
 - **Namespace:** `com.m57.hermescontrol`
 - **Application IDs:** `sh.slb.hermesmobile` (`hermes`) and
   `sh.slb.irismobile` (`iris`)

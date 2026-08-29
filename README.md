@@ -78,7 +78,7 @@ through F-Droid. Manual source builds remain supported below.
 Prerequisites:
 
 - **JDK 21+**
-- **Android Studio** or an Android SDK with platform 36
+- **Android Studio** or an Android SDK with platform 37
 
 ```sh
 git clone https://github.com/saralilyb/hermes-mobile.git
@@ -144,7 +144,7 @@ app/src/main/java/com/m57/hermescontrol/
 - **Language:** Kotlin 2.4.10 with KSP compiler plugin
 - **UI & Layout:** Jetpack Compose (BOM 2026.03.01) & Material 3 / Material You
 - **Navigation:** Navigation3 (Compose-first Routing)
-- **Networking:** Retrofit 3.0.0, OkHttp 5.4.0, kotlinx-serialization
+- **Networking:** Retrofit 3.0.0, OkHttp 5.5.0, kotlinx-serialization
 - **Database:** Room 2.7.1 with SQLCipher encryption
 - **Security:** app-owned atomic AES-256-GCM blobs backed by Android Keystore;
   `EncryptedSharedPreferences` retained only for one-release migration compatibility
