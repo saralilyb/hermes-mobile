@@ -478,6 +478,13 @@
     <string name="system_action_log_done">done</string>
     <string name="system_action_log_exit">exit %1$d</string>
     <string name="system_action_log_starting">Starting…</string>
+    <string name="system_update_receipt_title">Update result</string>
+    <string name="system_update_receipt_outcome">Outcome: %1$s</string>
+    <string name="system_update_receipt_success">success</string>
+    <string name="system_update_receipt_partial">partially completed</string>
+    <string name="system_update_receipt_running">still running</string>
+    <string name="system_update_receipt_version">Version: %1$s</string>
+    <string name="system_update_receipt_version_transition">Version: %1$s → %2$s</string>
 
     <!-- Confirmation dialog -->
     <string name="system_confirm_cancel">Cancel</string>

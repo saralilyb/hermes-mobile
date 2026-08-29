@@ -90,6 +90,9 @@ object HermesWsClient {
      */
     private const val OUTBOUND_DRAIN_TIMEOUT_MS = 5_000L
 
+    /** Keep a quiet socket alive across brief app switches. */
+    private const val BACKGROUND_IDLE_GRACE_MS = 120_000L
+
     // ── Internal state (all access through synchronized / atomic) ────────
 
     private val requestId = AtomicInteger(0)
@@ -125,6 +128,11 @@ object HermesWsClient {
 
     @Volatile
     private var outboundDrainJob: Job? = null
+
+    @Volatile
+    private var backgroundIdleJob: Job? = null
+
+    private val backgroundIdleScheduleGeneration = AtomicInteger(0)
 
     @Volatile
     private var webSocket: WebSocket? = null
@@ -249,19 +257,67 @@ object HermesWsClient {
     val isConnected: Boolean get() = connected.get()
 
     fun setAppForeground(foreground: Boolean) {
-        appInForeground.set(foreground)
-        if (!foreground) disconnectIfIdleInBackground()
+        synchronized(connectionLock) {
+            appInForeground.set(foreground)
+            if (foreground) {
+                cancelBackgroundIdleCloseLocked()
+            } else {
+                disconnectIfIdleInBackground()
+            }
+        }
     }
 
     private fun disconnectIfIdleInBackground() {
         synchronized(connectionLock) {
-            if (!appInForeground.get() &&
-                !pendingReply &&
-                pendingCalls.isEmpty() &&
-                messageQueue.isEmpty()
-            ) {
-                closeIdleBackgroundSocket()
+            if (isIdleInBackgroundLocked()) {
+                scheduleBackgroundIdleCloseLocked()
+            } else {
+                cancelBackgroundIdleCloseLocked()
             }
+        }
+    }
+
+    private fun isIdleInBackgroundLocked(): Boolean =
+        !appInForeground.get() &&
+            webSocket != null &&
+            !pendingReply &&
+            pendingCalls.isEmpty() &&
+            messageQueue.isEmpty()
+
+    private fun scheduleBackgroundIdleCloseLocked() {
+        if (backgroundIdleJob?.isActive == true) return
+        val scheduleGeneration = backgroundIdleScheduleGeneration.incrementAndGet()
+        val socketGeneration = connectionGeneration.get()
+        backgroundIdleJob =
+            wsScope.launch {
+                delay(BACKGROUND_IDLE_GRACE_MS)
+                synchronized(connectionLock) {
+                    if (scheduleGeneration != backgroundIdleScheduleGeneration.get() ||
+                        socketGeneration != connectionGeneration.get()
+                    ) {
+                        return@synchronized
+                    }
+                    backgroundIdleJob = null
+                    if (isIdleInBackgroundLocked()) closeIdleBackgroundSocket()
+                }
+            }
+    }
+
+    private fun cancelBackgroundIdleCloseLocked() {
+        backgroundIdleScheduleGeneration.incrementAndGet()
+        backgroundIdleJob?.cancel()
+        backgroundIdleJob = null
+    }
+
+    @VisibleForTesting
+    internal fun hasScheduledBackgroundIdleCloseForTest(): Boolean =
+        synchronized(connectionLock) { backgroundIdleJob?.isActive == true }
+
+    @VisibleForTesting
+    internal fun expireBackgroundIdleGraceForTest() {
+        synchronized(connectionLock) {
+            cancelBackgroundIdleCloseLocked()
+            if (isIdleInBackgroundLocked()) closeIdleBackgroundSocket()
         }
     }
 
@@ -271,6 +327,7 @@ object HermesWsClient {
      * a user-requested stop or credential boundary.
      */
     private fun closeIdleBackgroundSocket() {
+        cancelBackgroundIdleCloseLocked()
         connectionGeneration.incrementAndGet()
         backgroundIdleClosed.set(true)
         reconnectJob?.cancel()
@@ -316,6 +373,7 @@ object HermesWsClient {
                     Log.d(TAG, "Connection is AUTH_EXPIRED — skipping reconnect; re-auth required")
                     return
                 }
+                cancelBackgroundIdleCloseLocked()
                 intentionalClose.set(false)
                 backgroundIdleClosed.set(false)
                 ticketAuthRetryUsed.set(false)
@@ -438,6 +496,7 @@ object HermesWsClient {
      */
     fun disconnect(clearPendingMessages: Boolean = false) {
         synchronized(connectionLock) {
+            cancelBackgroundIdleCloseLocked()
             connectionGeneration.incrementAndGet()
             intentionalClose.set(true)
             backgroundIdleClosed.set(false)
@@ -575,6 +634,7 @@ object HermesWsClient {
         val json = OkHttpProvider.json.encodeToString(request)
         var accepted = false
         synchronized(connectionLock) {
+            cancelBackgroundIdleCloseLocked()
             if (method == WsMethods.PROMPT_SUBMIT) {
                 pendingPromptSessions[id] = params["session_id"] as? String ?: ""
                 pendingReply = true
@@ -616,6 +676,7 @@ object HermesWsClient {
             if (accepted && backgroundIdleClosed.compareAndSet(true, false)) {
                 startConnectionLocked()
             }
+            if (accepted) disconnectIfIdleInBackground()
         }
         return id
     }
