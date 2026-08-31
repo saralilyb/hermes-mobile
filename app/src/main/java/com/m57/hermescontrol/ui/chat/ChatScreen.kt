@@ -89,6 +89,7 @@ import com.m57.hermescontrol.ui.chat.components.ChatLifecycleEffects
 import com.m57.hermescontrol.ui.chat.components.ChatLoadingOverlay
 import com.m57.hermescontrol.ui.chat.components.ChatMessageList
 import com.m57.hermescontrol.ui.chat.components.ChatScrollToBottomFab
+import com.m57.hermescontrol.ui.chat.components.ChatTimelineNoPrefetchStrategy
 import com.m57.hermescontrol.ui.chat.components.ContextUsageChip
 import com.m57.hermescontrol.ui.chat.components.ContextUsageDialog
 import com.m57.hermescontrol.ui.chat.components.ReactionHeartsOverlay
@@ -154,7 +155,10 @@ fun ChatScreen(
             providers = state.modelPickerProviders,
             inventoryResolved = state.modelInventoryResolved,
         )
-    val listState = rememberLazyListState()
+    val listState =
+        rememberLazyListState(
+            prefetchStrategy = ChatTimelineNoPrefetchStrategy,
+        )
     val scrollScope = rememberCoroutineScope()
     val scrollController = rememberChatScrollController(listState, scrollScope)
     val listItemCount =
