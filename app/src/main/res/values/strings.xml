@@ -197,6 +197,9 @@
     <string name="settings_item_theme">Theme</string>
     <string name="settings_sec_chat">Chat</string>
     <string name="settings_item_typing_effect">Typing Effect</string>
+    <string name="settings_chat_font_scale">Message text size</string>
+    <string name="settings_chat_font_scale_description">Adjust ordinary user and assistant message text</string>
+    <string name="settings_chat_font_scale_value">%1$d%%</string>
     <string name="settings_desc_typing_effect">Animate new messages word by word</string>
     <string name="settings_item_typing_delay">Delay: %1$d ms</string>
     <string name="settings_delay_10ms">10 ms</string>

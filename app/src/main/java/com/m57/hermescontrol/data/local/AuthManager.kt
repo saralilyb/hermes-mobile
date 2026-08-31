@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
  * Must call [init] with a Context before any other method.
  */
 object AuthManager {
+    val chatFontScaleStops = listOf(0.85f, 1.0f, 1.15f, 1.3f, 1.5f)
     const val DEFAULT_PROFILE_ID = "default"
     const val DEFAULT_PROFILE_NAME = "Default"
     private const val KEY_SELECTED_PROFILE_ID = "selected_profile_id"
@@ -71,6 +72,9 @@ object AuthManager {
 
     private val _themePresetFlow = MutableStateFlow<ThemePreset>(ThemePreset.DEFAULT)
     val themePresetFlow: StateFlow<ThemePreset> = _themePresetFlow.asStateFlow()
+
+    private val _chatFontScaleFlow = MutableStateFlow(1.0f)
+    val chatFontScaleFlow: StateFlow<Float> = _chatFontScaleFlow.asStateFlow()
 
     private val _tokenFlow = MutableStateFlow<String?>(null)
     val tokenFlow: StateFlow<String?> = _tokenFlow.asStateFlow()
@@ -125,6 +129,7 @@ object AuthManager {
                     _themePreferenceFlow.value = state.themePreference
                     _useDynamicColorsFlow.value = state.useDynamicColors
                     _themePresetFlow.value = state.themePreset
+                    _chatFontScaleFlow.value = normalizeChatFontScale(state.chatFontScale)
                 }
             }
         }
@@ -639,6 +644,19 @@ object AuthManager {
 
     fun setThemePreference(theme: ThemePreference) {
         serverStore.update { it.copy(themePreference = theme) }
+    }
+
+    fun getChatFontScale(): Float = normalizeChatFontScale(serverStore.getLatestState().chatFontScale)
+
+    fun setChatFontScale(scale: Float) {
+        val normalized = normalizeChatFontScale(scale)
+        _chatFontScaleFlow.value = normalized
+        serverStore.update { it.copy(chatFontScale = normalized) }
+    }
+
+    internal fun normalizeChatFontScale(scale: Float): Float {
+        if (!scale.isFinite()) return 1.0f
+        return chatFontScaleStops.minBy { kotlin.math.abs(it - scale) }
     }
 
     fun isUseDynamicColors(): Boolean = serverStore.getLatestState().useDynamicColors

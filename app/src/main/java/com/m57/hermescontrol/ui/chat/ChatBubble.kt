@@ -81,6 +81,7 @@ import androidx.compose.ui.unit.sp
 import com.m57.hermescontrol.R
 import com.m57.hermescontrol.data.model.Attachment
 import com.m57.hermescontrol.data.remote.OkHttpProvider
+import com.m57.hermescontrol.theme.ChatFontScale
 import com.m57.hermescontrol.theme.DarkOnSurface
 import com.m57.hermescontrol.theme.HermesStatusColors
 import com.m57.hermescontrol.theme.LightOnSurface
@@ -262,12 +263,14 @@ private fun UserBubble(
                 tonalElevation = 0.dp,
             ) {
                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                    SelectionContainer {
-                        Text(
-                            text = highlightedText,
-                            color = userBubbleTextColor,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                    ChatFontScale {
+                        SelectionContainer {
+                            Text(
+                                text = highlightedText,
+                                color = userBubbleTextColor,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                     }
                     // Render inline attachments
                     if (!message.attachments.isNullOrEmpty()) {
@@ -403,15 +406,17 @@ private fun AssistantBubble(
                         Spacer(modifier = Modifier.height(6.dp))
                     }
                     if (message.content.isNotBlank() || message.isStreaming) {
-                        SelectionContainer {
-                            MarkdownText(
-                                text = message.content,
-                                textColor = textColor,
-                                isStreaming = message.isStreaming,
-                                searchQuery = searchQuery,
-                                isCurrentMatch = isCurrentMatch,
-                                onImageClick = onImageClick,
-                            )
+                        ChatFontScale {
+                            SelectionContainer {
+                                MarkdownText(
+                                    text = message.content,
+                                    textColor = textColor,
+                                    isStreaming = message.isStreaming,
+                                    searchQuery = searchQuery,
+                                    isCurrentMatch = isCurrentMatch,
+                                    onImageClick = onImageClick,
+                                )
+                            }
                         }
                     }
                     // Render inline attachments (mirrors UserBubble so agent-delivered

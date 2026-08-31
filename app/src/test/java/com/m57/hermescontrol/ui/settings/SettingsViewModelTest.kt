@@ -78,6 +78,7 @@ class SettingsViewModelTest {
         every { AuthManager.getThemePreference() } returns ThemePreference.SYSTEM
         every { AuthManager.isUseDynamicColors() } returns true
         every { AuthManager.getThemePreset() } returns ThemePreset.DEFAULT
+        every { AuthManager.getChatFontScale() } returns 1.0f
         every { AuthManager.isTypingEffectEnabled() } returns true
         every { AuthManager.getTypingEffectDelayMs() } returns 30
         every { AuthManager.getAppLanguage() } returns "system"
@@ -91,6 +92,7 @@ class SettingsViewModelTest {
         every { AuthManager.setThemePreference(any()) } returns Unit
         every { AuthManager.setUseDynamicColors(any()) } returns Unit
         every { AuthManager.setThemePreset(any()) } returns Unit
+        every { AuthManager.setChatFontScale(any()) } returns Unit
         every { AuthManager.setTypingEffectEnabled(any()) } returns Unit
         every { AuthManager.setTypingEffectDelayMs(any()) } returns Unit
         every { AuthManager.setSelectedProfileId(any()) } answers {
@@ -139,6 +141,7 @@ class SettingsViewModelTest {
             every { AuthManager.getThemePreference() } returns ThemePreference.DARK
             every { AuthManager.isUseDynamicColors() } returns false
             every { AuthManager.getThemePreset() } returns ThemePreset.CATPPUCCIN
+            every { AuthManager.getChatFontScale() } returns 1.3f
             every { AuthManager.isTypingEffectEnabled() } returns false
             every { AuthManager.getTypingEffectDelayMs() } returns 15
             every { AuthManager.getConnectionProfiles() } returns testProfiles
@@ -155,6 +158,7 @@ class SettingsViewModelTest {
             assertEquals(ThemePreference.DARK, state.themePreference)
             assertEquals(false, state.useDynamicColors)
             assertEquals(ThemePreset.CATPPUCCIN, state.themePreset)
+            assertEquals(1.3f, state.chatFontScale)
             assertEquals(false, state.typingEffectEnabled)
             assertEquals(15, state.typingEffectDelayMs)
             assertEquals(testProfiles, state.profiles)
@@ -162,6 +166,16 @@ class SettingsViewModelTest {
             assertEquals("Home", state.renameProfileName)
             assertEquals("fr", state.appLanguage)
         }
+
+    @Test
+    fun `chat font scale change is persisted and reflected in state`() {
+        val viewModel = createViewModel()
+
+        viewModel.onChatFontScaleChange(1.5f)
+
+        assertEquals(1.5f, viewModel.uiState.value.chatFontScale)
+        verify { AuthManager.setChatFontScale(1.5f) }
+    }
 
     @Test
     fun testLoadSettings_noSelectedProfile_renameEmpty() {

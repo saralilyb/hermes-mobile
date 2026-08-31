@@ -29,11 +29,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.m57.hermescontrol.R
+import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.theme.ThemePreference
 import com.m57.hermescontrol.theme.ThemePreset
 import com.m57.hermescontrol.ui.settings.SectionCard
+import kotlin.math.roundToInt
 
 @Composable
 internal fun AppearanceSection(
@@ -190,12 +195,50 @@ internal fun AppearanceSection(
 
 @Composable
 internal fun ChatSection(
+    chatFontScale: Float,
+    onChatFontScaleChange: (Float) -> Unit,
     typingEffectEnabled: Boolean,
     onTypingEffectEnabledChange: (Boolean) -> Unit,
     typingEffectDelayMs: Int,
     onTypingEffectDelayMsChange: (Int) -> Unit,
 ) {
     SectionCard {
+        val fontScaleStops = AuthManager.chatFontScaleStops
+        val selectedFontScaleIndex = fontScaleStops.indexOf(chatFontScale).coerceAtLeast(0)
+        val fontScalePercent = (fontScaleStops[selectedFontScaleIndex] * 100).toInt()
+        val fontScaleDescription = stringResource(R.string.settings_chat_font_scale)
+        val fontScaleState = stringResource(R.string.settings_chat_font_scale_value, fontScalePercent)
+        Text(
+            text = fontScaleDescription,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_chat_font_scale_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Slider(
+            value = selectedFontScaleIndex.toFloat(),
+            onValueChange = { index -> onChatFontScaleChange(fontScaleStops[index.roundToInt()]) },
+            valueRange = 0f..fontScaleStops.lastIndex.toFloat(),
+            steps = fontScaleStops.size - 2,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        contentDescription = fontScaleDescription
+                        stateDescription = fontScaleState
+                    },
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(stringResource(R.string.settings_chat_font_scale_value, 85))
+            Text(stringResource(R.string.settings_chat_font_scale_value, 150))
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

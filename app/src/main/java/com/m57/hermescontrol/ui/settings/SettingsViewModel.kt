@@ -34,6 +34,7 @@ data class SettingsUiState(
     val themePreference: ThemePreference = ThemePreference.SYSTEM,
     val useDynamicColors: Boolean = true,
     val themePreset: ThemePreset = ThemePreset.DEFAULT,
+    val chatFontScale: Float = 1.0f,
     val isTesting: Boolean = false,
     val testResult: String? = null,
     val isSaved: Boolean = false,
@@ -86,6 +87,7 @@ class SettingsViewModel(
         val themePreference = AuthManager.getThemePreference()
         val useDynamicColors = AuthManager.isUseDynamicColors()
         val themePreset = AuthManager.getThemePreset()
+        val chatFontScale = AuthManager.getChatFontScale()
         val typingEffectEnabled = AuthManager.isTypingEffectEnabled()
         val typingEffectDelayMs = AuthManager.getTypingEffectDelayMs()
         val profiles = AuthManager.getConnectionProfiles()
@@ -103,6 +105,7 @@ class SettingsViewModel(
                 themePreference = themePreference,
                 useDynamicColors = useDynamicColors,
                 themePreset = themePreset,
+                chatFontScale = chatFontScale,
                 typingEffectEnabled = typingEffectEnabled,
                 typingEffectDelayMs = typingEffectDelayMs,
                 profiles = profiles,
@@ -369,6 +372,12 @@ class SettingsViewModel(
     fun onThemeChange(theme: ThemePreference) {
         _uiState.update { it.copy(themePreference = theme, isSaved = false) }
         AuthManager.setThemePreference(theme)
+    }
+
+    fun onChatFontScaleChange(scale: Float) {
+        val normalized = AuthManager.normalizeChatFontScale(scale)
+        _uiState.update { it.copy(chatFontScale = normalized, isSaved = false) }
+        AuthManager.setChatFontScale(normalized)
     }
 
     fun onUseDynamicColorsChange(enabled: Boolean) {

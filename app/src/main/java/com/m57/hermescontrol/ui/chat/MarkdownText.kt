@@ -54,6 +54,7 @@ import com.hrm.latex.renderer.model.LatexTheme
 import com.m57.hermescontrol.data.remote.GatewayFileClient
 import com.m57.hermescontrol.theme.LocalHermesStatusColors
 import com.m57.hermescontrol.theme.SearchHighlightColors
+import com.m57.hermescontrol.theme.WithoutChatFontScale
 import com.m57.hermescontrol.theme.searchHighlightColors
 
 private val URL_PATTERN = Regex("""https?://[^\s)>\[\]"'‘’]+""")
@@ -104,11 +105,13 @@ fun MarkdownText(
         for (block in blocks) {
             when (block) {
                 is MdBlock.Code -> {
-                    com.m57.hermescontrol.ui.chat.components.CodeBlockCard(
-                        code = block.code,
-                        language = block.language,
-                        onCopy = { /* clipboard handled internally */ },
-                    )
+                    WithoutChatFontScale {
+                        com.m57.hermescontrol.ui.chat.components.CodeBlockCard(
+                            code = block.code,
+                            language = block.language,
+                            onCopy = { /* clipboard handled internally */ },
+                        )
+                    }
                 }
 
                 is MdBlock.Math -> {
