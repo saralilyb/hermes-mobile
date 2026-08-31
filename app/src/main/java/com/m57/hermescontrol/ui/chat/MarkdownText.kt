@@ -1119,7 +1119,8 @@ private data class CodeFenceInfo(
 )
 
 private fun parseCodeFenceStart(line: String): CodeFenceInfo? {
-    val trimmed = line.trimStart()
+    if (line.firstOrNull()?.isWhitespace() == true) return null
+    val trimmed = line
     if (trimmed.length < 3) return null
 
     val fenceChar = trimmed.first()
@@ -1142,7 +1143,8 @@ private fun isCodeFenceEnd(
     line: String,
     fence: CodeFenceInfo,
 ): Boolean {
-    val trimmed = line.trimStart()
+    if (line.firstOrNull()?.isWhitespace() == true) return false
+    val trimmed = line
     val fenceLength = trimmed.takeWhile { it == fence.fenceChar }.length
     if (fenceLength < fence.fenceLength) return false
 
