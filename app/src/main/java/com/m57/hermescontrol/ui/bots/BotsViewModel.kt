@@ -2,6 +2,7 @@ package com.m57.hermescontrol.ui.bots
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.model.ProfileInfo
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.NetworkResult
@@ -26,6 +27,7 @@ data class BotsUiState(
     val showHidden: Boolean = false,
     val errorMessage: String? = null,
     val nowSeconds: Long = 0L,
+    val sourceConnectionProfileId: String? = null,
 ) {
     val hasHiddenBots: Boolean
         get() = profiles.any { it.isHidden }
@@ -65,6 +67,7 @@ class BotsViewModel(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     autoLoad: Boolean = true,
     private val clockSeconds: () -> Long = { System.currentTimeMillis() / 1_000L },
+    private val selectedConnectionProfileId: () -> String? = AuthManager::getSelectedProfileId,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(BotsUiState())
     val uiState: StateFlow<BotsUiState> = _uiState.asStateFlow()
@@ -74,6 +77,7 @@ class BotsViewModel(
     }
 
     fun loadBots(isRefresh: Boolean = false) {
+        val sourceProfileId = selectedConnectionProfileId()
         _uiState.update {
             if (isRefresh) {
                 it.copy(isRefreshing = true, errorMessage = null)
@@ -90,6 +94,7 @@ class BotsViewModel(
                             isRefreshing = false,
                             profiles = result.data.profiles,
                             nowSeconds = clockSeconds(),
+                            sourceConnectionProfileId = sourceProfileId,
                         )
                     }
                 is NetworkResult.Failure ->

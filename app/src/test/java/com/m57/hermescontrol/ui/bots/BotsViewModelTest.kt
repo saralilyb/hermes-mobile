@@ -53,7 +53,13 @@ class BotsViewModelTest {
     fun `load and refresh use only getProfiles`() =
         runTest(dispatcher) {
             coEvery { api.getProfiles() } returns Response.success(ProfilesResponse(listOf(ProfileInfo("bot"))))
-            val viewModel = BotsViewModel(dispatcher, autoLoad = false, clockSeconds = { 1_000L })
+            val viewModel =
+                BotsViewModel(
+                    ioDispatcher = dispatcher,
+                    autoLoad = false,
+                    clockSeconds = { 1_000L },
+                    selectedConnectionProfileId = { "connection-a" },
+                )
 
             viewModel.loadBots()
             advanceUntilIdle()
@@ -63,6 +69,7 @@ class BotsViewModelTest {
             assertEquals(listOf("bot"), viewModel.uiState.value.profiles.map { it.name })
             assertFalse(viewModel.uiState.value.isLoading)
             assertFalse(viewModel.uiState.value.isRefreshing)
+            assertEquals("connection-a", viewModel.uiState.value.sourceConnectionProfileId)
             coVerify(exactly = 2) { api.getProfiles() }
             coVerify(exactly = 0) { api.getActiveProfile() }
             coVerify(exactly = 0) { api.setActiveProfile(any()) }
@@ -102,5 +109,15 @@ class BotsViewModelTest {
             listOf("beta"),
             base.copy(showHidden = true, searchQuery = "build").displayProfiles.map { it.name },
         )
+    }
+
+    @Test
+    fun `canonical bot can open only through the profile that produced its roster`() {
+        val bot = ProfileInfo("bot", canonical_session = CanonicalSessionInfo("session"))
+
+        assertTrue(canOpenBot(bot, "connection-a", "connection-a"))
+        assertFalse(canOpenBot(bot, "connection-a", "connection-b"))
+        assertFalse(canOpenBot(bot, null, "connection-a"))
+        assertFalse(canOpenBot(ProfileInfo("no-session"), "connection-a", "connection-a"))
     }
 }

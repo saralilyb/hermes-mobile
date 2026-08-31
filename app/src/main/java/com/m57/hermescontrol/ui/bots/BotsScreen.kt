@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,7 +56,14 @@ fun BotsScreen(
     viewModel: BotsViewModel = viewModel { BotsViewModel() },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val serverState by AuthManager.serverStore.stateFlow.collectAsStateWithLifecycle()
+    val selectedProfileId by AuthManager.selectedProfileIdFlow.collectAsStateWithLifecycle()
+
+    LaunchedEffect(selectedProfileId, state.sourceConnectionProfileId) {
+        val sourceProfileId = state.sourceConnectionProfileId
+        if (sourceProfileId != null && sourceProfileId != selectedProfileId && !state.isLoading) {
+            viewModel.loadBots()
+        }
+    }
 
     HermesScaffold(
         modifier = modifier,
@@ -99,16 +107,13 @@ fun BotsScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(state.displayProfiles, key = { it.name }) { profile ->
-                            val selectedProfileId = serverState.selectedProfileId
-                            val canOpen =
-                                profile.canonicalSessionId != null &&
-                                    !selectedProfileId.isNullOrBlank()
+                            val canOpen = canOpenBot(profile, state.sourceConnectionProfileId, selectedProfileId)
                             BotCard(
                                 profile = profile,
                                 isActive = profile.isActiveAt(state.nowSeconds),
                                 onClick =
                                     if (canOpen) {
-                                        { NavigationController.openBot(profile, selectedProfileId) }
+                                        { NavigationController.openBot(profile, state.sourceConnectionProfileId) }
                                     } else {
                                         null
                                     },
@@ -119,6 +124,15 @@ fun BotsScreen(
         }
     }
 }
+
+internal fun canOpenBot(
+    profile: ProfileInfo,
+    sourceConnectionProfileId: String?,
+    selectedConnectionProfileId: String?,
+): Boolean =
+    profile.canonicalSessionId != null &&
+        !sourceConnectionProfileId.isNullOrBlank() &&
+        sourceConnectionProfileId == selectedConnectionProfileId
 
 @Composable
 private fun BotCard(
