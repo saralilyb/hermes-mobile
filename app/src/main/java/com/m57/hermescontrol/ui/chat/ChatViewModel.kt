@@ -1210,6 +1210,8 @@ class ChatViewModel(
         size: Long,
     ) = attachmentsDelegate.addAttachment(uri, name, mimeType, size)
 
+    fun addAttachments(attachments: List<Attachment>) = attachmentsDelegate.addAttachments(attachments)
+
     fun removeAttachment(index: Int) = attachmentsDelegate.removeAttachment(index)
 
     fun clearAttachments() = attachmentsDelegate.clearAttachments()

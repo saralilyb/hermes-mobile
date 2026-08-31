@@ -20,18 +20,23 @@ class ChatAttachmentsDelegate(
         name: String,
         mimeType: String,
         size: Long,
-    ) {
+    ) = addAttachments(
+        listOf(
+            Attachment(
+                uri = uri,
+                name = name,
+                mimeType = mimeType,
+                size = size,
+            ),
+        ),
+    )
+
+    fun addAttachments(attachments: List<Attachment>) {
+        if (attachments.isEmpty()) return
         uiState.update { state ->
-            val attachment =
-                Attachment(
-                    uri = uri,
-                    name = name,
-                    mimeType = mimeType,
-                    size = size,
-                )
-            state.copy(
-                pendingAttachments = state.pendingAttachments + attachment,
-            )
+            val seenUris = state.pendingAttachments.mapTo(mutableSetOf(), Attachment::uri)
+            val additions = attachments.filter { seenUris.add(it.uri) }
+            if (additions.isEmpty()) state else state.copy(pendingAttachments = state.pendingAttachments + additions)
         }
     }
 

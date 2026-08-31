@@ -12,6 +12,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -85,6 +87,7 @@ fun ChatInputBar(
     onImageTap: () -> Unit = {},
     onFileTap: () -> Unit = {},
     onRemoveAttachment: (Int) -> Unit = {},
+    onPreviewAttachment: (Attachment) -> Unit = {},
     // NEW: composer toolbar wiring
     currentSessionModel: String? = null,
     reasoningLevel: String? = null,
@@ -190,17 +193,22 @@ fun ChatInputBar(
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically(),
                 ) {
-                    Row(
+                    LazyRow(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 12.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        pendingAttachments.forEachIndexed { index, attachment ->
+                        items(
+                            count = pendingAttachments.size,
+                            key = { pendingAttachments[it].uri },
+                        ) { index ->
+                            val attachment = pendingAttachments[index]
                             AttachmentChip(
                                 attachment = attachment,
                                 onRemove = { onRemoveAttachment(index) },
+                                onPreview = { onPreviewAttachment(attachment) },
                             )
                         }
                     }
@@ -391,6 +399,7 @@ fun ChatInputBar(
 fun AttachmentChip(
     attachment: Attachment,
     onRemove: () -> Unit,
+    onPreview: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val thumbnail = attachment.uri
@@ -410,7 +419,8 @@ fun AttachmentChip(
                     modifier =
                         Modifier
                             .size(24.dp)
-                            .clip(RoundedCornerShape(4.dp)),
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable(onClick = onPreview),
                     contentScale = ContentScale.Crop,
                 )
                 Spacer(modifier = Modifier.width(4.dp))
