@@ -192,6 +192,9 @@
     <string name="settings_item_theme">テーマ</string>
     <string name="settings_sec_chat">チャット</string>
     <string name="settings_item_typing_effect">タイピング効果</string>
+    <string name="settings_chat_font_scale">メッセージの文字サイズ</string>
+    <string name="settings_chat_font_scale_description">ユーザーとアシスタントの通常メッセージの文字サイズを調整します</string>
+    <string name="settings_chat_font_scale_value">%1$d%%</string>
     <string name="settings_desc_typing_effect">新しいメッセージを文字単位でアニメーション表示します</string>
     <string name="settings_item_typing_delay">遅延: %1$d ms</string>
     <string name="settings_delay_10ms">10 ms</string>

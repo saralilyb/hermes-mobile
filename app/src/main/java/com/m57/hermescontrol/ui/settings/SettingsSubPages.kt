@@ -182,6 +182,8 @@ internal fun SettingsChatPage(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             ChatSection(
+                chatFontScale = state.chatFontScale,
+                onChatFontScaleChange = viewModel::onChatFontScaleChange,
                 typingEffectEnabled = state.typingEffectEnabled,
                 onTypingEffectEnabledChange = viewModel::onTypingEffectEnabledChange,
                 typingEffectDelayMs = state.typingEffectDelayMs,

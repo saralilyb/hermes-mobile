@@ -192,6 +192,9 @@
     <string name="settings_item_theme">테마</string>
     <string name="settings_sec_chat">채팅</string>
     <string name="settings_item_typing_effect">타이핑 효과</string>
+    <string name="settings_chat_font_scale">메시지 글자 크기</string>
+    <string name="settings_chat_font_scale_description">사용자 및 어시스턴트의 일반 메시지 글자 크기를 조절합니다</string>
+    <string name="settings_chat_font_scale_value">%1$d%%</string>
     <string name="settings_desc_typing_effect">새 메시지를 글자 단위로 표시하는 애니메이션</string>
     <string name="settings_item_typing_delay">지연: %1$d ms</string>
     <string name="settings_delay_10ms">10 ms</string>

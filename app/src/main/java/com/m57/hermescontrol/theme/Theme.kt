@@ -9,6 +9,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import com.m57.hermescontrol.theme.presets.AmoledDarkColorScheme
 import com.m57.hermescontrol.theme.presets.AmoledDarkStatusColors
 import com.m57.hermescontrol.theme.presets.AmoledLightColorScheme
@@ -43,6 +45,39 @@ enum class ThemePreset { DEFAULT, MONOCHROME, GRUVBOX, CATPPUCCIN, AMOLED, NEON_
 
 val LocalThemePreference = compositionLocalOf { ThemePreference.SYSTEM }
 val LocalThemePreset = compositionLocalOf { ThemePreset.DEFAULT }
+val LocalChatFontScale = compositionLocalOf { 1.0f }
+private val LocalChatBaseDensity = compositionLocalOf<Density?> { null }
+
+internal fun effectiveChatDensity(
+    systemDensity: Float,
+    systemFontScale: Float,
+    chatFontScale: Float,
+): Density = Density(systemDensity, systemFontScale * chatFontScale)
+
+@Composable
+fun ChatFontScale(content: @Composable () -> Unit) {
+    val systemDensity = LocalDensity.current
+    val chatFontScale = LocalChatFontScale.current
+    CompositionLocalProvider(
+        LocalChatBaseDensity provides systemDensity,
+        LocalDensity provides
+            effectiveChatDensity(
+                systemDensity = systemDensity.density,
+                systemFontScale = systemDensity.fontScale,
+                chatFontScale = chatFontScale,
+            ),
+        content = content,
+    )
+}
+
+@Composable
+fun WithoutChatFontScale(content: @Composable () -> Unit) {
+    val density = LocalChatBaseDensity.current ?: LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides density,
+        content = content,
+    )
+}
 
 /**
  * Resolve the Material 3 [ColorScheme] for a preset + dark flag.
@@ -85,6 +120,7 @@ fun HermesControlTheme(
     themePreference: ThemePreference = LocalThemePreference.current,
     useDynamicColors: Boolean = true,
     themePreset: ThemePreset = ThemePreset.DEFAULT,
+    chatFontScale: Float = 1.0f,
     content: @Composable () -> Unit,
 ) {
     val darkTheme =
@@ -113,6 +149,7 @@ fun HermesControlTheme(
     CompositionLocalProvider(
         LocalThemePreference provides themePreference,
         LocalThemePreset provides themePreset,
+        LocalChatFontScale provides chatFontScale,
         LocalHermesStatusColors provides statusColors,
         LocalSpacing provides SpacingDefaults,
         LocalMotion provides MotionDefaults,

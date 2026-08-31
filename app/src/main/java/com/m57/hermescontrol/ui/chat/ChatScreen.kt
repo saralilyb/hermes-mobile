@@ -79,6 +79,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.m57.hermescontrol.HistoryScreen
 import com.m57.hermescontrol.NavigationController
 import com.m57.hermescontrol.R
+import com.m57.hermescontrol.data.model.Attachment
 import com.m57.hermescontrol.data.model.capabilitiesFor
 import com.m57.hermescontrol.data.ws.ConnectionStatus
 import com.m57.hermescontrol.data.ws.HermesWsClient
@@ -89,6 +90,7 @@ import com.m57.hermescontrol.ui.chat.components.ChatLifecycleEffects
 import com.m57.hermescontrol.ui.chat.components.ChatLoadingOverlay
 import com.m57.hermescontrol.ui.chat.components.ChatMessageList
 import com.m57.hermescontrol.ui.chat.components.ChatScrollToBottomFab
+import com.m57.hermescontrol.ui.chat.components.ChatTimelineNoPrefetchStrategy
 import com.m57.hermescontrol.ui.chat.components.ContextUsageChip
 import com.m57.hermescontrol.ui.chat.components.ContextUsageDialog
 import com.m57.hermescontrol.ui.chat.components.ReactionHeartsOverlay
@@ -105,10 +107,13 @@ import com.m57.hermescontrol.ui.common.HermesScaffold
 import com.m57.hermescontrol.ui.common.NavIcon
 import com.m57.hermescontrol.ui.common.SecureGatewayMediaPlayer
 import com.m57.hermescontrol.ui.model.components.ModelPickerDialog
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -154,7 +159,10 @@ fun ChatScreen(
             providers = state.modelPickerProviders,
             inventoryResolved = state.modelInventoryResolved,
         )
-    val listState = rememberLazyListState()
+    val listState =
+        rememberLazyListState(
+            prefetchStrategy = ChatTimelineNoPrefetchStrategy,
+        )
     val scrollScope = rememberCoroutineScope()
     val scrollController = rememberChatScrollController(listState, scrollScope)
     val listItemCount =
@@ -326,20 +334,51 @@ fun ChatScreen(
     // File picker launcher for attachments (issue #195)
     val filePickerLauncher =
         rememberLauncherForActivityResult(
-            ActivityResultContracts.GetContent(),
-        ) { uri: Uri? ->
-            if (uri != null) {
-                val cursor = context.contentResolver.query(uri, null, null, null, null)
-                cursor?.use { c ->
-                    if (c.moveToFirst()) {
-                        val nameIdx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        val sizeIdx = c.getColumnIndex(OpenableColumns.SIZE)
-                        val name = if (nameIdx >= 0) c.getString(nameIdx) else uri.lastPathSegment ?: "file"
-                        val size = if (sizeIdx >= 0) c.getLong(sizeIdx) else 0L
-                        val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
-                        viewModel.addAttachment(uri.toString(), name, mimeType, size)
+            ActivityResultContracts.GetMultipleContents(),
+        ) { uris: List<Uri> ->
+            scrollScope.launch {
+                val attachments =
+                    withContext(Dispatchers.IO) {
+                        uris.take(MAX_PENDING_ATTACHMENTS).mapNotNull { uri ->
+                            try {
+                                context.contentResolver
+                                    .query(
+                                        uri,
+                                        arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                                        null,
+                                        null,
+                                        null,
+                                    )?.use { cursor ->
+                                        if (!cursor.moveToFirst()) return@use null
+                                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                                        Attachment(
+                                            uri = uri.toString(),
+                                            name =
+                                                if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
+                                                    cursor.getString(nameIndex)
+                                                } else {
+                                                    "file"
+                                                },
+                                            mimeType =
+                                                context.contentResolver.getType(uri)
+                                                    ?: "application/octet-stream",
+                                            size =
+                                                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                                                    cursor.getLong(sizeIndex)
+                                                } else {
+                                                    0L
+                                                },
+                                        )
+                                    }
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
                     }
-                }
+                viewModel.addAttachments(attachments)
             }
         }
 
@@ -686,6 +725,14 @@ fun ChatScreen(
                 onImageTap = { filePickerLauncher.launch("image/*") },
                 onFileTap = { filePickerLauncher.launch("*/*") },
                 onRemoveAttachment = viewModel::removeAttachment,
+                onPreviewAttachment = { attachment ->
+                    viewingImage =
+                        ImageViewerModel(
+                            model = attachment.uri,
+                            name = attachment.name,
+                            mimeType = attachment.mimeType,
+                        )
+                },
                 // Composer toolbar wiring (PR 1)
                 currentSessionModel = state.currentSessionModel,
                 reasoningLevel = state.reasoningLevel,

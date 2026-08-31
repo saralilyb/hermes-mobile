@@ -34,6 +34,18 @@ class TestContext(
 }
 
 class AuthManagerTest {
+    @Test
+    fun `chat font scale normalization snaps to nearest stop and handles invalid values`() {
+        assertEquals(0.85f, AuthManager.normalizeChatFontScale(0.8f))
+        assertEquals(0.85f, AuthManager.normalizeChatFontScale(0.924f))
+        assertEquals(1.0f, AuthManager.normalizeChatFontScale(0.926f))
+        assertEquals(1.15f, AuthManager.normalizeChatFontScale(1.14f))
+        assertEquals(1.3f, AuthManager.normalizeChatFontScale(1.31f))
+        assertEquals(1.5f, AuthManager.normalizeChatFontScale(9f))
+        assertEquals(1.0f, AuthManager.normalizeChatFontScale(Float.NaN))
+        assertEquals(1.0f, AuthManager.normalizeChatFontScale(Float.POSITIVE_INFINITY))
+    }
+
     private lateinit var mockPrefs: SharedPreferences
     private lateinit var mockEditor: SharedPreferences.Editor
     private lateinit var mockContext: Context

@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.m57.hermescontrol.data.local.AuthSessionState
+import com.m57.hermescontrol.data.model.ProfileInfo
 
 data class PendingSessionTarget(
     val sessionId: String,
@@ -40,10 +41,21 @@ object NavigationController {
         pendingSessionTarget = PendingSessionTarget(sessionId, profileId)
     }
 
+    fun openBot(
+        bot: ProfileInfo,
+        selectedConnectionProfileId: String?,
+    ) {
+        val sessionId = bot.canonicalSessionId ?: return
+        val profileId = selectedConnectionProfileId?.takeIf { it.isNotBlank() } ?: return
+        queuePendingSession(sessionId, profileId)
+        navigateTo(ChatScreen)
+    }
+
     // Top-level primary screens (Chat, Skills, Cron, System, Settings)
     private val primaryScreens: MutableSet<NavKey> =
         mutableSetOf(
             ChatScreen,
+            BotsScreen,
             SkillsScreen,
             CronJobsScreen,
             SystemScreen,

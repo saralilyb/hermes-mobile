@@ -1,6 +1,11 @@
 <!-- Modified from Hy4ri/hermes-mobile for this fork; see NOTICE. -->
 
 <resources>
+    <string name="screen_bots">Bots</string>
+    <string name="bots_search_placeholder">Search bots</string>
+    <string name="bots_toggle_hidden">Show or hide hidden bots</string>
+    <string name="bots_empty_title">No bots found</string>
+    <string name="bots_empty_description">Bot profiles will appear here.</string>
     <string name="media_player_play">Play</string>
     <string name="media_player_pause">Pause</string>
     <string name="media_player_close">Close player</string>
@@ -192,6 +197,9 @@
     <string name="settings_item_theme">Theme</string>
     <string name="settings_sec_chat">Chat</string>
     <string name="settings_item_typing_effect">Typing Effect</string>
+    <string name="settings_chat_font_scale">Message text size</string>
+    <string name="settings_chat_font_scale_description">Adjust ordinary user and assistant message text</string>
+    <string name="settings_chat_font_scale_value">%1$d%%</string>
     <string name="settings_desc_typing_effect">Animate new messages word by word</string>
     <string name="settings_item_typing_delay">Delay: %1$d ms</string>
     <string name="settings_delay_10ms">10 ms</string>

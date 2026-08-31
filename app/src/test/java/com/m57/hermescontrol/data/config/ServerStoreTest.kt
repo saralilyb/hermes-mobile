@@ -20,7 +20,24 @@ class ServerStoreTest {
         assertEquals("token", state.wsAuthParam)
         assertTrue(state.connectionProfiles.isEmpty())
         assertNull(state.selectedProfileId)
+        assertEquals(1.0f, state.chatFontScale)
     }
+
+    @Test
+    fun `chat font scale survives serialization round trip and defaults for legacy state`() =
+        runTest {
+            val output = ByteArrayOutputStream()
+            ServerStoreSerializer.writeTo(ServerStoreState(chatFontScale = 1.3f), output)
+
+            val restored = ServerStoreSerializer.readFrom(ByteArrayInputStream(output.toByteArray()))
+            val legacy =
+                ServerStoreSerializer.readFrom(
+                    ByteArrayInputStream("{\"host\":\"127.0.0.1\"}".toByteArray()),
+                )
+
+            assertEquals(1.3f, restored.chatFontScale)
+            assertEquals(1.0f, legacy.chatFontScale)
+        }
 
     @Test
     fun testPureOps_addOrUpdate() {

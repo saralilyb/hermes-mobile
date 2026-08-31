@@ -549,4 +549,55 @@ class MarkdownTextFeatureTest {
         assertEquals(MdBlock.Bullet("item"), blocks.first())
         assertEquals(MdBlock.Paragraph("      val answer = 42"), blocks.last())
     }
+
+    @Test
+    fun testNestedCodeBlock_fourBackticksPreserveThreeBackticks() {
+        val markdown =
+            """
+            ````markdown
+            Here is a nested block:
+            ```python
+            print("hello")
+            ```
+            ````
+            """.trimIndent()
+
+        val block = parseBlocks(markdown).single() as MdBlock.Code
+
+        assertEquals("markdown", block.language)
+        assertTrue(block.code.contains("```python"))
+        assertTrue(block.code.contains("print(\"hello\")"))
+    }
+
+    @Test
+    fun testTildeCodeBlock_parses() {
+        val markdown =
+            """
+            ~~~json
+            {"key": "value"}
+            ~~~
+            """.trimIndent()
+
+        val block = parseBlocks(markdown).single() as MdBlock.Code
+
+        assertEquals("json", block.language)
+        assertEquals("{\"key\": \"value\"}", block.code)
+    }
+
+    @Test
+    fun testLongerFenceRequiresMatchingCloseLength() {
+        val markdown =
+            """
+            `````
+            inner
+            ````
+            still inner
+            `````
+            """.trimIndent()
+
+        val block = parseBlocks(markdown).single() as MdBlock.Code
+
+        assertTrue(block.code.contains("````"))
+        assertTrue(block.code.contains("still inner"))
+    }
 }
