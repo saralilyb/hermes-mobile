@@ -107,10 +107,13 @@ import com.m57.hermescontrol.ui.common.HermesScaffold
 import com.m57.hermescontrol.ui.common.NavIcon
 import com.m57.hermescontrol.ui.common.SecureGatewayMediaPlayer
 import com.m57.hermescontrol.ui.model.components.ModelPickerDialog
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -333,44 +336,50 @@ fun ChatScreen(
         rememberLauncherForActivityResult(
             ActivityResultContracts.GetMultipleContents(),
         ) { uris: List<Uri> ->
-            val attachments =
-                uris.mapNotNull { uri ->
-                    try {
-                        context.contentResolver
-                            .query(
-                                uri,
-                                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
-                                null,
-                                null,
-                                null,
-                            )?.use { cursor ->
-                                if (!cursor.moveToFirst()) return@use null
-                                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                                Attachment(
-                                    uri = uri.toString(),
-                                    name =
-                                        if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
-                                            cursor.getString(nameIndex)
-                                        } else {
-                                            "file"
-                                        },
-                                    mimeType =
-                                        context.contentResolver.getType(uri)
-                                            ?: "application/octet-stream",
-                                    size =
-                                        if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
-                                            cursor.getLong(sizeIndex)
-                                        } else {
-                                            0L
-                                        },
-                                )
+            scrollScope.launch {
+                val attachments =
+                    withContext(Dispatchers.IO) {
+                        uris.take(MAX_PENDING_ATTACHMENTS).mapNotNull { uri ->
+                            try {
+                                context.contentResolver
+                                    .query(
+                                        uri,
+                                        arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                                        null,
+                                        null,
+                                        null,
+                                    )?.use { cursor ->
+                                        if (!cursor.moveToFirst()) return@use null
+                                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                                        Attachment(
+                                            uri = uri.toString(),
+                                            name =
+                                                if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
+                                                    cursor.getString(nameIndex)
+                                                } else {
+                                                    "file"
+                                                },
+                                            mimeType =
+                                                context.contentResolver.getType(uri)
+                                                    ?: "application/octet-stream",
+                                            size =
+                                                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                                                    cursor.getLong(sizeIndex)
+                                                } else {
+                                                    0L
+                                                },
+                                        )
+                                    }
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (_: Exception) {
+                                null
                             }
-                    } catch (_: Exception) {
-                        null
+                        }
                     }
-                }
-            viewModel.addAttachments(attachments)
+                viewModel.addAttachments(attachments)
+            }
         }
 
     // Camera photo launcher (issue #195)

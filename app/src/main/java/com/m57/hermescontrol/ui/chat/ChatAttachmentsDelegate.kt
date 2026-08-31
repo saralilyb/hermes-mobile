@@ -4,6 +4,8 @@ import com.m57.hermescontrol.data.model.Attachment
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 
+internal const val MAX_PENDING_ATTACHMENTS = 10
+
 /**
  * Owns pending-attachment state for [ChatViewModel], extracted to keep the
  * god-object focused on messaging/session/streaming concerns.
@@ -35,7 +37,8 @@ class ChatAttachmentsDelegate(
         if (attachments.isEmpty()) return
         uiState.update { state ->
             val seenUris = state.pendingAttachments.mapTo(mutableSetOf(), Attachment::uri)
-            val additions = attachments.filter { seenUris.add(it.uri) }
+            val remainingCapacity = (MAX_PENDING_ATTACHMENTS - state.pendingAttachments.size).coerceAtLeast(0)
+            val additions = attachments.filter { seenUris.add(it.uri) }.take(remainingCapacity)
             if (additions.isEmpty()) state else state.copy(pendingAttachments = state.pendingAttachments + additions)
         }
     }

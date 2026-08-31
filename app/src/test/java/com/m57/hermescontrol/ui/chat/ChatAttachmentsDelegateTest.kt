@@ -60,6 +60,21 @@ class ChatAttachmentsDelegateTest {
         assertEquals(listOf("first"), uiState.value.pendingAttachments.map(Attachment::name))
     }
 
+    @Test
+    fun addAttachmentsCapsPendingStateWithoutReordering() {
+        delegate.addAttachments(
+            (0 until MAX_PENDING_ATTACHMENTS + 5).map { index ->
+                attachment("content://$index", "file-$index")
+            },
+        )
+
+        assertEquals(MAX_PENDING_ATTACHMENTS, uiState.value.pendingAttachments.size)
+        assertEquals(
+            (0 until MAX_PENDING_ATTACHMENTS).map { "content://$it" },
+            uiState.value.pendingAttachments.map(Attachment::uri),
+        )
+    }
+
     private fun attachment(
         uri: String,
         name: String,
