@@ -1,6 +1,11 @@
 <!-- Modified from Hy4ri/hermes-mobile for this fork; see NOTICE. -->
 
 <resources>
+    <string name="screen_bots">Bots</string>
+    <string name="bots_search_placeholder">Search bots</string>
+    <string name="bots_toggle_hidden">Show or hide hidden bots</string>
+    <string name="bots_empty_title">No bots found</string>
+    <string name="bots_empty_description">Bot profiles will appear here.</string>
     <string name="media_player_play">Play</string>
     <string name="media_player_pause">Pause</string>
     <string name="media_player_close">Close player</string>
