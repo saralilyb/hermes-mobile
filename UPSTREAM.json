@@ -1,8 +1,8 @@
 {
   "schema_version": 3,
-  "fork_base": "a39db18b864f80c97488f6a52cf3473af020a764",
+  "fork_base": "30c24e084a27ea449304afdd22152d9386005c71",
   "review_start_exclusive": "daf33dcb4c8f7fdafc890acfffc2fbb04569f004",
-  "reviewed_through": "1f1ebf3597a7af784edd2462dacd91116d4811f9",
+  "reviewed_through": "0d5bcba3886701092ab2016c4c2f6117e6b9794f",
   "entries": [
     {
       "commit": "3c0f281276dd695f09cf38a43fa379f843483646",
@@ -295,6 +295,251 @@
       "commit": "1f1ebf3597a7af784edd2462dacd91116d4811f9",
       "disposition": "excluded",
       "reason": "distribution-policy"
+    },
+    {
+      "commit": "4f3a57e3405e8e4902956c514012cdea894d84db",
+      "disposition": "excluded",
+      "reason": "distribution-policy"
+    },
+    {
+      "commit": "c0280776474431c1405f3ba3ee290ea15dc08a17",
+      "disposition": "partial",
+      "reason": "downstream-adaptation",
+      "scope": [
+        "app/src/main/java/com/m57/hermescontrol/data/model/Profile.kt",
+        "app/src/test/java/com/m57/hermescontrol/data/model/ProfileSerializationTest.kt"
+      ]
+    },
+    {
+      "commit": "6af349cdf2d897672864fcaa981243abd9c8f49d",
+      "disposition": "partial",
+      "reason": "downstream-adaptation",
+      "scope": [
+        "app/src/main/java/com/m57/hermescontrol/theme/Color.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/common/BotAvatar.kt",
+        "app/src/test/java/com/m57/hermescontrol/ui/common/BotAvatarTest.kt"
+      ]
+    },
+    {
+      "commit": "48c9039e0214db765e6d53e78c1f3ec1c542c84f",
+      "disposition": "partial",
+      "reason": "downstream-adaptation",
+      "scope": [
+        "app/src/main/java/com/m57/hermescontrol/NavigationController.kt",
+        "app/src/main/java/com/m57/hermescontrol/NavigationKeys.kt",
+        "app/src/main/java/com/m57/hermescontrol/ScreenRegistry.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/bots/BotsScreen.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/bots/BotsViewModel.kt",
+        "app/src/main/res/values/strings.xml",
+        "app/src/test/java/com/m57/hermescontrol/BotNavigationTest.kt",
+        "app/src/test/java/com/m57/hermescontrol/ui/bots/BotsViewModelTest.kt"
+      ]
+    },
+    {
+      "commit": "4e666b49a895d0a28039e74decbe0b61fd347b10",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "b422ead92125c20d73a04427862c33e733143937",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "d4d6a04afcd277f3a194152bc5f35017df2431da",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "274120cc8648825d4f7fdd19fe9c7eef28d62c8a",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "6ca248d28b5ac594bf5664364c0760c0fa37bc8b",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "2fed891d7853c862d66d4372b05eb85db30cc7cd",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "140b0f7179196c092e681e54731b01cb67bd909a",
+      "disposition": "excluded",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "9c91df56f3602f4e44692728d4b809e5769bb11d",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "23fd234aa948c5f81ef6bcd28f627a0e3660c500",
+      "disposition": "excluded",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "6818d07644c9f26642e633ffa976b4f8ecb49006",
+      "disposition": "deferred",
+      "reason": "toolchain-validation"
+    },
+    {
+      "commit": "df328c8b82dfbc99a32c4cb97d054f4002c134de",
+      "disposition": "excluded",
+      "reason": "patch-dependency"
+    },
+    {
+      "commit": "19065f02df721b3f6887cce8c53ec3ba019e59b9",
+      "disposition": "accepted",
+      "reason": "downstream-equivalent"
+    },
+    {
+      "commit": "ce8fdc45bd75644238f20683e2826d1ee6422ab0",
+      "disposition": "accepted",
+      "reason": "downstream-equivalent"
+    },
+    {
+      "commit": "c7d7abf4a1e56418df37869b164486ce08365c9c",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation"
+    },
+    {
+      "commit": "0ae5ed4db2ed39c6cb93940cec4ed8cfb2e3eac5",
+      "disposition": "partial",
+      "reason": "downstream-adaptation",
+      "scope": [
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/ChatAttachmentsDelegate.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/ChatScreen.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/ChatViewModel.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/components/ChatComposer.kt",
+        "app/src/test/java/com/m57/hermescontrol/ui/chat/ChatAttachmentsDelegateTest.kt"
+      ]
+    },
+    {
+      "commit": "680b4082ca9df02681158e8567d7131b315bc45a",
+      "disposition": "deferred",
+      "reason": "toolchain-validation"
+    },
+    {
+      "commit": "4d9dfb99dbae1bf476c3d8d70a05d09149c4203f",
+      "disposition": "deferred",
+      "reason": "toolchain-validation"
+    },
+    {
+      "commit": "10d7d473fde1bbf94b639462ee159de509cfb063",
+      "disposition": "deferred",
+      "reason": "toolchain-validation"
+    },
+    {
+      "commit": "14fde0308322d8f65ac0e7b14e875a553f68f630",
+      "disposition": "deferred",
+      "reason": "toolchain-validation"
+    },
+    {
+      "commit": "0cdccad855a90c50d7a30fd6eaba4d08ba2dee1b",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "7bfb6d5c16e80d71d42c7b394d79951169ca998f",
+      "disposition": "excluded",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "6bc4e872ca52e707bbdafc5ca168ee2f2771b80f",
+      "disposition": "excluded",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "f04d8783581d3179d4ef514c7a43bceaecad29f9",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "2332bdd5d5d5df8a9d28dbaca0dfc90257620211",
+      "disposition": "excluded",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "7a2c453f586d325a0e1899c4ffeef3c1871d5e63",
+      "disposition": "excluded",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "db3f8c736ee922783b3d5ee2ae12c47b5dd6de54",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation"
+    },
+    {
+      "commit": "5bc6e5f855c912fd957679a2766465c1f56ca088",
+      "disposition": "partial",
+      "reason": "downstream-adaptation",
+      "scope": [
+        "app/src/main/java/com/m57/hermescontrol/MainActivity.kt",
+        "app/src/main/java/com/m57/hermescontrol/data/config/ServerStoreState.kt",
+        "app/src/main/java/com/m57/hermescontrol/data/local/AuthManager.kt",
+        "app/src/main/java/com/m57/hermescontrol/theme/Theme.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/ChatBubble.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/chat/MarkdownText.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/settings/SettingsSubPages.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/settings/SettingsViewModel.kt",
+        "app/src/main/java/com/m57/hermescontrol/ui/settings/components/AppearanceSection.kt",
+        "app/src/main/res/values-ja/strings.xml",
+        "app/src/main/res/values-ko/strings.xml",
+        "app/src/main/res/values-zh/strings.xml",
+        "app/src/main/res/values/strings.xml",
+        "app/src/test/java/com/m57/hermescontrol/data/config/ServerStoreTest.kt",
+        "app/src/test/java/com/m57/hermescontrol/data/local/AuthManagerTest.kt",
+        "app/src/test/java/com/m57/hermescontrol/theme/ChatFontScaleTest.kt",
+        "app/src/test/java/com/m57/hermescontrol/ui/settings/SettingsViewModelTest.kt"
+      ]
+    },
+    {
+      "commit": "7e24f5eba31474aea1e3a58d1fe48eb7d65be324",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "0d09f43469706e217c62d596f5248ad306e470e8",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "fbe602cb4fa836bca80305f42617caf71d5f8d58",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "174f8dee7da5d3189ae429328361d2433e58903b",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "2f3bf5114d5e65c5c96a94be2e1f5d7af6cb50f4",
+      "disposition": "excluded",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "bd4a73dd48a4a83cd9d24c65aef60c40e6cb5ce7",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "97b6641d841cb10f00cfd991201641fe52afe09d",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "5c8ab7ed6ca573b8b4d1c6da01128cc161a8eb60",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "0d5bcba3886701092ab2016c4c2f6117e6b9794f",
+      "disposition": "accepted",
+      "reason": "downstream-equivalent"
     }
   ],
   "resolutions": [
