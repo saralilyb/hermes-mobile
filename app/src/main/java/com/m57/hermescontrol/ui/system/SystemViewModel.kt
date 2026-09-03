@@ -15,6 +15,7 @@ import com.m57.hermescontrol.data.model.DebugShareResponse
 import com.m57.hermescontrol.data.model.DoctorResponse
 import com.m57.hermescontrol.data.model.HookResponse
 import com.m57.hermescontrol.data.model.LearningGraphResponse
+import com.m57.hermescontrol.data.model.MemoryResetRequest
 import com.m57.hermescontrol.data.model.MemoryResponse
 import com.m57.hermescontrol.data.model.PortalResponse
 import com.m57.hermescontrol.data.model.StatusResponse
@@ -333,7 +334,7 @@ class SystemViewModel(
         viewModelScope.launch {
             val result =
                 withContext(ioDispatcher) {
-                    safeApiCall { ApiClient.hermesApi.resetMemory(mapOf("target" to target)) }
+                    safeApiCall { ApiClient.hermesApi.resetMemory(MemoryResetRequest(target = target)) }
                 }
             when (result) {
                 is NetworkResult.Success -> {

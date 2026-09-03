@@ -1,8 +1,8 @@
 {
   "schema_version": 3,
-  "fork_base": "1a587e36e956cb8e7f001e5571ae197304c8c2bc",
+  "fork_base": "f3cfd5505eb35f8cfe19b0395d4e7282b44197ef",
   "review_start_exclusive": "daf33dcb4c8f7fdafc890acfffc2fbb04569f004",
-  "reviewed_through": "0d5bcba3886701092ab2016c4c2f6117e6b9794f",
+  "reviewed_through": "bb6b38c41e7cf18b72849e29a12d38e5e3e2cbae",
   "entries": [
     {
       "commit": "3c0f281276dd695f09cf38a43fa379f843483646",
@@ -538,6 +538,130 @@
     },
     {
       "commit": "0d5bcba3886701092ab2016c4c2f6117e6b9794f",
+      "disposition": "accepted",
+      "reason": "downstream-equivalent"
+    },
+    {
+      "commit": "cdcecb97348a3bdf18e03a722151aba4fc2d0bef",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "80b73bb000eced9b4c8e765ee4cc48c4992b1a91",
+      "disposition": "accepted",
+      "reason": "downstream-equivalent"
+    },
+    {
+      "commit": "807c0af381efb2cb75d4fd237db676d9d51efa72",
+      "disposition": "deferred",
+      "reason": "toolchain-validation"
+    },
+    {
+      "commit": "6b2268004f64eb8477aa79f86b3b8f13aae8edc5",
+      "disposition": "accepted",
+      "reason": "downstream-equivalent"
+    },
+    {
+      "commit": "d8e3992c33c1b548365dd7b50d6d9e734efb098f",
+      "disposition": "accepted",
+      "reason": "downstream-adaptation"
+    },
+    {
+      "commit": "ad838f696e80106f25953b1643d611d0ad79633a",
+      "disposition": "accepted",
+      "reason": "patch-dependency"
+    },
+    {
+      "commit": "3911f5302a7dada71067dff1f8d3b5c80da3769b",
+      "disposition": "accepted",
+      "reason": "downstream-equivalent"
+    },
+    {
+      "commit": "3f3b853758d8ab061e4e6eda39ba82697f5dfa7d",
+      "disposition": "accepted",
+      "reason": "downstream-equivalent"
+    },
+    {
+      "commit": "cfe3e736fd4e90ca28ddf5d8d8e39a74ca152261",
+      "disposition": "excluded",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "b5c4ba50cd901add77be143e91ffb18112c64118",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "53c8eca714a89361aab4071b03da8c2b68d6f71f",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "3fd9ac767f73b663da06b3c37b27febfbef40348",
+      "disposition": "deferred",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "ceb48132181348a9f752db5ce9d26b54fb305bb7",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "aa28d96b5d2bb1e5333ea3185e76d6ea0e557c05",
+      "disposition": "deferred",
+      "reason": "patch-dependency"
+    },
+    {
+      "commit": "908255f5ad646d50d644d74b6ce3096642365512",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "11dd1eff92fdd922d965baff5988a59361c0d857",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "21db9bfdabfd5a87432624f300f58d38389b73bd",
+      "disposition": "partial",
+      "reason": "downstream-adaptation",
+      "scope": [
+        "app/src/main/java/com/m57/hermescontrol/data/remote/ProfileScopeInterceptor.kt",
+        "app/src/test/java/com/m57/hermescontrol/data/remote/ProfileScopeInterceptorTest.kt"
+      ]
+    },
+    {
+      "commit": "d8385a2b0294dab8fdf10906054b71b474e8d15a",
+      "disposition": "deferred",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "6ec277af8b473b73a1246eb60985ac0e067b00d5",
+      "disposition": "deferred",
+      "reason": "security-review"
+    },
+    {
+      "commit": "7c00f4407dfe722567ea5b6b6417a999df0ed415",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "2d0b6ae1a9cc7c23d2baaca90c4c006c1b54ec8e",
+      "disposition": "deferred",
+      "reason": "downstream-conflict"
+    },
+    {
+      "commit": "4668d482ef53a9c38b24c6ec56b3fd4e27cade6b",
+      "disposition": "excluded",
+      "reason": "product-scope"
+    },
+    {
+      "commit": "dbd7008ee39818f96b16ab4a9c79d94508c98c9d",
+      "disposition": "deferred",
+      "reason": "feature-review"
+    },
+    {
+      "commit": "bb6b38c41e7cf18b72849e29a12d38e5e3e2cbae",
       "disposition": "accepted",
       "reason": "downstream-equivalent"
     }

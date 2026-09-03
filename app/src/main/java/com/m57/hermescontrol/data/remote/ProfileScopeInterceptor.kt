@@ -35,6 +35,7 @@ object ProfileScopeInterceptor : Interceptor {
             "/api/config",
             "/api/env",
             "/api/mcp",
+            "/api/memory",
             "/api/messaging/platforms",
             "/api/messaging/telegram/onboarding",
             "/api/messaging/whatsapp/onboarding",

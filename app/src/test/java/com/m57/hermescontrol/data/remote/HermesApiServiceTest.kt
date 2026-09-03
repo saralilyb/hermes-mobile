@@ -1,6 +1,7 @@
 package com.m57.hermescontrol.data.remote
 
 import com.m57.hermescontrol.data.model.BulkDeleteRequest
+import com.m57.hermescontrol.data.model.MemoryResetRequest
 import com.m57.hermescontrol.data.model.ToggleSkillRequest
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
@@ -89,6 +90,27 @@ class HermesApiServiceTest {
             assertEquals("/api/skills/toggle", recordedRequest.path)
             assertEquals("PUT", recordedRequest.method)
             assertEquals("""{"name":"weather","enabled":true}""", recordedRequest.body.readUtf8())
+        }
+
+    @Test
+    fun testResetMemory_postsSerializableRequestAndParsesResponse() =
+        runTest {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"ok":true,"deleted":["MEMORY.md"]}"""),
+            )
+
+            val response = apiService.resetMemory(MemoryResetRequest(target = "memory"))
+
+            assertTrue(response.isSuccessful)
+            assertEquals(true, response.body()?.ok)
+            assertEquals(listOf("MEMORY.md"), response.body()?.deleted)
+
+            val recordedRequest = mockWebServer.takeRequest()
+            assertEquals("/api/memory/reset", recordedRequest.path)
+            assertEquals("POST", recordedRequest.method)
+            assertEquals("""{"target":"memory"}""", recordedRequest.body.readUtf8())
         }
 
     @Test
