@@ -100,6 +100,26 @@ class ProfileScopeInterceptorTest {
     }
 
     @Test
+    fun memoryEndpoints_areScoped() {
+        val client = clientFor("yasmin")
+        val paths =
+            listOf(
+                "api/memory",
+                "api/memory/reset",
+            )
+
+        for (path in paths) {
+            server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+            val request = Request.Builder().url(server.url(path)).build()
+            client.newCall(request).execute().close()
+
+            val url = server.takeRequest().requestUrl!!
+            assertEquals("yasmin", url.queryParameter("profile"))
+            assertEquals("/$path", url.encodedPath)
+        }
+    }
+
+    @Test
     fun lookalikePath_notScoped() {
         // Sourcery review (PR #540): `startsWith` must not match non-segment
         // suffixes like /api/statusXYZ or /api/gatewayExtra.
