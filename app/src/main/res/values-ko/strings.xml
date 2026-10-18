@@ -1058,4 +1058,21 @@
     <string name="subagent_status_completed">완료됨</string>
     <string name="subagent_status_cancelled">취소됨</string>
     <string name="subagent_status_failed">실패</string>
+    <!-- Downstream labels required by localization parity. -->
+    <string name="screen_bots">봇</string>
+    <string name="bots_search_placeholder">봇 검색</string>
+    <string name="bots_toggle_hidden">숨겨진 봇 표시 또는 숨기기</string>
+    <string name="bots_empty_title">봇을 찾을 수 없습니다</string>
+    <string name="bots_empty_description">봇 프로필이 여기에 표시됩니다.</string>
+    <string name="chat_privileged_cancel">요청 취소</string>
+    <string name="chat_privileged_not_acknowledged">Hermes의 확인 응답이 없습니다. 요청이 아직 대기 중입니다.</string>
+    <string name="content_desc_collapse_automation_group">자동화 실행 기록 접기</string>
+    <string name="content_desc_expand_automation_group">자동화 실행 기록 펼치기</string>
+    <string name="sessions_automations_empty_desc">예약된 자동화의 실행 기록이 여기에 표시됩니다.</string>
+    <string name="sessions_automations_empty_title">자동화 기록이 없습니다</string>
+    <string name="sessions_section_automation_job">작업 %1$s</string>
+    <string name="sessions_section_automation_runs">실행 기록 %1$d개 로드됨</string>
+    <string name="sessions_section_automation_unknown">자동화 실행</string>
+    <string name="sessions_tab_automations">자동화</string>
+    <string name="sessions_tab_conversations">대화</string>
 </resources>

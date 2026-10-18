@@ -47,6 +47,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -175,6 +176,7 @@ fun SkillsScreen(
                         onClearSearch = viewModel::clearHubSearch,
                         onInstall = viewModel::installSkill,
                         onPreviewHubSkill = viewModel::previewHubSkill,
+                        onClearHubPreview = viewModel::clearHubPreview,
                         isInstalling = state.isInstalling,
                         installingSkillName = state.installingSkillName,
                     )
@@ -563,10 +565,14 @@ private fun HubBrowseView(
     onClearSearch: () -> Unit,
     onInstall: (String) -> Unit,
     onPreviewHubSkill: (String) -> Unit,
+    onClearHubPreview: () -> Unit,
     isInstalling: Boolean,
     installingSkillName: String?,
 ) {
     var hubShowDetail by remember { mutableStateOf<HubSkill?>(null) }
+    DisposableEffect(Unit) {
+        onDispose { onClearHubPreview() }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         OutlinedTextField(
@@ -691,7 +697,10 @@ private fun HubBrowseView(
                 } else {
                     null
                 },
-            onDismiss = { hubShowDetail = null },
+            onDismiss = {
+                onClearHubPreview()
+                hubShowDetail = null
+            },
         )
     }
 }

@@ -1052,4 +1052,27 @@
     <string name="subagent_status_completed">完了</string>
     <string name="subagent_status_cancelled">キャンセル済み</string>
     <string name="subagent_status_failed">失敗</string>
+    <!-- Downstream labels required by localization parity. -->
+    <string name="screen_bots">ボット</string>
+    <string name="bots_search_placeholder">ボットを検索</string>
+    <string name="bots_toggle_hidden">非表示のボットの表示を切り替える</string>
+    <string name="bots_empty_title">ボットが見つかりません</string>
+    <string name="bots_empty_description">ボットのプロファイルがここに表示されます。</string>
+    <string name="chat_privileged_cancel">リクエストをキャンセル</string>
+    <string name="chat_privileged_not_acknowledged">Hermes からの確認がありません。リクエストは引き続き待機中です。</string>
+    <string name="chat_tool_output_omitted">プロセス出力から %1$d 文字が省略されました</string>
+    <string name="content_desc_collapse_automation_group">自動化の実行履歴を折りたたむ</string>
+    <string name="content_desc_expand_automation_group">自動化の実行履歴を展開する</string>
+    <string name="mcp_servers_action_test_all">すべてテスト</string>
+    <string name="mcp_servers_status_error">エラー</string>
+    <string name="mcp_servers_status_healthy">正常</string>
+    <string name="mcp_servers_status_needs_auth">認証が必要</string>
+    <string name="mcp_servers_status_testing">テスト中…</string>
+    <string name="sessions_automations_empty_desc">スケジュールされた自動化の実行履歴がここに表示されます。</string>
+    <string name="sessions_automations_empty_title">自動化の実行履歴はありません</string>
+    <string name="sessions_section_automation_job">ジョブ %1$s</string>
+    <string name="sessions_section_automation_runs">%1$d 件の実行履歴を読み込み済み</string>
+    <string name="sessions_section_automation_unknown">自動化の実行</string>
+    <string name="sessions_tab_automations">自動化</string>
+    <string name="sessions_tab_conversations">会話</string>
 </resources>

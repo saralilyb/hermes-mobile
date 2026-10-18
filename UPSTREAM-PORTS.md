@@ -144,6 +144,39 @@ Nested block/content-sized table work, full reasoning/tool search, dependency
 migrations, the management-profile experiment, auth/header changes, updater
 work, signing changes, and broad refactors are not included.
 
+## Profile creation and hub preview contract fixes (2026-10-18)
+
+Based on fork `6cedf9099d04b603459118ccde0f86125043f8bf`.
+Selectively adapted from upstream audit commit
+`dd1f2b05d32a5b8a151b3aa62805a63439cd19fd`:
+
+- #1549 only: `CreateProfileRequest.keep_skills` is an optional string list;
+  opt-out uses the separate optional `no_skills` boolean. The profile builder
+  sends `no_skills=true` when default skills are disabled and omits both fields
+  for the default policy.
+- #1548 only: the hub preview endpoint decodes its `skill_md` payload through
+  `SkillHubPreviewResponse`, independently of installed-skill `content`.
+  Preview replacement, blank selection, dialog dismissal, hub-tab exit and
+  disposal invalidate the preview generation and cancel pending work. Late
+  results cannot overwrite a replacement, including reopening the same skill.
+  Callback wiring targets the active private browse view in `SkillsScreen`;
+  the unused similarly named component is unchanged.
+
+This is not acceptance of the whole audit commit or its management-profile,
+authentication, transport, retry, receipt-display, or dependency changes.
+Contiguous review boundaries, entries, dispositions and resolutions remain
+unchanged. Only `fork_base` is normalized to current `origin/main` after normal
+ledger validation and historical-base ancestry proof. Regression and local
+validation receipts are in the maintenance implementation handoff. Both-flavor
+connected execution subsequently passed all 109 tests per flavor, including
+the real-parent preview and profile-builder regressions.
+
+A pre-existing localization parity failure was independently reproduced on the
+exact base with hash-identical catalogs/checker. This candidate also supplies
+only the missing downstream labels (Chinese 16, Japanese 22, Korean 16),
+preserving format arguments and the checker policy. These localized labels are
+a downstream repair, not a claim that upstream supplied Japanese translations.
+
 ## Previous reliability-batch validation and release boundary
 
 The following evidence covers the preceding 2026-09-27 reliability batch,
