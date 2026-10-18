@@ -247,7 +247,7 @@ fun ProfileBuilderView(
                                 provider = selectedProvider.ifBlank { null },
                                 model = selectedModel.ifBlank { null },
                                 mcp_servers = mcpServers.ifEmpty { null },
-                                keep_skills = if (useDefaultSkills) null else false,
+                                no_skills = if (useDefaultSkills) null else true,
                                 hub_skills = addedHubSkills.ifEmpty { null },
                             )
                         viewModel.createProfile(req, onSuccess = onCancel)
