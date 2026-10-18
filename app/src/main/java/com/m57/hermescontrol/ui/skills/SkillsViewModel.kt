@@ -89,6 +89,8 @@ class SkillsViewModel(
 
     private var loadJob: Job? = null
     private var searchJob: Job? = null
+    private var hubPreviewJob: Job? = null
+    private var hubPreviewGeneration = 0L
 
     fun loadSkills() {
         loadJob =
@@ -175,7 +177,10 @@ class SkillsViewModel(
      * truncated snippet).
      */
     fun previewHubSkill(identifier: String) {
+        clearHubPreview()
         if (identifier.isBlank()) return
+        val generation = hubPreviewGeneration
+        val api = ApiClient.hermesApi
         _uiState.update {
             it.copy(
                 hubPreviewIdentifier = identifier,
@@ -184,30 +189,47 @@ class SkillsViewModel(
                 hubPreviewContent = null,
             )
         }
-        viewModelScope.launch {
-            val result =
-                withContext(ioDispatcher) {
-                    safeApiCall { ApiClient.hermesApi.previewHubSkill(identifier = identifier) }
-                }
-            when (result) {
-                is NetworkResult.Success -> {
-                    _uiState.update {
-                        it.copy(
-                            isHubPreviewing = false,
-                            hubPreviewContent = result.data.content,
-                        )
+        hubPreviewJob =
+            viewModelScope.launch {
+                val result =
+                    withContext(ioDispatcher) {
+                        safeApiCall { api.previewHubSkill(identifier = identifier) }
                     }
-                }
+                // Request identity, not just identifier, fences same-skill reopen (#1548).
+                if (generation != hubPreviewGeneration) return@launch
+                when (result) {
+                    is NetworkResult.Success -> {
+                        _uiState.update {
+                            it.copy(
+                                isHubPreviewing = false,
+                                hubPreviewContent = result.data.skillMd,
+                            )
+                        }
+                    }
 
-                is NetworkResult.Failure -> {
-                    _uiState.update {
-                        it.copy(
-                            isHubPreviewing = false,
-                            hubPreviewError = result.error.message,
-                        )
+                    is NetworkResult.Failure -> {
+                        _uiState.update {
+                            it.copy(
+                                isHubPreviewing = false,
+                                hubPreviewError = result.error.message,
+                            )
+                        }
                     }
                 }
             }
+    }
+
+    fun clearHubPreview() {
+        hubPreviewGeneration++
+        hubPreviewJob?.cancel()
+        hubPreviewJob = null
+        _uiState.update {
+            it.copy(
+                hubPreviewIdentifier = null,
+                hubPreviewContent = null,
+                isHubPreviewing = false,
+                hubPreviewError = null,
+            )
         }
     }
 

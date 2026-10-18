@@ -86,6 +86,7 @@ import com.m57.hermescontrol.data.model.SetActiveProfileRequest
 import com.m57.hermescontrol.data.model.Skill
 import com.m57.hermescontrol.data.model.SkillContentResponse
 import com.m57.hermescontrol.data.model.SkillHubInstallRequest
+import com.m57.hermescontrol.data.model.SkillHubPreviewResponse
 import com.m57.hermescontrol.data.model.SkillHubSearchResponse
 import com.m57.hermescontrol.data.model.SkillHubUninstallRequest
 import com.m57.hermescontrol.data.model.SkillScanResponse
@@ -234,7 +235,7 @@ interface HermesApiService {
     @GET("api/skills/hub/preview")
     suspend fun previewHubSkill(
         @Query("identifier") identifier: String,
-    ): Response<SkillContentResponse>
+    ): Response<SkillHubPreviewResponse>
 
     @GET("api/skills/hub/scan")
     suspend fun scanHubSkill(
