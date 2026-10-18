@@ -1058,4 +1058,21 @@
     <string name="subagent_status_completed">已完成</string>
     <string name="subagent_status_cancelled">已取消</string>
     <string name="subagent_status_failed">失败</string>
+    <!-- Downstream labels required by localization parity. -->
+    <string name="screen_bots">智能体</string>
+    <string name="bots_search_placeholder">搜索智能体</string>
+    <string name="bots_toggle_hidden">显示或隐藏已隐藏的智能体</string>
+    <string name="bots_empty_title">未找到智能体</string>
+    <string name="bots_empty_description">智能体配置文件会显示在这里。</string>
+    <string name="chat_privileged_cancel">取消请求</string>
+    <string name="chat_privileged_not_acknowledged">Hermes 尚未确认该操作。请求仍在等待处理。</string>
+    <string name="content_desc_collapse_automation_group">收起自动化运行记录</string>
+    <string name="content_desc_expand_automation_group">展开自动化运行记录</string>
+    <string name="sessions_automations_empty_desc">由定时自动化启动的运行会显示在这里。</string>
+    <string name="sessions_automations_empty_title">暂无自动化历史</string>
+    <string name="sessions_section_automation_job">任务 %1$s</string>
+    <string name="sessions_section_automation_runs">已加载 %1$d 次运行</string>
+    <string name="sessions_section_automation_unknown">自动化运行</string>
+    <string name="sessions_tab_automations">自动化</string>
+    <string name="sessions_tab_conversations">对话</string>
 </resources>
