@@ -1477,6 +1477,10 @@ class ChatViewModel(
                 handleModelSwitch(command, recordUsage = true)
             }
 
+            is SlashResult.QueueManage -> {
+                addAssistantMessage("/queue ${result.verb} is not supported on mobile; use /queue <prompt> to add one")
+            }
+
             is SlashResult.OpenHistory -> {
                 _uiState.update { it.copy(openHistoryRequested = true) }
                 recordAcceptedSlash(command)

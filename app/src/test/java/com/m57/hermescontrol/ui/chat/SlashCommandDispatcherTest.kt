@@ -20,6 +20,17 @@ class SlashCommandDispatcherTest {
     private val dispatcher = SlashCommandDispatcher()
 
     @Test
+    fun `management verbs never become queued prompts`() {
+        val standalone = listOf("list", "ls", "show", "clear")
+        val indexed = listOf("edit", "set", "rm", "remove", "delete", "del", "pop", "move")
+        (standalone + indexed + indexed.map { "$it 2" } + "move 1 3").forEach {
+            org.junit.Assert.assertFalse(it, dispatcher.dispatch("/queue $it") is SlashResult.QueuePrompt)
+        }
+        assertEquals(SlashResult.QueuePrompt("list the files"), dispatcher.dispatch("/queue list the files"))
+        assertEquals(SlashResult.QueuePrompt("remove dead code"), dispatcher.dispatch("/q remove dead code"))
+    }
+
+    @Test
     fun `stop routes to Interrupt`() {
         assertEquals(SlashResult.Interrupt, dispatcher.dispatch("/stop"))
     }

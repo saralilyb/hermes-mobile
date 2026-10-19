@@ -28,7 +28,15 @@ class SlashCommandDispatcher {
             "/model" -> SlashResult.ModelSwitch
             "/queue", "/q" -> {
                 val arg = command.split(" ", limit = 2).getOrElse(1) { "" }.trim()
-                SlashResult.QueuePrompt(arg.ifBlank { command })
+                val tokens = arg.lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                val verb = tokens.firstOrNull()
+                val management =
+                    (verb in setOf("list", "ls", "show", "clear") && tokens.size == 1) ||
+                        (
+                            verb in setOf("edit", "set", "rm", "remove", "delete", "del", "pop", "move") &&
+                                (tokens.size == 1 || tokens.getOrNull(1)?.toIntOrNull() != null)
+                        )
+                if (management) SlashResult.QueueManage(verb!!) else SlashResult.QueuePrompt(arg.ifBlank { command })
             }
             "/resume", "/history" -> SlashResult.OpenHistory
             "/undo" -> {
@@ -67,6 +75,9 @@ sealed class SlashResult {
 
     /** Queue a prompt without redirecting the active turn. */
     data class QueuePrompt(val displayContent: String) : SlashResult()
+
+    /** CLI-only queue management; answered locally, never submitted as prompt text. */
+    data class QueueManage(val verb: String) : SlashResult()
 
     data object OpenHistory : SlashResult()
 
