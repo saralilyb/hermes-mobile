@@ -406,8 +406,13 @@ object HermesWsClient {
         outboundDrainJob = null
         stopHealthTracking()
         rejectAllPending()
+        // Idle-close replay cleanup: terminal callbacks are stale after this detach.
+        pendingReplayResponses.clear()
         webSocket?.close(1000, "Background idle")
         webSocket = null
+        activeConnectionProfileId = null
+        activeConnectionGeneration = -1
+        awaitingGatewayReady = false
         connected.set(false)
         _connectionStatus.value = ConnectionStatus.DISCONNECTED
     }

@@ -512,6 +512,23 @@ class HermesWsClientTest {
             verify(exactly = 0) { socket.cancel() }
         }
 
+    @Test
+    fun idleCloseRetiresReplayAdmissions() {
+        every { AuthManager.getSelectedProfileId() } returns "profile-a"
+        val socket = mockk<WebSocket>(relaxed = true)
+        every { socket.send(any<String>()) } returns true
+        installActiveListener(socket)
+        HermesWsClient.send(WsMethods.SESSION_RESUME, mapOf("session_id" to "stored-a"))
+        assertEquals(1, pendingReplayResponses().size)
+        HermesWsClient.setAppForeground(false)
+        HermesWsClient.expireBackgroundIdleGraceForTest()
+        assertFalse(HermesWsClient.isConnected)
+        assertTrue(
+            "Idle detach must retire replay admissions before callbacks become stale",
+            pendingReplayResponses().isEmpty(),
+        )
+    }
+
     private fun openActiveListener(socket: WebSocket): WebSocketListener =
         installActiveListener(socket).also {
             it.onOpen(
