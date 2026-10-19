@@ -69,6 +69,35 @@ class WebhookToggleContractTest {
         }
 
     @Test
+    fun `held refresh cannot overwrite successful toggle`() =
+        kotlinx.coroutines.test.runTest(dispatcher) {
+            val response =
+                kotlinx.coroutines.CompletableDeferred<
+                    retrofit2.Response<com.m57.hermescontrol.data.model.WebhooksResponse>,
+                >()
+            val started = java.util.concurrent.CountDownLatch(1)
+            io.mockk.coEvery { api.getWebhooks() } coAnswers {
+                started.countDown()
+                response.await()
+            }
+            io.mockk.coEvery { api.configurePlatform(any(), any()) } returns
+                retrofit2.Response.success(ActionResponse(ok = true))
+            val vm = WebhooksViewModel(dispatcher)
+            vm.loadWebhooks()
+            dispatcher.scheduler.runCurrent()
+            assertTrue(started.await(2, java.util.concurrent.TimeUnit.SECONDS))
+            vm.toggleWebhooks(true)
+            dispatcher.scheduler.runCurrent()
+            response.complete(retrofit2.Response.success(com.m57.hermescontrol.data.model.WebhooksResponse(false)))
+            // HEAD uses real IO for load; let its continuation rejoin Main.
+            repeat(20) {
+                Thread.sleep(10)
+                dispatcher.scheduler.runCurrent()
+            }
+            assertTrue("stale disabled GET overwrote successful enable", vm.uiState.value.enabled)
+        }
+
+    @Test
     fun `toggle locks synchronously before dispatch`() {
         val vm = WebhooksViewModel(ioDispatcher = dispatcher)
         vm.toggleWebhooks(true)
