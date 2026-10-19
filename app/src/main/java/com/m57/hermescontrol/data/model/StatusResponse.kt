@@ -20,6 +20,7 @@ data class StatusResponse(
     val memory: MemoryPressureStatus? = null,
     @Serializable(with = NullableDiskPressureStatusSerializer::class)
     val disk: DiskPressureStatus? = null,
+    val gateway_pid: Int? = null,
 )
 
 @Serializable

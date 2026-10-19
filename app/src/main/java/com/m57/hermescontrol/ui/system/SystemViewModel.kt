@@ -12,7 +12,6 @@ import com.m57.hermescontrol.data.model.CheckpointsResponse
 import com.m57.hermescontrol.data.model.CredentialPoolProvider
 import com.m57.hermescontrol.data.model.CuratorResponse
 import com.m57.hermescontrol.data.model.DebugShareResponse
-import com.m57.hermescontrol.data.model.DoctorResponse
 import com.m57.hermescontrol.data.model.HookResponse
 import com.m57.hermescontrol.data.model.LearningGraphResponse
 import com.m57.hermescontrol.data.model.MemoryResetRequest
@@ -51,7 +50,6 @@ data class SystemUiState(
     val hooks: HookResponse? = null,
     val updateInfo: UpdateCheckResponse? = null,
     val status: StatusResponse? = null,
-    val doctorReport: DoctorResponse? = null,
     val activeAction: String? = null,
     val actionLog: ActionStatusResponse? = null,
     val updateReceipt: UpdateReceiptDisplay? = null,
@@ -115,7 +113,6 @@ class SystemViewModel(
                 val hooksDeferred = async(ioDispatcher) { safeApiCall { ApiClient.hermesApi.getHooks() } }
                 val updateDeferred =
                     async(ioDispatcher) { safeApiCall { ApiClient.hermesApi.checkHermesUpdate(false) } }
-                val doctorDeferred = async(ioDispatcher) { safeApiCall { ApiClient.hermesApi.runDoctor() } }
 
                 val statsResult = statsDeferred.await()
                 val statusResult = statusDeferred.await()
@@ -127,7 +124,6 @@ class SystemViewModel(
                 val checkpointsResult = checkpointsDeferred.await()
                 val hooksResult = hooksDeferred.await()
                 val updateResult = updateDeferred.await()
-                val doctorResult = doctorDeferred.await()
 
                 _uiState.update { state ->
                     state.copy(
@@ -143,7 +139,6 @@ class SystemViewModel(
                         checkpoints = (checkpointsResult as? NetworkResult.Success)?.data,
                         hooks = (hooksResult as? NetworkResult.Success)?.data,
                         updateInfo = (updateResult as? NetworkResult.Success)?.data,
-                        doctorReport = (doctorResult as? NetworkResult.Success)?.data,
                         errorMessage = null,
                     )
                 }
@@ -160,7 +155,6 @@ class SystemViewModel(
                         "checkpoints" to checkpointsResult,
                         "hooks" to hooksResult,
                         "update" to updateResult,
-                        "doctor" to doctorResult,
                     ).forEach { (name, result) ->
                         if (result is NetworkResult.Failure) {
                             Log.w(
@@ -426,6 +420,23 @@ class SystemViewModel(
     }
 
     // ── Operation actions ──────────────────────────────────────────────
+
+    fun runDoctor() {
+        viewModelScope.launch {
+            val result = withContext(ioDispatcher) { safeApiCall(retries = 0) { ApiClient.hermesApi.runDoctor() } }
+            when (result) {
+                is NetworkResult.Success -> {
+                    if (result.data.ok) {
+                        result.data.name?.let { pollActionStatus(it) }
+                        _uiState.update { it.copy(toastMessage = "Doctor started") }
+                    } else {
+                        _uiState.update { it.copy(toastMessage = "Doctor failed") }
+                    }
+                }
+                is NetworkResult.Failure -> _uiState.update { it.copy(toastMessage = "Doctor failed") }
+            }
+        }
+    }
 
     fun runSecurityAudit() {
         runOperation(
