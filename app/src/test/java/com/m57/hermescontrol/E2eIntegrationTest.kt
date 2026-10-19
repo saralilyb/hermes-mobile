@@ -1115,7 +1115,12 @@ class E2eIntegrationTest {
                         platforms = listOf(platform),
                     ),
                 )
-            coEvery { mockApiService.configurePlatform("telegram", any()) } returns Response.success(Unit)
+            coEvery {
+                mockApiService.configurePlatform(
+                    "telegram",
+                    any(),
+                )
+            } returns Response.success(ActionResponse(ok = true))
 
             val viewModel = ChannelsViewModel(ioDispatcher = testDispatcher)
             viewModel.loadPlatforms()

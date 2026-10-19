@@ -554,7 +554,7 @@ interface HermesApiService {
     suspend fun configurePlatform(
         @Path("platform_id") platformId: String,
         @Body config: MessagingPlatformUpdate,
-    ): Response<Unit>
+    ): Response<ActionResponse>
 
     @POST("api/messaging/platforms/{platform_id}/test")
     suspend fun testMessagingPlatform(

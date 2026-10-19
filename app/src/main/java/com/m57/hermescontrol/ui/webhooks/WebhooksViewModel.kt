@@ -3,9 +3,9 @@ package com.m57.hermescontrol.ui.webhooks
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.CreateWebhookRequest
+import com.m57.hermescontrol.data.model.MessagingPlatformUpdate
 import com.m57.hermescontrol.data.model.WebhookSubscription
 import com.m57.hermescontrol.data.model.WebhookToggleSubscriptionRequest
-import com.m57.hermescontrol.data.model.WebhooksToggleRequest
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
@@ -42,9 +42,11 @@ data class WebhooksUiState(
     val togglingName: String? = null,
 )
 
-class WebhooksViewModel :
+class WebhooksViewModel(
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
+) :
     ViewModel(),
-    ToastHost {
+        ToastHost {
     private val _uiState = MutableStateFlow(WebhooksUiState())
     val uiState: StateFlow<WebhooksUiState> = _uiState.asStateFlow()
 
@@ -75,32 +77,34 @@ class WebhooksViewModel :
     }
 
     fun toggleWebhooks(targetEnabled: Boolean) {
+        if (_uiState.value.isActionRunning) return
         val originalEnabled = _uiState.value.enabled
-        _uiState.update { it.copy(enabled = targetEnabled) }
+        val service = ApiClient.hermesApi
+        _uiState.update { it.copy(enabled = targetEnabled, isActionRunning = true, toastMessage = null) }
 
         viewModelScope.launch {
-            val result =
-                withContext(Dispatchers.IO) {
-                    safeApiCall { ApiClient.hermesApi.toggleWebhooks(WebhooksToggleRequest(targetEnabled)) }
-                }
-            when (result) {
-                is NetworkResult.Success -> {
-                    _uiState.update {
-                        it.copy(
-                            toastMessage = "Webhooks global status ${if (targetEnabled) "enabled" else "disabled"}",
-                        )
+            try {
+                val result =
+                    withContext(ioDispatcher) {
+                        safeApiCall(retries = 0) {
+                            service.configurePlatform("webhook", MessagingPlatformUpdate(enabled = targetEnabled))
+                        }
                     }
-                    loadWebhooks()
+                if (service !== ApiClient.hermesApi) return@launch
+                val accepted = result is NetworkResult.Success && result.data.ok == true
+                _uiState.update {
+                    it.copy(
+                        enabled = if (accepted) targetEnabled else originalEnabled,
+                        toastMessage =
+                            if (accepted) {
+                                "Webhooks global status ${if (targetEnabled) "enabled" else "disabled"}"
+                            } else {
+                                "Failed to toggle webhooks"
+                            },
+                    )
                 }
-
-                is NetworkResult.Failure -> {
-                    _uiState.update {
-                        it.copy(
-                            enabled = originalEnabled,
-                            toastMessage = "Failed to toggle webhooks: ${result.error.message}",
-                        )
-                    }
-                }
+            } finally {
+                _uiState.update { it.copy(isActionRunning = false) }
             }
         }
     }
