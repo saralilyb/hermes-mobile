@@ -68,6 +68,7 @@ object ChatWsEventReducer {
         event: WsEvent,
     ): ReducerResult =
         when (event) {
+            WsEvent.ProjectsChanged -> ReducerResult(state = state, streamingState = streamingState)
             is WsEvent.GatewayReady -> onGatewayReady(state, streamingState)
 
             is WsEvent.MessageStart -> onMessageStart(state, streamingState, event)

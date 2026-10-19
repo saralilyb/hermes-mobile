@@ -252,7 +252,7 @@ fun SystemScreen(
         onRefresh = { viewModel.loadAll() },
     ) {
         when {
-            state.isLoading && state.stats == null && state.doctorReport == null &&
+            state.isLoading && state.stats == null &&
                 state.status == null -> {
                 SkeletonListState()
             }
@@ -264,7 +264,7 @@ fun SystemScreen(
                 )
             }
 
-            state.stats == null && state.doctorReport == null && state.status == null -> {
+            state.stats == null && state.status == null -> {
                 EmptyState(
                     title = stringResource(R.string.system_empty_title),
                     subtitle = stringResource(R.string.system_empty_desc),
@@ -874,11 +874,7 @@ private fun LazyListScope.gatewaySection(
                     status.version?.let { ver ->
                         val parts = mutableListOf(ver)
                         status.active_sessions?.let { parts.add("$it session(s)") }
-                        state.doctorReport?.let { report ->
-                            if (report.ok && report.pid != null) {
-                                parts.add("pid ${report.pid}")
-                            }
-                        }
+                        status.gateway_pid?.takeIf { it > 0 }?.let { parts.add("pid $it") }
                         InfoRow(
                             label = stringResource(R.string.system_label_hermes_version),
                             value = parts.joinToString(" · "),
@@ -1219,10 +1215,7 @@ private fun LazyListScope.operationsSection(
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                 ) {
                     FilledTonalButton(
-                        onClick = {
-                            // loadAll already fetches doctor report, just call it
-                            viewModel.loadAll()
-                        },
+                        onClick = viewModel::runDoctor,
                         modifier = Modifier.weight(1f),
                         contentPadding = actionButtonPadding,
                     ) {

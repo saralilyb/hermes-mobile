@@ -24,6 +24,9 @@ data class SessionInfo(
     val model: String? = null,
     val _lineage_root_id: String? = null,
     val terminal_backend: String? = null,
+    val cwd: String? = null,
+    val git_repo_root: String? = null,
+    val last_active: Double? = null,
 )
 
 @Serializable

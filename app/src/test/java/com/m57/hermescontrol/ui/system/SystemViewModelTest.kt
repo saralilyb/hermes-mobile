@@ -26,6 +26,24 @@ class SystemViewModelTest {
     }
 
     @Test
+    fun `load never starts doctor`() =
+        kotlinx.coroutines.test.runTest(testDispatcher) {
+            io.mockk.mockkStatic(android.util.Log::class)
+            io.mockk.every { android.util.Log.w(any(), any<String>()) } returns 0
+            io.mockk.mockkObject(com.m57.hermescontrol.data.remote.ApiClient)
+            val api = io.mockk.mockk<com.m57.hermescontrol.data.remote.HermesApiService>(relaxed = true)
+            io.mockk.every { com.m57.hermescontrol.data.remote.ApiClient.hermesApi } returns api
+            try {
+                val vm = SystemViewModel(ioDispatcher = testDispatcher)
+                vm.loadAll()
+                testDispatcher.scheduler.advanceUntilIdle()
+                io.mockk.coVerify(exactly = 0) { api.runDoctor() }
+            } finally {
+                io.mockk.unmockkAll()
+            }
+        }
+
+    @Test
     fun `openUpdateConfirm sets updateConfirmOpen to true`() {
         val viewModel = SystemViewModel()
 

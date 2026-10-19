@@ -2,6 +2,9 @@ package com.m57.hermescontrol.data.ws
 
 /** Parsed WebSocket events emitted by [HermesWsClient]. */
 sealed class WsEvent {
+    /** Invalidation only; metadata must be fetched on the source connection. */
+    data object ProjectsChanged : WsEvent()
+
     // ── Gateway lifecycle ────────────────────────────────────────────────
 
     data class GatewayReady(
@@ -144,7 +147,7 @@ sealed class WsEvent {
         val sourceProfileId: String? = null,
         val connectionGeneration: Int? = null,
         val serverRequestId: String? = null,
-        val lockedAnswers: Map<String, String> = emptyMap(),
+        val lockedAnswers: Map<String, String?> = emptyMap(),
     ) : WsEvent()
 
     data class ClarifyExpire(
@@ -212,6 +215,10 @@ sealed class WsEvent {
         val sessionId: String?,
         val requestId: String,
         val timeoutSeconds: Double,
+        val allowSession: Boolean? = null,
+        // null means malformed-present; empty means absent or explicitly empty.
+        val choices: List<String>? = emptyList(),
+        val smartDenied: Boolean = false,
         val sourceProfileId: String? = null,
         val connectionGeneration: Int? = null,
         val serverRequestId: String? = null,

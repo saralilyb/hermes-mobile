@@ -63,6 +63,22 @@ class ClarifyBubbleDraftTest {
     }
 
     @Test
+    fun skippedLockedAnswerIsReadOnly() {
+        val request =
+            ClarifyUi(
+                text = "",
+                options = emptyList(),
+                clarifyId = "skipped",
+                questions = listOf(ClarifyQuestionUi("q1", "Skipped?", choices = listOf("Yes", "No"))),
+                lockedAnswers = mapOf("q1" to null),
+            )
+        composeTestRule.setContent { ClarifyBubble(request, onSubmit = { _, _ -> }, onDismiss = {}) }
+        composeTestRule.onNodeWithTag("clarify_locked_q1").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("clarify_text_q1").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("clarify_choice_q1_Yes").assertDoesNotExist()
+    }
+
+    @Test
     fun lockedAnswerIsReadOnly() {
         val request =
             ClarifyUi(

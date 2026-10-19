@@ -92,8 +92,17 @@ private const val SESSION_CREATE_MAX_ATTEMPTS = 3
 private const val REDIRECT_UNSUPPORTED_CODE = 4010
 private const val MAX_RETIRED_RESUME_REQUESTS = 64
 
+private data class CatalogFence(
+    val binding: ConnectionBinding,
+    val profileId: String,
+    val runtimeSessionId: String?,
+    val generation: Long,
+    val requestGeneration: Long,
+)
+
 private data class PendingRpcRequest(
     val method: String,
+    val catalogFence: CatalogFence? = null,
     val resumeSessionId: String? = null,
     val resumeFence: ResumeFence? = null,
     /** Runtime session that initiated a branch, used to fence late responses. */
@@ -196,6 +205,7 @@ data class ChatUiState(
     val todos: List<TodoItem> = emptyList(),
     /** One-shot composer restoration produced by a successful `/undo`. */
     val pendingPrefillText: String? = null,
+    val undoConfirmCount: Int? = null,
 ) {
     /** Convenience — derived from [connectionStatus]. */
     val isConnected: Boolean get() = connectionStatus == ConnectionStatus.CONNECTED
@@ -220,8 +230,10 @@ data class ClarifyUi(
     val sourceProfileId: String? = null,
     val connectionGeneration: Int? = null,
     val serverRequestBinding: ServerRequestBinding? = null,
-    val lockedAnswers: Map<String, String> = emptyMap(),
+    val lockedAnswers: Map<String, String?> = emptyMap(),
 ) {
+    fun isAnswerLocked(questionId: String): Boolean = lockedAnswers.containsKey(questionId)
+
     val resolvedQuestions: List<ClarifyQuestionUi>
         get() =
             questions.ifEmpty {
@@ -353,6 +365,7 @@ class ChatViewModel(
 
     /** Maps an in-flight RPC id to the context needed to handle its result. */
     private val pendingRequests = ConcurrentHashMap<String, PendingRpcRequest>()
+    private var catalogRequestGeneration = 0L
     private val resumeRequestLock = Any()
     private val retiredResumeRequests = LinkedHashSet<String>()
 
@@ -559,7 +572,6 @@ class ChatViewModel(
 
     private fun handleGatewayReady() {
         _uiState.update { it.copy(isLoading = false) }
-        addSystemMessage("Connected to Hermes")
         loadSessions()
         fetchCommandCatalog()
         fetchModelContextLength()
@@ -597,6 +609,13 @@ class ChatViewModel(
             }
         if (rpcId != null && consumeRetiredResumeRequest(rpcId)) return
         val pending = rpcId?.let(pendingRequests::get)
+        // Fence both results and errors before the generic reducer can mutate UI.
+        if (pending?.method == WsMethods.COMMANDS_CATALOG &&
+            pending.catalogFence?.let(::isCatalogFenceCurrent) != true
+        ) {
+            pendingRequests.remove(rpcId)
+            return
+        }
         if (pending?.method == WsMethods.SESSION_RESUME &&
             pending.resumeFence?.let(::isResumeFenceCurrent) != true
         ) {
@@ -911,6 +930,7 @@ class ChatViewModel(
                 sessionCreateJob?.cancel()
                 sessionCreateJob = null
                 runtimeSessionId = runtimeId
+                fetchCommandCatalog()
                 _uiState.update {
                     it.copy(
                         currentSessionId = storageId,
@@ -947,6 +967,7 @@ class ChatViewModel(
                 val terminalBackend = (info?.get("terminal_backend") as? String)?.trim()
                 clearPrivilegedControls()
                 runtimeSessionId = newId
+                fetchCommandCatalog()
                 _uiState.update {
                     it.copy(
                         currentSessionId = newId,
@@ -1015,6 +1036,7 @@ class ChatViewModel(
                         ?: requestedSessionId
                         ?: selectedSessionId
                 runtimeSessionId = resultMap?.get("session_id") as? String
+                fetchCommandCatalog()
 
                 // Parse the session-scoped snapshot returned by the backend.
                 val infoMap = resultMap?.get("info") as? Map<*, *>
@@ -1074,7 +1096,6 @@ class ChatViewModel(
                 // Mirror the active runtime session id app-wide (issue #532).
                 ActiveSessionHolder.set(runtimeSessionId ?: sessionId, sessionId)
                 if (!isResumeFenceCurrent(resumeFence, allowRuntimeChange = true, allowSessionChange = true)) return
-                addSystemMessage("Session resumed")
             }
 
             WsMethods.SESSION_INTERRUPT -> {
@@ -1089,6 +1110,8 @@ class ChatViewModel(
             }
 
             WsMethods.COMMANDS_CATALOG -> {
+                val fence = request.catalogFence ?: return
+                if (!isCatalogFenceCurrent(fence)) return
                 val map = result as? Map<*, *> ?: return
                 val catalog = parseCommandCatalog(map)
                 if (catalog != null) {
@@ -1477,6 +1500,10 @@ class ChatViewModel(
                 handleModelSwitch(command, recordUsage = true)
             }
 
+            is SlashResult.QueueManage -> {
+                addAssistantMessage("/queue ${result.verb} is not supported on mobile; use /queue <prompt> to add one")
+            }
+
             is SlashResult.OpenHistory -> {
                 _uiState.update { it.copy(openHistoryRequested = true) }
                 recordAcceptedSlash(command)
@@ -1597,6 +1624,21 @@ class ChatViewModel(
         jobs.forEach(Job::cancel)
     }
 
+    private data class PendingUndo(val count: String, val command: String, val fence: UndoFence)
+
+    private var pendingUndo: PendingUndo? = null
+
+    fun dismissUndoConfirm() {
+        pendingUndo = null
+        _uiState.update { it.copy(undoConfirmCount = null) }
+    }
+
+    fun confirmUndo() {
+        val pending = pendingUndo ?: return
+        dismissUndoConfirm()
+        if (isUndoFenceCurrent(pending.fence)) performUndo(pending.count, pending.command, pending.fence)
+    }
+
     private fun handleUndoCommand(
         count: String,
         command: String,
@@ -1614,6 +1656,21 @@ class ChatViewModel(
                 generation = conversationGeneration,
                 persistenceGeneration = repo.replacementGeneration(storageSessionId),
             )
+        val turns = count.substringBefore(' ').toIntOrNull()
+        if (turns != null && turns > 1) {
+            pendingUndo = PendingUndo(count, command, fence)
+            _uiState.update { it.copy(undoConfirmCount = turns) }
+            return
+        }
+        performUndo(count, command, fence)
+    }
+
+    private fun performUndo(
+        count: String,
+        command: String,
+        fence: UndoFence,
+    ) {
+        if (!isUndoFenceCurrent(fence)) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val result =
@@ -1621,7 +1678,7 @@ class ChatViewModel(
                         .requestForConnection(
                             fence.connectionBinding,
                             WsMethods.COMMAND_DISPATCH,
-                            mapOf("name" to "undo", "arg" to count, "session_id" to agentSessionId),
+                            mapOf("name" to "undo", "arg" to count, "session_id" to fence.runtimeSessionId),
                         ).await()
                 if (!isUndoFenceCurrent(fence)) return@launch
                 recordAcceptedSlash(command)
@@ -2024,11 +2081,27 @@ class ChatViewModel(
         }
     }
 
+    private fun isCatalogFenceCurrent(fence: CatalogFence): Boolean =
+        fence.generation == conversationGeneration &&
+            fence.requestGeneration == catalogRequestGeneration &&
+            fence.profileId == selectedProfileId() &&
+            fence.runtimeSessionId == runtimeSessionId &&
+            wsClient.isConnectionBindingCurrent(fence.binding)
+
     private fun fetchCommandCatalog() {
+        val profile = selectedProfileId()
+        val binding = wsClient.connectionBinding(profile) ?: return
+        val fence = CatalogFence(binding, profile, runtimeSessionId, conversationGeneration, ++catalogRequestGeneration)
         viewModelScope.launch(Dispatchers.IO) {
+            if (!isCatalogFenceCurrent(fence)) return@launch
             wsClient.send(
                 WsMethods.COMMANDS_CATALOG,
-                onSent = { id -> trackRequest(id, WsMethods.COMMANDS_CATALOG) },
+                params = fence.runtimeSessionId?.let { mapOf("session_id" to it) } ?: emptyMap(),
+                onSent = { id ->
+                    if (isCatalogFenceCurrent(fence)) {
+                        pendingRequests[id] = PendingRpcRequest(WsMethods.COMMANDS_CATALOG, catalogFence = fence)
+                    }
+                },
             )
         }
     }
@@ -3618,6 +3691,9 @@ class ChatViewModel(
                         sessionId = sessionId,
                         requestId = request.params["request_id"] as? String ?: request.id,
                         timeoutSeconds = (request.params["timeout_seconds"] as? Number)?.toDouble() ?: 120.0,
+                        allowSession = request.params["allow_session"] as? Boolean,
+                        choices = com.m57.hermescontrol.data.ws.parseApprovalChoices(request.params),
+                        smartDenied = request.params["smart_denied"] == true,
                         sourceProfileId = binding.profileId,
                         connectionGeneration = binding.connectionGeneration,
                         serverRequestId = request.id,
@@ -3627,7 +3703,10 @@ class ChatViewModel(
             "clarify" -> {
                 val locked =
                     (request.params["answers"] as? Map<*, *>)?.entries
-                        ?.mapNotNull { (k, v) -> if (k is String && v is String) k to v else null }?.toMap().orEmpty()
+                        ?.mapNotNull {
+                                (k, v) ->
+                            if (k is String && (v == null || v is String)) k to v as String? else null
+                        }?.toMap().orEmpty()
                 val questions =
                     (request.params["questions"] as? List<*>)?.mapIndexedNotNull { index, raw ->
                         val map = raw as? Map<*, *> ?: return@mapIndexedNotNull null
@@ -3741,6 +3820,9 @@ class ChatViewModel(
             binding.connectionGeneration == event.connectionGeneration
 
     private fun clearPrivilegedControls() {
+        catalogRequestGeneration++
+        _uiState.update { it.copy(commandCatalog = CommandCatalog()) }
+        dismissUndoConfirm()
         approvalExpiryJobs.values.forEach(Job::cancel)
         approvalExpiryJobs.clear()
         _uiState.update { state ->
@@ -3772,6 +3854,9 @@ class ChatViewModel(
                         command = event.command,
                         description = event.description,
                         patternKeys = event.patternKeys,
+                        offersSession =
+                            !event.smartDenied && event.allowSession != false &&
+                                (event.choices?.let { it.isEmpty() || "session" in it } == true),
                         privilegedBinding = binding,
                         serverRequestBinding =
                             event.serverRequestId?.let {
@@ -3814,7 +3899,7 @@ class ChatViewModel(
         approvalExpiryJobs.put(key, job)?.cancel()
     }
 
-    /** Approve exactly once. Session-wide and permanent allows are not offered. */
+    /** Allow once, deny, or allow for this session when offered. Permanent allows are never offered. */
     fun respondToApproval(
         messageId: String,
         binding: PrivilegedRequestBinding,
@@ -3824,8 +3909,12 @@ class ChatViewModel(
             when (action) {
                 "approve" -> "once"
                 "deny" -> "deny"
-                // "session" / "always" are deliberately unreachable: a phone
-                // cannot show what a standing allow would later authorize.
+                "session" -> {
+                    val info = _uiState.value.messages.firstOrNull { it.id == messageId }?.approvalInfo
+                    if (info?.privilegedBinding != binding || !info.offersSession) return
+                    "session"
+                }
+                // Permanent grants remain unreachable, even through a stale callback.
                 else -> return
             }
         submitApproval(messageId, binding, WsMethods.APPROVAL_RESPOND, mapOf("choice" to choice))

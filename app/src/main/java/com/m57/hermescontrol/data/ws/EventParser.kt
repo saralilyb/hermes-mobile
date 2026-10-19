@@ -51,6 +51,7 @@ object EventParser {
         val privilegedSessionId = exactPrivilegedSessionId(params, payload)
 
         return when (eventType) {
+            "projects.changed" -> WsEvent.ProjectsChanged
             "gateway.ready" -> {
                 WsEvent.GatewayReady(payload)
             }
@@ -236,6 +237,9 @@ object EventParser {
                         sessionId = privilegedSessionId,
                         requestId = requestId,
                         timeoutSeconds = timeoutSeconds,
+                        allowSession = payload?.get("allow_session") as? Boolean,
+                        choices = parseApprovalChoices(payload),
+                        smartDenied = payload?.get("smart_denied") == true,
                     )
                 }
             }

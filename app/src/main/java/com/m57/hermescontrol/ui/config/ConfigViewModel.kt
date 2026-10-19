@@ -182,9 +182,11 @@ internal fun structuredRefreshAfterYamlSave(
             )
     }
 
-class ConfigViewModel :
+class ConfigViewModel(
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
+) :
     ViewModel(),
-    ToastHost {
+        ToastHost {
     private val _uiState = MutableStateFlow(ConfigUiState())
     val uiState: StateFlow<ConfigUiState> = _uiState.asStateFlow()
 
@@ -206,17 +208,15 @@ class ConfigViewModel :
                 _uiState.update { it.copy(isLoading = true, errorMessage = null) }
                 try {
                     coroutineScope {
-                        val configDeferred = async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfig() } }
+                        val configDeferred = async(ioDispatcher) { safeApiCall { ApiClient.hermesApi.getConfig() } }
                         val schemaDeferred =
-                            async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfigSchema() } }
+                            async(ioDispatcher) { safeApiCall { ApiClient.hermesApi.getConfigSchema() } }
                         val defaultsDeferred =
-                            async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getConfigDefaults() } }
-                        val rawDeferred = async(Dispatchers.IO) { safeApiCall { ApiClient.hermesApi.getRawConfig() } }
+                            async(ioDispatcher) { safeApiCall { ApiClient.hermesApi.getConfigDefaults() } }
+                        val rawDeferred = async(ioDispatcher) { safeApiCall { ApiClient.hermesApi.getRawConfig() } }
 
                         val configResult = configDeferred.await()
                         val schemaResult = schemaDeferred.await()
-                        val defaultsResult = defaultsDeferred.await()
-                        val rawResult = rawDeferred.await()
 
                         if (generation != loadGeneration) return@coroutineScope
                         if (
@@ -231,11 +231,6 @@ class ConfigViewModel :
                                     _uiState.value.activeCategory,
                                 )
                             val values = reconciled.values
-                            val defaults =
-                                (defaultsResult as? NetworkResult.Success)?.data?.let {
-                                    flattenConfig(it, schema.fields.keys)
-                                }
-                            val path = (rawResult as? NetworkResult.Success)?.data?.path
                             val editorDrafts =
                                 reconcileEditorDrafts(
                                     pendingChanges = pendingChanges,
@@ -251,14 +246,28 @@ class ConfigViewModel :
                                     isLoading = false,
                                     values = reapplyPendingChanges(values, pendingChanges),
                                     schema = schema,
-                                    defaults = defaults,
                                     uncoveredPaths = reconciled.uncoveredPaths,
-                                    path = path,
                                     activeCategory = reconciled.activeCategory,
                                     modifiedKeys = pendingChanges.keys.toSet(),
                                     invalidKeys = editorDrafts.invalidKeys,
                                     fieldDrafts = editorDrafts.fieldDrafts,
                                 )
+                            }
+                            // Optional endpoints hydrate independently after the schema-aware editor is usable.
+                            launch {
+                                val result = defaultsDeferred.await()
+                                if (generation != loadGeneration) return@launch
+                                if (result is NetworkResult.Success) {
+                                    val defaults = flattenConfig(result.data, schema.fields.keys)
+                                    _uiState.update { it.copy(defaults = defaults) }
+                                }
+                            }
+                            launch {
+                                val result = rawDeferred.await()
+                                if (generation != loadGeneration) return@launch
+                                if (result is NetworkResult.Success) {
+                                    _uiState.update { it.copy(path = result.data.path) }
+                                }
                             }
                         } else {
                             val errorMsg =

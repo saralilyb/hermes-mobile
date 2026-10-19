@@ -151,7 +151,16 @@ class BillingViewModel : ViewModel() {
                         }
                         return@onSuccess
                     }
-                    if (resp.ok == false) {
+                    val actionRequired =
+                        resp.status in setOf("requires_action", "action_required") ||
+                            resp.requires_action == true ||
+                            resp.reason in
+                            setOf(
+                                "authentication_required",
+                                "subscription_payment_intent_requires_action",
+                            )
+                    val paymentFailed = resp.status == "payment_failed" || resp.payment_failed == true
+                    if (resp.ok == false && !actionRequired && !paymentFailed) {
                         _uiState.update {
                             it.copy(
                                 isActionInFlight = false,
@@ -162,11 +171,11 @@ class BillingViewModel : ViewModel() {
                     }
                     val msg =
                         when {
-                            resp.requires_action == true && resp.recovery_url != null ->
-                                "Action required — open: ${resp.recovery_url}"
-                            resp.payment_failed == true -> resp.message ?: "Payment failed"
-                            resp.ok == true -> "Upgrade successful"
-                            else -> resp.message ?: "Upgrade requested"
+                            actionRequired -> "Action required on the billing portal"
+                            paymentFailed -> "Payment failed"
+                            resp.status == "upgraded" && resp.ok == true -> "Upgrade successful"
+                            resp.status == "already_on_tier" && resp.ok == true -> "Already on this plan"
+                            else -> "Upgrade unconfirmed — please check your subscription status"
                         }
                     _uiState.update { it.copy(isActionInFlight = false, actionMessage = msg) }
                     load()

@@ -21,6 +21,7 @@ data class ApprovalInfo(
     val privilegedBinding: PrivilegedRequestBinding,
     val serverRequestBinding: ServerRequestBinding? = null,
     val isSubmitting: Boolean = false,
+    val offersSession: Boolean = false,
 )
 
 /**

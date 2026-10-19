@@ -804,6 +804,24 @@ fun ChatScreen(
             )
         }
 
+        state.undoConfirmCount?.let { turns ->
+            AlertDialog(
+                onDismissRequest = viewModel::dismissUndoConfirm,
+                title = { Text(stringResource(R.string.chat_undo_confirm_title, turns)) },
+                text = { Text(stringResource(R.string.chat_undo_confirm_desc)) },
+                confirmButton = {
+                    TextButton(onClick = viewModel::confirmUndo) {
+                        Text(stringResource(R.string.chat_undo_confirm_action))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = viewModel::dismissUndoConfirm) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
+                },
+            )
+        }
+
         state.modelSwitchConfirmation?.let { confirmation ->
             AlertDialog(
                 onDismissRequest = viewModel::cancelModelSwitchConfirmation,

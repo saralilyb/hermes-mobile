@@ -50,6 +50,21 @@ class CronJobsViewModelTest {
     }
 
     @Test
+    fun `resume uses gateway scheduled state`() =
+        runTest(dispatcher) {
+            coEvery {
+                api.getCronJobs()
+            } returns Response.success(listOf(CronJob(id = "paused", name = "Paused", state = "paused")))
+            coEvery { api.resumeCronJob("paused") } returns Response.success(Unit)
+            val vm = CronJobsViewModel(ioDispatcher = dispatcher)
+            vm.loadCronJobs()
+            advanceUntilIdle()
+            vm.resumeCronJob("paused")
+            assertEquals("scheduled", vm.uiState.value.jobs.single().state)
+            advanceUntilIdle()
+        }
+
+    @Test
     fun `monitor source is mutually exclusive and no-agent clears it`() {
         val viewModel = CronJobsViewModel(ioDispatcher = dispatcher)
         viewModel.openNewJobDialog()

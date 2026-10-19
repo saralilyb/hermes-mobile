@@ -1075,4 +1075,21 @@
     <string name="sessions_section_automation_unknown">自动化运行</string>
     <string name="sessions_tab_automations">自动化</string>
     <string name="sessions_tab_conversations">对话</string>
+    <string name="cron_status_scheduled">已计划</string>
+    <string name="cron_status_completed">已完成</string>
+    <string name="cron_status_error">错误</string>
+    <string name="cron_status_unknown">未知</string>
+    <string name="chat_undo_confirm_title">回退 %1$d 轮对话？</string>
+    <string name="chat_undo_confirm_desc">这将归档最近的对话历史。</string>
+    <string name="chat_undo_confirm_action">回退</string>
+    <string name="sessions_project_home">主页</string>
+    <string name="sessions_group_by_project">按项目分组</string>
+    <string name="sessions_project_group_collapse">折叠 %1$s</string>
+    <string name="sessions_project_group_expand">展开 %1$s</string>
+    <string name="sessions_project_group_count">%1$s（%2$d）</string>
+    <string name="sessions_project_loaded_scope">仅显示已加载的最近会话中的项目</string>
+    <string name="chat_approval_allow_session">仅在此会话中允许</string>
+    <string name="notif_approval_needed">Hermes 需要您的批准</string>
+    <string name="notif_input_needed">Hermes 正在等待您的输入</string>
+    <string name="clarify_skipped">已跳过</string>
 </resources>

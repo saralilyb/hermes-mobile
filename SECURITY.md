@@ -75,13 +75,53 @@ changes the backend's sticky CLI default, not the running dashboard's profile.
 Expanding implicit route scoping requires implementing and testing that distinct
 identity first, including connection switches and stale asynchronous responses.
 
+Webhook enablement and explicit Doctor operations capture the saved connection
+ID and REST rebuild generation on acceptance. They validate it on the dispatch
+thread before resolving the current service and discard stale responses; Doctor
+polling uses the same fence. These are admission/publication fences, **not**
+immutable credential snapshots. The shared REST interceptor and authenticator
+still read live authentication state, and cookie loading remains shared. A
+concurrent credential/connection change after the preflight but before OkHttp
+interception retains the pre-existing class-wide check/use race. Do not retain a
+Retrofit service across dispatcher hops or describe these fences as complete
+REST credential isolation; closing that race requires a separate transport-wide
+authentication design.
+
 ## Android component exposure
 
 Only the launcher activity is exported. The notification service, notification
-reply receiver, and FileProvider are not exported. FileProvider access requires
+entry activity, and FileProvider are not exported. FileProvider access requires
 a temporary URI permission grant. The app requests only network state,
 notifications, foreground-service, and microphone permissions used by its
 features.
+
+## Gateway requests and background notifications
+
+After `gateway.ready`, each WebSocket connection advertises
+`client.capabilities {server_requests: true}` once, before releasing queued
+session work. Negotiation and responses
+remain bound to the receiving socket generation; rejected capability RPCs are
+quietly tolerated. Unsupported request methods receive a same-ID `-32601`
+error without request parameters in logs. Desktop-owned preview, terminal,
+window, tour, and theme-apply requests receive `4404` only when that connection
+negotiated `declines_not_shown`; otherwise Mobile leaves them unanswered so it
+does not preempt another client. Approval cards offer session permission only
+when the request permits it, and never offer permanent permission. Malformed
+present choice metadata cannot enable session permission. Resumed requests are
+matched to the reply's live runtime ID and delivered after session establishment;
+clarification locks include null answers (skipped, not editable).
+
+Background approval notifications use fixed localized text, “Hermes needs your
+approval”; current-protocol clarification notifications use “Hermes needs a
+clarification”; credential and vault input notifications use “Hermes is waiting
+for your input”. They include no command, description, tool, pattern, secret, or
+session title, and have no inline actions or Quick Reply. Replayed requests are
+silent and live request IDs are deduplicated in bounded, profile-scoped memory.
+Immutable taps use the non-exported notification entry activity and the source
+profile and stored session captured from the event. A mismatched profile may
+open the app but cannot switch profiles or route that session through another
+profile's credentials. Quick Reply remains disabled because its transport write
+cannot atomically bind the source profile.
 
 ## Application identities
 

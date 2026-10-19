@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.local.AuthManager
 import com.m57.hermescontrol.data.model.BulkDeleteRequest
+import com.m57.hermescontrol.data.model.ProjectInfo
 import com.m57.hermescontrol.data.model.PruneRequest
 import com.m57.hermescontrol.data.model.SessionInfo
 import com.m57.hermescontrol.data.model.SessionLiveStatus
@@ -14,9 +15,13 @@ import com.m57.hermescontrol.data.remote.HermesApiService
 import com.m57.hermescontrol.data.remote.NetworkResult
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.data.ws.ConnectionStatus
+import com.m57.hermescontrol.data.ws.HermesProjectsSource
 import com.m57.hermescontrol.data.ws.HermesSessionLiveStatusSource
+import com.m57.hermescontrol.data.ws.ProjectsResult
+import com.m57.hermescontrol.data.ws.ProjectsSource
 import com.m57.hermescontrol.data.ws.SessionLiveConnection
 import com.m57.hermescontrol.data.ws.SessionLiveStatusSource
+import com.m57.hermescontrol.data.ws.WsEvent
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
 import kotlinx.coroutines.CoroutineDispatcher
@@ -79,8 +84,31 @@ data class SessionsUiState(
     val searchError: String? = null,
     val searchTitles: Map<String, String> = emptyMap(),
     val liveStatuses: Map<String, SessionLiveStatus> = emptyMap(),
+    val projects: List<ProjectInfo> = emptyList(),
+    val projectsStatus: ProjectsResult = ProjectsResult.Initial,
+    val projectFilter: String? = null,
+    val groupByProject: Boolean = true,
+    val collapsedProjectGroups: Set<String> = emptySet(),
     val liveStatusesAuthoritative: Boolean = false,
 ) {
+    /** Counts and filters apply to loaded History rows, not server totals. Pins remain untouched. */
+    val availableProjects: List<ProjectGroup>
+        get() =
+            if (isSearchMode || section != HistorySection.CONVERSATIONS) {
+                emptyList()
+            } else {
+                groupSessionsByProject(buildSessionSections(sessions, pinnedSessionIds).recent, projects)
+            }
+    val projectFilteredSessions: List<SessionInfo>
+        get() =
+            if (isSearchMode || availableProjects.none { it.key == projectFilter }) {
+                sessions
+            } else {
+                sessions.filter {
+                        s ->
+                    pinnedSessionIds.any(s::matchesPin) || sessionProjectKey(s, projects) == projectFilter
+                }
+            }
     val hasMore: Boolean get() = !paginationExhausted && total > serverOffset
     val isSearchMode: Boolean get() = searchQuery.isNotBlank()
 }
@@ -92,6 +120,8 @@ class SessionsViewModel(
     private val pinStore: SessionPinStore = AuthManagerSessionPinStore(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val liveStatusSource: SessionLiveStatusSource = HermesSessionLiveStatusSource(),
+    private val projectsSource: ProjectsSource =
+        HermesProjectsSource(),
 ) : ViewModel(), ToastHost {
     private val _uiState =
         MutableStateFlow(
@@ -173,6 +203,7 @@ class SessionsViewModel(
 
     /** Load (or reload) sessions from page 0. Used by pull-to-refresh and initial load. */
     fun loadSessions() {
+        loadProjects()
         loadGeneration += 1
         loadMoreJob?.cancel()
         loadMoreJob = null
@@ -759,6 +790,72 @@ class SessionsViewModel(
         _uiState.update { it.copy(toastMessage = null) }
     }
 
+    // Projects metadata is owned by an exact socket generation, never a display label/profile alone.
+    private var projectsOwner: SessionLiveConnection? = null
+    private var projectsGeneration = 0L
+    private var projectsJob: Job? = null
+    private var projectsDebounceJob: Job? = null
+
+    fun selectProjectFilter(key: String?) {
+        _uiState.update { it.copy(projectFilter = if (it.projectFilter == key) null else key) }
+    }
+
+    fun toggleGroupByProject() {
+        _uiState.update { it.copy(groupByProject = !it.groupByProject) }
+    }
+
+    fun toggleProjectGroup(key: String) {
+        _uiState.update {
+            it.copy(
+                collapsedProjectGroups =
+                    if (key in it.collapsedProjectGroups) {
+                        it.collapsedProjectGroups - key
+                    } else {
+                        it.collapsedProjectGroups + key
+                    },
+            )
+        }
+    }
+
+    private fun resetProjects(clear: Boolean) {
+        projectsGeneration++
+        projectsJob?.cancel()
+        projectsDebounceJob?.cancel()
+        if (clear) projectsOwner = null
+        _uiState.update {
+            it.copy(
+                projects = if (clear) emptyList() else it.projects,
+                projectsStatus = ProjectsResult.Offline,
+                projectFilter = if (clear) null else it.projectFilter,
+                collapsedProjectGroups = if (clear) emptySet() else it.collapsedProjectGroups,
+            )
+        }
+    }
+
+    private fun loadProjects() {
+        val owner = activeLiveConnection ?: return
+        if (liveTrackingJob?.isActive != true) return
+        if (projectsOwner != owner) {
+            resetProjects(clear = true)
+            projectsOwner = owner
+        }
+        val generation = ++projectsGeneration
+        projectsJob?.cancel()
+        projectsJob =
+            viewModelScope.launch {
+                val result = projectsSource.fetchProjects(owner)
+                if (generation != projectsGeneration || owner != activeLiveConnection || owner != projectsOwner) {
+                    return@launch
+                }
+                _uiState.update {
+                    it.copy(
+                        projectsStatus = result,
+                        projects = (result as? ProjectsResult.Ready)?.projects ?: it.projects,
+                    )
+                }
+            }
+    }
+
     // ── Live session status tracking ─────────────────────────────────────
 
     fun startLiveStatusTracking() {
@@ -769,6 +866,7 @@ class SessionsViewModel(
                     liveStatusSource.selectedProfileIds.collect { profileId ->
                         if (selectedLiveProfileId != profileId) {
                             selectedLiveProfileId = profileId
+                            resetProjects(clear = true)
                             resetLiveTracking()
                             reconnectLiveTrackingIfPossible()
                         }
@@ -792,6 +890,16 @@ class SessionsViewModel(
                         ) {
                             return@collect
                         }
+                        if (sourced.event == WsEvent.ProjectsChanged) {
+                            projectsDebounceJob?.cancel()
+                            projectsDebounceJob =
+                                viewModelScope.launch {
+                                    delay(250L)
+                                    if (connection == activeLiveConnection && connection == projectsOwner) {
+                                        loadProjects()
+                                    }
+                                }
+                        }
                         val previousState = liveTrackingState
                         val nextState = SessionLiveStatusReducer.applyWsEvent(previousState, sourced.event)
                         val isLiveStatusEvent =
@@ -814,7 +922,6 @@ class SessionsViewModel(
     fun stopLiveStatusTracking() {
         liveTrackingJob?.cancel()
         liveTrackingJob = null
-        selectedLiveProfileId = null
         resetLiveTracking()
     }
 
@@ -829,11 +936,13 @@ class SessionsViewModel(
         if (activeLiveConnection != connection) {
             resetLiveTracking()
             activeLiveConnection = connection
+            loadProjects()
         }
         requestLiveStatusSnapshot()
     }
 
     private fun resetLiveTracking() {
+        resetProjects(clear = false)
         liveTrackingGeneration++
         liveEventRevision++
         liveSnapshotJob?.cancel()

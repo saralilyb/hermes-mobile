@@ -2,6 +2,8 @@ package com.m57.hermescontrol.data.ws
 
 /** JSON-RPC method name constants used with [HermesWsClient.send]. */
 object WsMethods {
+    const val PROJECTS_LIST = "projects.list"
+
     // ── Session ───────────────────────────────────────────────────────────
     const val SESSION_LIST = "session.list"
     const val SESSION_ACTIVE_LIST = "session.active_list"

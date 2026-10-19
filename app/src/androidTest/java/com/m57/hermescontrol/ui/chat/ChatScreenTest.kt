@@ -62,6 +62,61 @@ class ChatScreenTest {
     }
 
     @Test
+    fun undoConfirmation_dispatchesOnlyThroughExplicitParentAction() {
+        val vm = mockk<ChatViewModel>(relaxed = true)
+        val state = MutableStateFlow(ChatUiState(undoConfirmCount = 3))
+        every { vm.uiState } returns state.asStateFlow()
+        every { vm.streamingState } returns MutableStateFlow(StreamingState()).asStateFlow()
+        composeTestRule.setContent { ChatScreen(onOpenDrawer = {}, sessionId = null, viewModel = vm) }
+        verify(exactly = 0) { vm.confirmUndo() }
+        composeTestRule.onNodeWithText("Rewind").assertHasClickAction().performClick()
+        verify(exactly = 1) { vm.confirmUndo() }
+        composeTestRule.onNodeWithText("Cancel").assertHasClickAction().performClick()
+        verify(exactly = 1) { vm.dismissUndoConfirm() }
+        composeTestRule.runOnIdle { state.value = state.value.copy(undoConfirmCount = null) }
+        composeTestRule.onNodeWithText("Rewind").assertDoesNotExist()
+    }
+
+    @Test
+    fun approvalSession_parentRendersOfferedActionAndRoutesExactBinding() {
+        val binding = PrivilegedRequestBinding("approval-1", "session", "profile-a", 7)
+        val message =
+            ChatMessage(
+                id = "approval-card",
+                role = MessageRole.SYSTEM,
+                content = "Approval requested",
+                approvalInfo = ApprovalInfo("command", null, null, binding, offersSession = true),
+            )
+        val state =
+            MutableStateFlow(
+                ChatUiState(
+                    connectionStatus = ConnectionStatus.CONNECTED,
+                    isSessionReady = true,
+                    messages = listOf(message),
+                ),
+            )
+        val viewModel = mockk<ChatViewModel>(relaxed = true)
+        every { viewModel.uiState } returns state.asStateFlow()
+        every { viewModel.streamingState } returns MutableStateFlow(StreamingState()).asStateFlow()
+        composeTestRule.setContent { ChatScreen(sessionId = "session", viewModel = viewModel) }
+        composeTestRule.onNodeWithText(
+            "Allow for this session",
+        ).assertIsDisplayed().assertHasClickAction().performClick()
+        verify(exactly = 1) { viewModel.respondToApproval("approval-card", binding, "session") }
+        verify(exactly = 0) { viewModel.respondToApproval(any(), any(), "always") }
+        state.value =
+            state.value.copy(
+                messages =
+                    listOf(
+                        message.copy(
+                            approvalInfo = message.approvalInfo!!.copy(offersSession = false),
+                        ),
+                    ),
+            )
+        composeTestRule.onNodeWithTag("allow_session_button").assertDoesNotExist()
+    }
+
+    @Test
     fun chatScreen_renders_and_acceptsInput() {
         // Default ChatUiState has connectionStatus=DISCONNECTED which
         // disables the input field and hides the send button.  Override

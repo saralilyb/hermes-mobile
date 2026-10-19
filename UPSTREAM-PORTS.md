@@ -1,3 +1,64 @@
+## Read-only Projects phase 1 (2026-10-19)
+
+Adapted `aed8ba4a`, the projects.list portion of `445da9fe`, `22e70cf9`, and
+only #1562 projects.changed invalidation from `dd1f2b05`. The existing private
+History card, local lineage pins, automation sections, pagination and search
+remain downstream-owned. No typed-RPC architecture or manageable-list redesign.
+
+- Decode real snake_case project metadata and legacy SQLite booleans; optional
+  session cwd/git_repo_root/last_active require no database migration.
+- Dispatch only `projects.list {}` using the exact connection-bound awaited
+  transport, never a queued request or a local ID as a server `profile`.
+- Distinguish initial/offline/unsupported/failed from an empty successful list;
+  fence all results by owner and generation; retain last-good only for that owner.
+- Resolve remote paths lexically for display, retaining POSIX backslashes and
+  separating relative/absolute identities. Deepest cwd match wins, primary breaks
+  ties, then recorded repo ownership; archived projects fall back to auto-workspaces.
+- Keys use project IDs, normalized auto paths and a Home sentinel, never names.
+  Filter only loaded Recents after the lineage-pin partition; pins stay visible.
+  Search and automation grouping ignore the project filter.
+- Source-bound events coalesce for 250 ms per owner; reconnect and manual refresh
+  refetch. No discovery, file/URI access, project mutation or chat launch/move.
+- A minimal transport change preserves JSON-RPC error codes on awaited errors so
+  -32601 is distinguishable from a failed read. No transport queue/retry changes.
+
+`UPSTREAM.json` remains unchanged: this is selective adoption, not a baseline move.
+
+## Low-risk gateway correctness batch (2026-10-19)
+
+Based on fork `630ff207b88873efc8f4a99c45ecbf46c70ccba7`. Selective adaptations:
+
+- `a79c8e570e69cfd7f8f99dfa9d1e34611c1c160e`: scheduled/active cron jobs pause,
+  paused/error resume, completed expose neither control. Unknown/null states expose
+  neither control (conservative downstream policy). Resume optimistically uses
+  `scheduled`; labels are translated in all five catalogs.
+- `1fba107ac4ddcff288d2a81b0fee09d2091bdcbe`: queue management verbs receive a local
+  unsupported response rather than being queued as prompt text.
+- `dd9e23c5acc367a880ce82f664791fcdb4429b74`: connection/resume notices no longer
+  become transcript rows; connection status stays in the banner.
+- `54c1fa2435a35344d84dd6987c41acd1b94666ba`: not ported. The downstream composer
+  already aligns RTL input to the end edge (`Alignment.CenterEnd`, right text
+  alignment); the wrapper changed nothing and its device regression failed.
+- `a90792d5a599c7e1ab1d6f55985462c2f1f18311`: multi-turn undo confirmation retains
+  downstream UndoFence and discards pending confirmation on conversation changes.
+- `474642c2d712a25c5b4f06639919d93d84af43a3`: skipped as already covered by
+  downstream `a15d0f82`: count-only partial/unconfirmed bulk outcomes tombstone no
+  IDs and refresh authoritative survivors. Do not infer deleted IDs by subtracting
+  an optional skipped list from an otherwise unconfirmed response.
+- `dd1f2b05d32a5b8a151b3aa62805a63439cd19fd`: ONLY #1551 billing outcome
+  classification, #1550 webhook configuration/overlap/refusal handling with
+  connection-bound dispatch and load/mutation reconciliation, #1559 explicit
+  connection-bound Doctor dispatch/polling and optional status gateway PID, #1567
+  progressive structured Config loading, and #1556 session/connection-fenced
+  command catalog successes and errors (before generic error reduction). Retain
+  schema-aware editor reconciliation and generation fencing. REST operation
+  preflights do not remove the pre-existing live-auth interceptor check/use race;
+  see SECURITY.md. No local connection ID is sent as a server management profile.
+
+No auth/token/retry/OAuth/upload, updater/update receipts, Ko-fi/what's-new,
+dependency/CI policy, German, Local Models, Projects, or approvals ports.
+`UPSTREAM.json` is intentionally untouched; this is not a contiguous review.
+
 # Selective ports beyond the contiguous review baseline
 
 `UPSTREAM.json` records a contiguous reviewed range. Its reviewed-through value
@@ -176,6 +237,20 @@ exact base with hash-identical catalogs/checker. This candidate also supplies
 only the missing downstream labels (Chinese 16, Japanese 22, Korean 16),
 preserving format arguments and the checker policy. These localized labels are
 a downstream repair, not a claim that upstream supplied Japanese translations.
+
+## Approval capability repair (2026-10-19)
+
+Based on fork `630ff207`. Selectively adapted from `c96a5ff4` (capability
+advertisement), `bfe98eb0` (unsupported server-request responses), and
+`dd1f2b05` #1565 (session approval choice and waiting notifications).
+Negotiation and fallback responses are socket-generation fenced; window-owned
+requests decline only when `declines_not_shown` is negotiated. Session grants
+are offered only when permitted, with permanent grants unreachable. Background
+approval and credential/vault notifications contain fixed generic localized
+text only, retain profile-bound stored-session taps, and have no inline actions.
+Replay alerts are suppressed and live request deduplication is bounded.
+These are downstream adaptations, not whole-commit ports or an update to the
+contiguous `UPSTREAM.json` review boundary.
 
 ## Previous reliability-batch validation and release boundary
 

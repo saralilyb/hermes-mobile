@@ -3,14 +3,14 @@ package com.m57.hermescontrol.ui.webhooks
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.m57.hermescontrol.data.model.CreateWebhookRequest
+import com.m57.hermescontrol.data.model.MessagingPlatformUpdate
 import com.m57.hermescontrol.data.model.WebhookSubscription
 import com.m57.hermescontrol.data.model.WebhookToggleSubscriptionRequest
-import com.m57.hermescontrol.data.model.WebhooksToggleRequest
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.RestConnectionFence
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
-import com.m57.hermescontrol.ui.common.safeLaunchLoad
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,64 +42,100 @@ data class WebhooksUiState(
     val togglingName: String? = null,
 )
 
-class WebhooksViewModel :
+class WebhooksViewModel(
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
+) :
     ViewModel(),
-    ToastHost {
+        ToastHost {
     private val _uiState = MutableStateFlow(WebhooksUiState())
     val uiState: StateFlow<WebhooksUiState> = _uiState.asStateFlow()
 
+    private var connection: RestConnectionFence? = null
+    private var loadGeneration = 0L
+    private var mutationGeneration = 0L
+
+    private fun bindConnection(): RestConnectionFence {
+        if (connection?.isCurrent() == false) {
+            _uiState.value = WebhooksUiState()
+        }
+        return RestConnectionFence.capture().also { connection = it }
+    }
+
     fun loadWebhooks() {
-        safeLaunchLoad(
-            apiCall = { safeApiCall { ApiClient.hermesApi.getWebhooks() } },
-            onStart = { _uiState.update { it.copy(isLoading = true, errorMessage = null) } },
-            onSuccess = { data ->
-                val body = data
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        enabled = body.enabled,
-                        baseUrl = body.base_url,
-                        subscriptions = body.subscriptions.orEmpty(),
-                    )
+        val fence = bindConnection()
+        val load = ++loadGeneration
+        val mutation = mutationGeneration
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        viewModelScope.launch {
+            val result =
+                withContext(ioDispatcher) {
+                    if (!fence.isCurrent()) return@withContext null
+                    safeApiCall(retries = 0) { ApiClient.hermesApi.getWebhooks() }
                 }
-            },
-            onError = { errorMsg ->
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to load webhooks: $errorMsg",
-                    )
+            if (!fence.isCurrent() || load != loadGeneration || mutation != mutationGeneration) return@launch
+            _uiState.update { state ->
+                when (result) {
+                    is NetworkResult.Success ->
+                        state.copy(
+                            isLoading = false,
+                            enabled = if (state.isActionRunning) state.enabled else result.data.enabled,
+                            baseUrl = result.data.base_url,
+                            subscriptions = result.data.subscriptions.orEmpty(),
+                        )
+                    is NetworkResult.Failure ->
+                        state.copy(
+                            isLoading = false,
+                            errorMessage = "Failed to load webhooks: ${result.error.message}",
+                        )
+                    null -> state.copy(isLoading = false)
                 }
-            },
-        )
+            }
+        }
     }
 
     fun toggleWebhooks(targetEnabled: Boolean) {
+        val fence = bindConnection()
+        if (_uiState.value.isActionRunning) return
+        mutationGeneration++
         val originalEnabled = _uiState.value.enabled
-        _uiState.update { it.copy(enabled = targetEnabled) }
+        _uiState.update {
+            it.copy(
+                enabled = targetEnabled,
+                isActionRunning = true,
+                isLoading = false,
+                toastMessage = null,
+            )
+        }
 
         viewModelScope.launch {
-            val result =
-                withContext(Dispatchers.IO) {
-                    safeApiCall { ApiClient.hermesApi.toggleWebhooks(WebhooksToggleRequest(targetEnabled)) }
-                }
-            when (result) {
-                is NetworkResult.Success -> {
-                    _uiState.update {
-                        it.copy(
-                            toastMessage = "Webhooks global status ${if (targetEnabled) "enabled" else "disabled"}",
-                        )
+            try {
+                val result =
+                    withContext(ioDispatcher) {
+                        if (!fence.isCurrent()) return@withContext null
+                        safeApiCall(retries = 0) {
+                            ApiClient.hermesApi.configurePlatform(
+                                "webhook",
+                                MessagingPlatformUpdate(enabled = targetEnabled),
+                            )
+                        }
                     }
-                    loadWebhooks()
+                if (!fence.isCurrent()) return@launch
+                val accepted = result is NetworkResult.Success && result.data.ok == true
+                _uiState.update {
+                    it.copy(
+                        enabled = if (accepted) targetEnabled else originalEnabled,
+                        toastMessage =
+                            if (accepted) {
+                                "Webhooks global status ${if (targetEnabled) "enabled" else "disabled"}"
+                            } else {
+                                "Failed to toggle webhooks"
+                            },
+                    )
                 }
-
-                is NetworkResult.Failure -> {
-                    _uiState.update {
-                        it.copy(
-                            enabled = originalEnabled,
-                            toastMessage = "Failed to toggle webhooks: ${result.error.message}",
-                        )
-                    }
+            } finally {
+                if (fence.isCurrent()) {
+                    mutationGeneration++
+                    _uiState.update { it.copy(isActionRunning = false, isLoading = false) }
                 }
             }
         }

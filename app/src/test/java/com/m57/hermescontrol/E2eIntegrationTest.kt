@@ -553,14 +553,14 @@ class E2eIntegrationTest {
             viewModel.resumeCronJob("id1")
             // Verify optimistic update
             assertEquals(
-                "active",
+                "scheduled",
                 viewModel.uiState.value.jobs[0]
                     .state,
             )
 
             advanceUntilIdle()
             assertEquals(
-                "active",
+                "scheduled",
                 viewModel.uiState.value.jobs[0]
                     .state,
             )
@@ -1115,7 +1115,12 @@ class E2eIntegrationTest {
                         platforms = listOf(platform),
                     ),
                 )
-            coEvery { mockApiService.configurePlatform("telegram", any()) } returns Response.success(Unit)
+            coEvery {
+                mockApiService.configurePlatform(
+                    "telegram",
+                    any(),
+                )
+            } returns Response.success(ActionResponse(ok = true))
 
             val viewModel = ChannelsViewModel(ioDispatcher = testDispatcher)
             viewModel.loadPlatforms()

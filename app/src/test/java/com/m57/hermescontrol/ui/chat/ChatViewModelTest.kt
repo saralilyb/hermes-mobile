@@ -89,6 +89,10 @@ class ChatViewModelTest {
 
     @Before
     fun setUp() {
+        // Initialize the transport's process-lifetime IO scope before replacing
+        // Dispatchers.IO with this test's scheduler; otherwise later real-socket
+        // tests inherit an event collector stranded on a retired scheduler.
+        HermesWsClient.events
         Dispatchers.setMain(testDispatcher)
         val testMainDispatcher = Dispatchers.Main
         reqCount = 0
@@ -316,6 +320,120 @@ class ChatViewModelTest {
     // ── Slash command tests ──────────────────────────────────────────────────
 
     @Test
+    fun catalogConnectionFenceRejectsStaleResultAndAcceptsCurrent() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            var request = sentRequestIds.getValue(WsMethods.COMMANDS_CATALOG).last()
+            mockEventsFlow.emit(WsEvent.RpcResult(request, mapOf("warning" to "current")))
+            advanceUntilIdle()
+            assertEquals("current", vm.uiState.value.commandCatalog.warning)
+            mockEventsFlow.emit(WsEvent.GatewayReady(null))
+            advanceUntilIdle()
+            request = sentRequestIds.getValue(WsMethods.COMMANDS_CATALOG).last()
+            every { HermesWsClient.isConnectionBindingCurrent(any()) } returns false
+            mockEventsFlow.emit(WsEvent.RpcResult(request, mapOf("warning" to "old-socket")))
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.commandCatalog.warning == "old-socket")
+        }
+
+    @Test
+    fun catalogErrorFromReplacedConnectionCannotReduceState() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            val request = sentRequestIds.getValue(WsMethods.COMMANDS_CATALOG).last()
+            every { HermesWsClient.isConnectionBindingCurrent(any()) } returns false
+            val before = vm.uiState.value
+            mockEventsFlow.emit(WsEvent.RpcError(request, com.m57.hermescontrol.data.ws.JsonRpcError(-1, "stale")))
+            advanceUntilIdle()
+            assertEquals(before.errorMessage, vm.uiState.value.errorMessage)
+            assertEquals(before.isLoading, vm.uiState.value.isLoading)
+        }
+
+    @Test
+    fun catalogErrorFromPreviousSessionCannotReduceState() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            val request = sentRequestIds.getValue(WsMethods.COMMANDS_CATALOG).last()
+            vm.switchSession("other-session")
+            advanceUntilIdle()
+            val before = vm.uiState.value
+            mockEventsFlow.emit(WsEvent.RpcError(request, com.m57.hermescontrol.data.ws.JsonRpcError(-1, "stale")))
+            advanceUntilIdle()
+            assertEquals(before.errorMessage, vm.uiState.value.errorMessage)
+            assertEquals(before.isLoading, vm.uiState.value.isLoading)
+        }
+
+    @Test
+    fun catalogCurrentErrorStillPublishes() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            val request = sentRequestIds.getValue(WsMethods.COMMANDS_CATALOG).last()
+            mockEventsFlow.emit(WsEvent.RpcError(request, com.m57.hermescontrol.data.ws.JsonRpcError(-1, "current")))
+            advanceUntilIdle()
+            assertEquals("Error (commands.catalog): current", vm.uiState.value.errorMessage)
+        }
+
+    @Test
+    fun catalogFromPreviousSessionCannotPublish() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            val request = sentRequestIds.getValue(WsMethods.COMMANDS_CATALOG).last()
+            vm.switchSession("other-session")
+            advanceUntilIdle()
+            mockEventsFlow.emit(WsEvent.RpcResult(request, mapOf("warning" to "stale-catalog")))
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.commandCatalog.warning == "stale-catalog")
+        }
+
+    @Test
+    fun connectionRowsNeverEnterTranscript() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            mockEventsFlow.emit(WsEvent.GatewayReady(null))
+            advanceUntilIdle()
+            assertFalse(
+                vm.uiState.value.messages.any {
+                    it.role == MessageRole.SYSTEM && it.content in setOf("Connected to Hermes", "Session resumed")
+                },
+            )
+        }
+
+    @Test
+    fun undoConfirmationIsDiscardedOnSwitchAndCancel() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            vm.sendMessage("/undo 3")
+            advanceUntilIdle()
+            assertEquals(3, vm.uiState.value.undoConfirmCount)
+            vm.dismissUndoConfirm()
+            advanceUntilIdle()
+            assertNull(vm.uiState.value.undoConfirmCount)
+            vm.confirmUndo()
+            vm.sendMessage("/undo 4")
+            advanceUntilIdle()
+            assertEquals(4, vm.uiState.value.undoConfirmCount)
+            vm.switchSession("other-session")
+            advanceUntilIdle()
+            assertNull(vm.uiState.value.undoConfirmCount)
+            vm.confirmUndo()
+            advanceUntilIdle()
+            io.mockk.verify(exactly = 0) {
+                HermesWsClient.requestForConnection(any(), WsMethods.COMMAND_DISPATCH, any(), any())
+            }
+        }
+
+    @Test
+    fun multiTurnUndoWaitsForExplicitConfirmation() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            vm.sendMessage("/undo 3")
+            advanceUntilIdle()
+            io.mockk.verify(exactly = 0) {
+                HermesWsClient.requestForConnection(any(), WsMethods.COMMAND_DISPATCH, any(), any())
+            }
+        }
+
+    @Test
     fun testUndoCommand_replacesCompleteTranscriptCacheAndPrefillsComposer() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
@@ -357,6 +475,9 @@ class ChatViewModelTest {
             }
 
             viewModel.sendMessage("/undo 2")
+            runCurrent()
+            assertEquals(2, viewModel.uiState.value.undoConfirmCount)
+            viewModel.confirmUndo()
             runCurrent()
             undoResult.complete(
                 mapOf(
@@ -1641,7 +1762,12 @@ class ChatViewModelTest {
 
             // GatewayReady sends SESSION_LIST (req-id-1), COMMANDS_CATALOG (req-id-2),
             // then SESSION_CREATE (req-id-3)
-            mockEventsFlow.emit(WsEvent.RpcResult("req-id-3", mapOf("session_id" to "session-123")))
+            mockEventsFlow.emit(
+                WsEvent.RpcResult(
+                    sentRequestIds.getValue(WsMethods.SESSION_CREATE).last(),
+                    mapOf("session_id" to "session-123"),
+                ),
+            )
             advanceUntilIdle()
 
             assertEquals("session-123", viewModel.uiState.value.currentSessionId)
@@ -2191,7 +2317,7 @@ class ChatViewModelTest {
             // ONE system note and must NOT fake a user bubble.
             val messages = viewModel.uiState.value.messages
             assertEquals(2, messages.size)
-            assertEquals(MessageRole.SYSTEM, messages[0].role) // pre-existing "Connected"
+            assertEquals(MessageRole.SYSTEM, messages[0].role) // pre-existing "Session created"
             assertEquals(MessageRole.SYSTEM, messages[1].role) // dismiss trace
             assertTrue(messages[1].content.contains("dismissed", ignoreCase = true))
 
@@ -2933,19 +3059,19 @@ class ChatViewModelTest {
             assertEquals("xhigh", viewModel.uiState.value.reasoningLevel)
             assertEquals(44_000L, viewModel.uiState.value.contextUsage?.usedTokens)
             assertEquals(640_000L, viewModel.uiState.value.contextUsage?.inputTokens)
-            assertEquals(3, messages.size)
+            assertEquals(2, messages.size)
             assertEquals("Earlier question", messages[0].content)
             assertEquals(MessageRole.USER, messages[0].role)
             assertEquals("Earlier answer", messages[1].content)
             assertEquals(MessageRole.ASSISTANT, messages[1].role)
             assertEquals("Earlier reasoning", messages[1].reasoningText)
-            assertEquals("Session resumed", messages[2].content)
+            assertEquals(2, messages.size)
 
             viewModel.refreshCurrentSession()
             advanceUntilIdle()
 
             assertEquals(
-                listOf("Earlier question", "Earlier answer", "Session resumed"),
+                listOf("Earlier question", "Earlier answer"),
                 viewModel.uiState.value.messages.map { it.content },
             )
         }
@@ -3075,11 +3201,11 @@ class ChatViewModelTest {
             advanceUntilIdle()
             assertEquals("storage-tip", viewModel.uiState.value.currentSessionId)
             assertEquals("runtime-tip", ActiveSessionHolder.activeSessionId.value)
-            assertEquals(1, viewModel.uiState.value.messages.count { it.content == "Session resumed" })
+            assertEquals(0, viewModel.uiState.value.messages.count { it.content == "Session resumed" })
 
             mockEventsFlow.emit(WsEvent.RpcResult(resumeId, result))
             advanceUntilIdle()
-            assertEquals(1, viewModel.uiState.value.messages.count { it.content == "Session resumed" })
+            assertEquals(0, viewModel.uiState.value.messages.count { it.content == "Session resumed" })
         }
 
     @Test
@@ -3926,6 +4052,32 @@ class ChatViewModelTest {
     // ── Gateway server-request regressions ─────────────────────────────────
 
     @Test
+    fun resumedPendingPromptsAreAnswerableAfterRuntimeInstallation() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val bindings = mutableListOf<ServerRequestBinding>()
+            every { HermesWsClient.respondToServerRequest(capture(bindings), any()) } returns true
+            for (runtime in listOf("runtime-a", "stored-a")) {
+                viewModel.switchSession("away")
+                runCurrent()
+                viewModel.switchSession("stored-a")
+                runCurrent()
+                assertFalse(viewModel.uiState.value.isSessionReady)
+                val resumeId = requireNotNull(sentRequestIds[WsMethods.SESSION_RESUME]?.lastOrNull())
+                mockEventsFlow.emit(
+                    WsEvent.RpcResult(resumeId, mapOf("session_id" to runtime, "resumed" to "stored-a")),
+                )
+                mockEventsFlow.emit(serverRequest("pending-$runtime", "approval", sessionId = runtime, replayed = true))
+                runCurrent()
+                assertTrue(viewModel.uiState.value.isSessionReady)
+                val card = requireNotNull(viewModel.approvalMessage())
+                viewModel.respondToApproval(card.id, card.approvalInfo!!.privilegedBinding, "approve")
+                runCurrent()
+                assertEquals(ServerRequestBinding("pending-$runtime", runtime, "profile-a", 7), bindings.last())
+            }
+        }
+
+    @Test
     fun gatewayVault_promptsUseExactIdsAndMethodSpecificStringValues() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
@@ -4087,7 +4239,6 @@ class ChatViewModelTest {
             runCurrent()
 
             viewModel.respondToApproval("always")
-            viewModel.respondToApproval("session")
             verify(exactly = 0) { HermesWsClient.respondToServerRequest(any(), any()) }
             viewModel.respondToApproval("approve")
             runCurrent()
@@ -4108,22 +4259,25 @@ class ChatViewModelTest {
                     "clarify",
                     extra =
                         mapOf(
-                            "answers" to mapOf("q1" to "locked"),
+                            "answers" to mapOf("q1" to "locked", "q3" to null),
                             "questions" to
                                 listOf(
                                     mapOf("qid" to "q1", "question" to "First?"),
                                     mapOf("qid" to "q2", "question" to "Second?"),
+                                    mapOf("qid" to "q3", "question" to "Skipped?"),
                                 ),
                         ),
                 ),
             )
             runCurrent()
             val prompt = requireNotNull(viewModel.uiState.value.clarifyRequest)
-            viewModel.respondToClarifyBatch(prompt, mapOf("q1" to "overwrite", "q2" to "new"))
+            assertTrue("Skipped question must remain locked", prompt.isAnswerLocked("q3"))
+            viewModel.respondToClarifyBatch(prompt, mapOf("q1" to "overwrite", "q2" to "new", "q3" to "overwrite"))
             runCurrent()
 
             assertTrue(result.captured.toString().contains("\"q1\":\"locked\""))
             assertTrue(result.captured.toString().contains("\"q2\":\"new\""))
+            assertTrue(result.captured.toString().contains("\"q3\":null"))
         }
 
     @Test
@@ -4315,6 +4469,51 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun gatewayApproval_sessionOfferHonorsEveryConstraintAndUsesWireResult() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val results = mutableListOf<JsonElement>()
+            every { HermesWsClient.respondToServerRequest(any(), capture(results)) } returns true
+            val cases =
+                listOf(
+                    emptyMap<String, Any>() to true,
+                    mapOf("choices" to listOf("once", "session")) to true,
+                    mapOf("allow_session" to false) to false,
+                    mapOf("choices" to listOf("once", "deny")) to false,
+                    mapOf("smart_denied" to true, "choices" to listOf("session")) to false,
+                    mapOf("choices" to "session") to false,
+                    mapOf("choices" to null) to false,
+                    mapOf("choices" to listOf(3)) to false,
+                    mapOf("choices" to listOf("session", 3)) to false,
+                )
+            for ((index, case) in cases.withIndex()) {
+                mockEventsFlow.emit(serverRequest("session-offer-$index", "approval", extra = case.first))
+                runCurrent()
+                val card = requireNotNull(viewModel.approvalMessage())
+                assertEquals("offer case $index", case.second, card.approvalInfo!!.offersSession)
+                val before = results.size
+                viewModel.respondToApproval(card.id, card.approvalInfo.privilegedBinding, "session")
+                runCurrent()
+                assertEquals("submit case $index", before + if (case.second) 1 else 0, results.size)
+                if (case.second) assertEquals("{\"choice\":\"session\",\"all\":false}", results.last().toString())
+                viewModel.cancelApproval(card.id, card.approvalInfo.privilegedBinding)
+                runCurrent()
+            }
+        }
+
+    @Test
+    fun respondToApproval_sessionUsesTheBoundSubmitPath() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val calls = capturePrivileged()
+            mockEventsFlow.emit(approvalRequest())
+            runCurrent()
+            viewModel.respondToApproval("session")
+            runCurrent()
+            assertEquals(listOf(mapOf("choice" to "session")), calls.map { it.params })
+        }
+
+    @Test
     fun respondToApproval_approveSendsOnceOnTheBoundRequest() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
@@ -4348,16 +4547,15 @@ class ChatViewModelTest {
             assertEquals(listOf(mapOf("choice" to "deny")), calls.map { it.params })
         }
 
-    /** A phone cannot show what a standing allow would later authorize. */
+    /** Permanent grants and unknown action names are never offered. */
     @Test
-    fun respondToApproval_refusesSessionAndAlwaysChoices() =
+    fun respondToApproval_refusesAlwaysAndUnknownChoices() =
         runTest {
             val (viewModel, _) = createViewModelWithSession()
             val calls = capturePrivileged()
 
             mockEventsFlow.emit(approvalRequest())
             runCurrent()
-            viewModel.respondToApproval("session")
             viewModel.respondToApproval("always")
             viewModel.respondToApproval("once")
             runCurrent()
@@ -5454,7 +5652,10 @@ class ChatViewModelTest {
 
             // req-id-3: loadSessions and fetchCommandCatalog precede the create.
             mockEventsFlow.emit(
-                WsEvent.RpcResult("req-id-3", mapOf("session_id" to "session-123")),
+                WsEvent.RpcResult(
+                    sentRequestIds.getValue(WsMethods.SESSION_CREATE).last(),
+                    mapOf("session_id" to "session-123"),
+                ),
             )
             advanceUntilIdle()
 

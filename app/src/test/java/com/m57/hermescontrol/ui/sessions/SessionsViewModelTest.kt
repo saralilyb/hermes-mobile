@@ -30,6 +30,49 @@ import retrofit2.Response
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionsViewModelTest {
+    @Test
+    fun `manual History refresh refetches projects on captured owner`() {
+        val live = mockk<com.m57.hermescontrol.data.ws.SessionLiveStatusSource>()
+        val owner = com.m57.hermescontrol.data.ws.SessionLiveConnection("a", 1)
+        every { live.selectedProfileIds } returns kotlinx.coroutines.flow.MutableStateFlow("a")
+        every { live.connectionStatus } returns
+            kotlinx.coroutines.flow.MutableStateFlow(com.m57.hermescontrol.data.ws.ConnectionStatus.CONNECTED)
+        every { live.sourcedEvents } returns kotlinx.coroutines.flow.emptyFlow()
+        every { live.currentConnection("a") } returns owner
+        coEvery { live.fetchActiveSessionsSnapshot(owner) } returns null
+        val projects = mockk<com.m57.hermescontrol.data.ws.ProjectsSource>()
+        coEvery {
+            projects.fetchProjects(
+                owner,
+            )
+        } returns com.m57.hermescontrol.data.ws.ProjectsResult.Ready(emptyList())
+        coEvery { mockApi.getSessions(any(), any(), any(), any(), any()) } returns
+            Response.success(SessionListResponse(emptyList()))
+        val vm = SessionsViewModel(ioDispatcher = testDispatcher, liveStatusSource = live, projectsSource = projects)
+        vm.startLiveStatusTracking()
+        testDispatcher.scheduler.runCurrent()
+        coVerify(exactly = 1) { projects.fetchProjects(owner) }
+        vm.loadSessions()
+        testDispatcher.scheduler.runCurrent()
+        coVerify(exactly = 2) { projects.fetchProjects(owner) }
+        vm.stopLiveStatusTracking()
+        testDispatcher.scheduler.advanceUntilIdle()
+    }
+
+    @Test
+    fun `project controls are view model state and preserve paging metadata`() {
+        val vm = createViewModel()
+        vm.selectProjectFilter("project:a")
+        vm.toggleProjectGroup("project:a")
+        assertEquals("project:a", vm.uiState.value.projectFilter)
+        assertEquals(setOf("project:a"), vm.uiState.value.collapsedProjectGroups)
+        val before = vm.uiState.value.serverOffset
+        vm.toggleGroupByProject()
+        assertEquals(before, vm.uiState.value.serverOffset)
+        vm.selectProjectFilter("project:a")
+        assertEquals(null, vm.uiState.value.projectFilter)
+    }
+
     private val testDispatcher = StandardTestDispatcher()
     private val mockApi = mockk<HermesApiService>(relaxed = true)
 
