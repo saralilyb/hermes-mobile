@@ -559,7 +559,6 @@ class ChatViewModel(
 
     private fun handleGatewayReady() {
         _uiState.update { it.copy(isLoading = false) }
-        addSystemMessage("Connected to Hermes")
         loadSessions()
         fetchCommandCatalog()
         fetchModelContextLength()
@@ -1074,7 +1073,6 @@ class ChatViewModel(
                 // Mirror the active runtime session id app-wide (issue #532).
                 ActiveSessionHolder.set(runtimeSessionId ?: sessionId, sessionId)
                 if (!isResumeFenceCurrent(resumeFence, allowRuntimeChange = true, allowSessionChange = true)) return
-                addSystemMessage("Session resumed")
             }
 
             WsMethods.SESSION_INTERRUPT -> {

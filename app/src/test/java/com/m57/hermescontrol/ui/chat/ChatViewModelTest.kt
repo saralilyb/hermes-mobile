@@ -316,6 +316,19 @@ class ChatViewModelTest {
     // ── Slash command tests ──────────────────────────────────────────────────
 
     @Test
+    fun connectionRowsNeverEnterTranscript() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            mockEventsFlow.emit(WsEvent.GatewayReady(null))
+            advanceUntilIdle()
+            assertFalse(
+                vm.uiState.value.messages.any {
+                    it.role == MessageRole.SYSTEM && it.content in setOf("Connected to Hermes", "Session resumed")
+                },
+            )
+        }
+
+    @Test
     fun testUndoCommand_replacesCompleteTranscriptCacheAndPrefillsComposer() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
@@ -2191,7 +2204,7 @@ class ChatViewModelTest {
             // ONE system note and must NOT fake a user bubble.
             val messages = viewModel.uiState.value.messages
             assertEquals(2, messages.size)
-            assertEquals(MessageRole.SYSTEM, messages[0].role) // pre-existing "Connected"
+            assertEquals(MessageRole.SYSTEM, messages[0].role) // pre-existing "Session created"
             assertEquals(MessageRole.SYSTEM, messages[1].role) // dismiss trace
             assertTrue(messages[1].content.contains("dismissed", ignoreCase = true))
 
@@ -2933,19 +2946,19 @@ class ChatViewModelTest {
             assertEquals("xhigh", viewModel.uiState.value.reasoningLevel)
             assertEquals(44_000L, viewModel.uiState.value.contextUsage?.usedTokens)
             assertEquals(640_000L, viewModel.uiState.value.contextUsage?.inputTokens)
-            assertEquals(3, messages.size)
+            assertEquals(2, messages.size)
             assertEquals("Earlier question", messages[0].content)
             assertEquals(MessageRole.USER, messages[0].role)
             assertEquals("Earlier answer", messages[1].content)
             assertEquals(MessageRole.ASSISTANT, messages[1].role)
             assertEquals("Earlier reasoning", messages[1].reasoningText)
-            assertEquals("Session resumed", messages[2].content)
+            assertEquals(2, messages.size)
 
             viewModel.refreshCurrentSession()
             advanceUntilIdle()
 
             assertEquals(
-                listOf("Earlier question", "Earlier answer", "Session resumed"),
+                listOf("Earlier question", "Earlier answer"),
                 viewModel.uiState.value.messages.map { it.content },
             )
         }
@@ -3075,11 +3088,11 @@ class ChatViewModelTest {
             advanceUntilIdle()
             assertEquals("storage-tip", viewModel.uiState.value.currentSessionId)
             assertEquals("runtime-tip", ActiveSessionHolder.activeSessionId.value)
-            assertEquals(1, viewModel.uiState.value.messages.count { it.content == "Session resumed" })
+            assertEquals(0, viewModel.uiState.value.messages.count { it.content == "Session resumed" })
 
             mockEventsFlow.emit(WsEvent.RpcResult(resumeId, result))
             advanceUntilIdle()
-            assertEquals(1, viewModel.uiState.value.messages.count { it.content == "Session resumed" })
+            assertEquals(0, viewModel.uiState.value.messages.count { it.content == "Session resumed" })
         }
 
     @Test
