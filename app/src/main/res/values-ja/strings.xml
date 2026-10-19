@@ -1079,4 +1079,7 @@
     <string name="cron_status_completed">完了</string>
     <string name="cron_status_error">エラー</string>
     <string name="cron_status_unknown">不明</string>
+    <string name="chat_undo_confirm_title">%1$d ターン巻き戻しますか？</string>
+    <string name="chat_undo_confirm_desc">最近の会話履歴がアーカイブされます。</string>
+    <string name="chat_undo_confirm_action">巻き戻す</string>
 </resources>

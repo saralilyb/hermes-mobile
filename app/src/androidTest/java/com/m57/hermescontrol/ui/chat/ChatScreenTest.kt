@@ -62,6 +62,22 @@ class ChatScreenTest {
     }
 
     @Test
+    fun undoConfirmation_dispatchesOnlyThroughExplicitParentAction() {
+        val vm = mockk<ChatViewModel>(relaxed = true)
+        val state = MutableStateFlow(ChatUiState(undoConfirmCount = 3))
+        every { vm.uiState } returns state.asStateFlow()
+        every { vm.streamingState } returns MutableStateFlow(StreamingState()).asStateFlow()
+        composeTestRule.setContent { ChatScreen(onOpenDrawer = {}, sessionId = null, viewModel = vm) }
+        verify(exactly = 0) { vm.confirmUndo() }
+        composeTestRule.onNodeWithText("Rewind").assertHasClickAction().performClick()
+        verify(exactly = 1) { vm.confirmUndo() }
+        composeTestRule.onNodeWithText("Cancel").assertHasClickAction().performClick()
+        verify(exactly = 1) { vm.dismissUndoConfirm() }
+        composeTestRule.runOnIdle { state.value = state.value.copy(undoConfirmCount = null) }
+        composeTestRule.onNodeWithText("Rewind").assertDoesNotExist()
+    }
+
+    @Test
     fun chatScreen_renders_and_acceptsInput() {
         // Default ChatUiState has connectionStatus=DISCONNECTED which
         // disables the input field and hides the send button.  Override

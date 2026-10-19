@@ -1080,4 +1080,7 @@
     <string name="cron_status_completed">Completed</string>
     <string name="cron_status_error">Error</string>
     <string name="cron_status_unknown">Unknown</string>
+    <string name="chat_undo_confirm_title">Rewind %1$d turns?</string>
+    <string name="chat_undo_confirm_desc">This will archive your recent conversation history.</string>
+    <string name="chat_undo_confirm_action">Rewind</string>
 </resources>

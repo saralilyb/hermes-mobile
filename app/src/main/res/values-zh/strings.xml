@@ -1079,4 +1079,7 @@
     <string name="cron_status_completed">已完成</string>
     <string name="cron_status_error">错误</string>
     <string name="cron_status_unknown">未知</string>
+    <string name="chat_undo_confirm_title">回退 %1$d 轮对话？</string>
+    <string name="chat_undo_confirm_desc">这将归档最近的对话历史。</string>
+    <string name="chat_undo_confirm_action">回退</string>
 </resources>

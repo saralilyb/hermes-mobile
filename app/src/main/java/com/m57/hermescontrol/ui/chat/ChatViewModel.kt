@@ -196,6 +196,7 @@ data class ChatUiState(
     val todos: List<TodoItem> = emptyList(),
     /** One-shot composer restoration produced by a successful `/undo`. */
     val pendingPrefillText: String? = null,
+    val undoConfirmCount: Int? = null,
 ) {
     /** Convenience — derived from [connectionStatus]. */
     val isConnected: Boolean get() = connectionStatus == ConnectionStatus.CONNECTED
@@ -1599,6 +1600,21 @@ class ChatViewModel(
         jobs.forEach(Job::cancel)
     }
 
+    private data class PendingUndo(val count: String, val command: String, val fence: UndoFence)
+
+    private var pendingUndo: PendingUndo? = null
+
+    fun dismissUndoConfirm() {
+        pendingUndo = null
+        _uiState.update { it.copy(undoConfirmCount = null) }
+    }
+
+    fun confirmUndo() {
+        val pending = pendingUndo ?: return
+        dismissUndoConfirm()
+        if (isUndoFenceCurrent(pending.fence)) performUndo(pending.count, pending.command, pending.fence)
+    }
+
     private fun handleUndoCommand(
         count: String,
         command: String,
@@ -1616,6 +1632,21 @@ class ChatViewModel(
                 generation = conversationGeneration,
                 persistenceGeneration = repo.replacementGeneration(storageSessionId),
             )
+        val turns = count.substringBefore(' ').toIntOrNull()
+        if (turns != null && turns > 1) {
+            pendingUndo = PendingUndo(count, command, fence)
+            _uiState.update { it.copy(undoConfirmCount = turns) }
+            return
+        }
+        performUndo(count, command, fence)
+    }
+
+    private fun performUndo(
+        count: String,
+        command: String,
+        fence: UndoFence,
+    ) {
+        if (!isUndoFenceCurrent(fence)) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val result =
@@ -1623,7 +1654,7 @@ class ChatViewModel(
                         .requestForConnection(
                             fence.connectionBinding,
                             WsMethods.COMMAND_DISPATCH,
-                            mapOf("name" to "undo", "arg" to count, "session_id" to agentSessionId),
+                            mapOf("name" to "undo", "arg" to count, "session_id" to fence.runtimeSessionId),
                         ).await()
                 if (!isUndoFenceCurrent(fence)) return@launch
                 recordAcceptedSlash(command)
@@ -3743,6 +3774,7 @@ class ChatViewModel(
             binding.connectionGeneration == event.connectionGeneration
 
     private fun clearPrivilegedControls() {
+        dismissUndoConfirm()
         approvalExpiryJobs.values.forEach(Job::cancel)
         approvalExpiryJobs.clear()
         _uiState.update { state ->

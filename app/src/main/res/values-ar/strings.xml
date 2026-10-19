@@ -825,4 +825,7 @@
     <string name="cron_status_completed">مكتمل</string>
     <string name="cron_status_error">خطأ</string>
     <string name="cron_status_unknown">غير معروف</string>
+    <string name="chat_undo_confirm_title">هل تريد التراجع %1$d جولات؟</string>
+    <string name="chat_undo_confirm_desc">سيؤدي هذا إلى أرشفة سجل محادثتك الأخير.</string>
+    <string name="chat_undo_confirm_action">تراجع</string>
 </resources>

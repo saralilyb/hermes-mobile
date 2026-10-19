@@ -1079,4 +1079,7 @@
     <string name="cron_status_completed">완료됨</string>
     <string name="cron_status_error">오류</string>
     <string name="cron_status_unknown">알 수 없음</string>
+    <string name="chat_undo_confirm_title">%1$d턴을 되돌릴까요?</string>
+    <string name="chat_undo_confirm_desc">최근 대화 기록이 보관됩니다.</string>
+    <string name="chat_undo_confirm_action">되돌리기</string>
 </resources>

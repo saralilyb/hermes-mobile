@@ -329,6 +329,41 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun undoConfirmationIsDiscardedOnSwitchAndCancel() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            vm.sendMessage("/undo 3")
+            advanceUntilIdle()
+            assertEquals(3, vm.uiState.value.undoConfirmCount)
+            vm.dismissUndoConfirm()
+            advanceUntilIdle()
+            assertNull(vm.uiState.value.undoConfirmCount)
+            vm.confirmUndo()
+            vm.sendMessage("/undo 4")
+            advanceUntilIdle()
+            assertEquals(4, vm.uiState.value.undoConfirmCount)
+            vm.switchSession("other-session")
+            advanceUntilIdle()
+            assertNull(vm.uiState.value.undoConfirmCount)
+            vm.confirmUndo()
+            advanceUntilIdle()
+            io.mockk.verify(exactly = 0) {
+                HermesWsClient.requestForConnection(any(), WsMethods.COMMAND_DISPATCH, any(), any())
+            }
+        }
+
+    @Test
+    fun multiTurnUndoWaitsForExplicitConfirmation() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            vm.sendMessage("/undo 3")
+            advanceUntilIdle()
+            io.mockk.verify(exactly = 0) {
+                HermesWsClient.requestForConnection(any(), WsMethods.COMMAND_DISPATCH, any(), any())
+            }
+        }
+
+    @Test
     fun testUndoCommand_replacesCompleteTranscriptCacheAndPrefillsComposer() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
@@ -370,6 +405,9 @@ class ChatViewModelTest {
             }
 
             viewModel.sendMessage("/undo 2")
+            runCurrent()
+            assertEquals(2, viewModel.uiState.value.undoConfirmCount)
+            viewModel.confirmUndo()
             runCurrent()
             undoResult.complete(
                 mapOf(
