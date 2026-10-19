@@ -36,6 +36,26 @@ class SessionProjectTest {
     }
 
     @Test
+    fun `single leading backslash is a case sensitive POSIX relative literal`() {
+        val path = "\\Work\\App"
+        assertEquals("auto:relative:$path", resolve(path)?.key)
+        assertNotEquals(resolve(path)?.key, resolve("/work/app")?.key)
+        assertNotEquals(resolve(path)?.key, resolve("\\work\\app")?.key)
+        val project = ProjectInfo("posix", primaryPath = path)
+        assertEquals("project:posix", resolve("$path/src", listOf(project))?.key)
+        assertEquals("auto:/work/app", resolve("/work/app", listOf(project))?.key)
+    }
+
+    @Test
+    fun `UNC shares and drive roots are unambiguously Windows`() {
+        assertEquals(resolve("\\\\Server\\Share\\Work")?.key, resolve("//server/share/work")?.key)
+        assertEquals("auto://server/share/work", resolve("\\\\Server\\Share\\Work")?.key)
+        assertEquals(resolve("C:\\Work\\App")?.key, resolve("c:/work/app")?.key)
+        assertNotEquals(resolve("C:Work\\App")?.key, resolve("c:/work/app")?.key)
+        assertEquals("auto:relative:C:Work\\App", resolve("C:Work\\App")?.key)
+    }
+
+    @Test
     fun `primary path works without folders and archived projects fall back`() {
         val p = ProjectInfo("p", name = "Same", primaryPath = "/work")
         assertEquals("project:p", resolve("/work/src", listOf(p))?.key)

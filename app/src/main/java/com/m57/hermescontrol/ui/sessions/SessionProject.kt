@@ -21,14 +21,17 @@ private data class WorkspacePath(val root: String, val parts: List<String>) {
 
 private val windowsDrive = Regex("^[A-Za-z]:[/\\\\]")
 
+private val windowsUnc = Regex("""^(?:\\\\|//)[^/\\]+[/\\][^/\\]+(?:[/\\]|$)""")
+
 private fun workspacePath(raw: String?): WorkspacePath? {
     val text = raw?.takeIf { it.isNotBlank() } ?: return null
-    val windows = windowsDrive.containsMatchIn(text) || text.startsWith("\\") || text.startsWith("//")
+    // Projects P2: a single leading backslash is a literal POSIX relative filename.
+    val windows = windowsDrive.containsMatchIn(text) || windowsUnc.containsMatchIn(text)
     val value = if (windows) text.replace('\\', '/').lowercase(Locale.ROOT) else text
     val root =
         when {
             windowsDrive.containsMatchIn(value) -> value.take(2) + "/"
-            value.startsWith("//") -> "//"
+            windows && value.startsWith("//") -> "//"
             value.startsWith('/') -> "/"
             else -> "relative:"
         }
