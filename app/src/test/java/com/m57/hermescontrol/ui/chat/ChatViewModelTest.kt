@@ -4359,6 +4359,10 @@ class ChatViewModelTest {
                     mapOf("allow_session" to false) to false,
                     mapOf("choices" to listOf("once", "deny")) to false,
                     mapOf("smart_denied" to true, "choices" to listOf("session")) to false,
+                    mapOf("choices" to "session") to false,
+                    mapOf("choices" to null) to false,
+                    mapOf("choices" to listOf(3)) to false,
+                    mapOf("choices" to listOf("session", 3)) to false,
                 )
             for ((index, case) in cases.withIndex()) {
                 mockEventsFlow.emit(serverRequest("session-offer-$index", "approval", extra = case.first))

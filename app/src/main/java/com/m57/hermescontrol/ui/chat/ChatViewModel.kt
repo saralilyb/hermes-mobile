@@ -3621,7 +3621,7 @@ class ChatViewModel(
                         requestId = request.params["request_id"] as? String ?: request.id,
                         timeoutSeconds = (request.params["timeout_seconds"] as? Number)?.toDouble() ?: 120.0,
                         allowSession = request.params["allow_session"] as? Boolean,
-                        choices = (request.params["choices"] as? List<*>)?.filterIsInstance<String>().orEmpty(),
+                        choices = com.m57.hermescontrol.data.ws.parseApprovalChoices(request.params),
                         smartDenied = request.params["smart_denied"] == true,
                         sourceProfileId = binding.profileId,
                         connectionGeneration = binding.connectionGeneration,
@@ -3782,7 +3782,7 @@ class ChatViewModel(
                         patternKeys = event.patternKeys,
                         offersSession =
                             !event.smartDenied && event.allowSession != false &&
-                                (event.choices.isEmpty() || "session" in event.choices),
+                                (event.choices?.let { it.isEmpty() || "session" in it } == true),
                         privilegedBinding = binding,
                         serverRequestBinding =
                             event.serverRequestId?.let {

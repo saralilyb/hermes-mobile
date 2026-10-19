@@ -213,7 +213,8 @@ sealed class WsEvent {
         val requestId: String,
         val timeoutSeconds: Double,
         val allowSession: Boolean? = null,
-        val choices: List<String> = emptyList(),
+        // null means malformed-present; empty means absent or explicitly empty.
+        val choices: List<String>? = emptyList(),
         val smartDenied: Boolean = false,
         val sourceProfileId: String? = null,
         val connectionGeneration: Int? = null,
