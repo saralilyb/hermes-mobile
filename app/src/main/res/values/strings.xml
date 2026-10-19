@@ -1076,4 +1076,7 @@
     <string name="subagent_status_completed">Completed</string>
     <string name="subagent_status_cancelled">Cancelled</string>
     <string name="subagent_status_failed">Failed</string>
+    <string name="chat_approval_allow_session">Allow for this session</string>
+    <string name="notif_approval_needed">Hermes needs your approval</string>
+    <string name="notif_input_needed">Hermes is waiting for your input</string>
 </resources>

@@ -89,6 +89,10 @@ class ChatViewModelTest {
 
     @Before
     fun setUp() {
+        // Initialize the transport's process-lifetime IO scope before replacing
+        // Dispatchers.IO with this test's scheduler; otherwise later real-socket
+        // tests inherit an event collector stranded on a retired scheduler.
+        HermesWsClient.events
         Dispatchers.setMain(testDispatcher)
         val testMainDispatcher = Dispatchers.Main
         reqCount = 0
@@ -4087,7 +4091,6 @@ class ChatViewModelTest {
             runCurrent()
 
             viewModel.respondToApproval("always")
-            viewModel.respondToApproval("session")
             verify(exactly = 0) { HermesWsClient.respondToServerRequest(any(), any()) }
             viewModel.respondToApproval("approve")
             runCurrent()
@@ -4315,6 +4318,47 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun gatewayApproval_sessionOfferHonorsEveryConstraintAndUsesWireResult() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val results = mutableListOf<JsonElement>()
+            every { HermesWsClient.respondToServerRequest(any(), capture(results)) } returns true
+            val cases =
+                listOf(
+                    emptyMap<String, Any>() to true,
+                    mapOf("choices" to listOf("once", "session")) to true,
+                    mapOf("allow_session" to false) to false,
+                    mapOf("choices" to listOf("once", "deny")) to false,
+                    mapOf("smart_denied" to true, "choices" to listOf("session")) to false,
+                )
+            for ((index, case) in cases.withIndex()) {
+                mockEventsFlow.emit(serverRequest("session-offer-$index", "approval", extra = case.first))
+                runCurrent()
+                val card = requireNotNull(viewModel.approvalMessage())
+                assertEquals("offer case $index", case.second, card.approvalInfo!!.offersSession)
+                val before = results.size
+                viewModel.respondToApproval(card.id, card.approvalInfo.privilegedBinding, "session")
+                runCurrent()
+                assertEquals("submit case $index", before + if (case.second) 1 else 0, results.size)
+                if (case.second) assertEquals("{\"choice\":\"session\",\"all\":false}", results.last().toString())
+                viewModel.cancelApproval(card.id, card.approvalInfo.privilegedBinding)
+                runCurrent()
+            }
+        }
+
+    @Test
+    fun respondToApproval_sessionUsesTheBoundSubmitPath() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val calls = capturePrivileged()
+            mockEventsFlow.emit(approvalRequest())
+            runCurrent()
+            viewModel.respondToApproval("session")
+            runCurrent()
+            assertEquals(listOf(mapOf("choice" to "session")), calls.map { it.params })
+        }
+
+    @Test
     fun respondToApproval_approveSendsOnceOnTheBoundRequest() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
@@ -4348,16 +4392,15 @@ class ChatViewModelTest {
             assertEquals(listOf(mapOf("choice" to "deny")), calls.map { it.params })
         }
 
-    /** A phone cannot show what a standing allow would later authorize. */
+    /** Permanent grants and unknown action names are never offered. */
     @Test
-    fun respondToApproval_refusesSessionAndAlwaysChoices() =
+    fun respondToApproval_refusesAlwaysAndUnknownChoices() =
         runTest {
             val (viewModel, _) = createViewModelWithSession()
             val calls = capturePrivileged()
 
             mockEventsFlow.emit(approvalRequest())
             runCurrent()
-            viewModel.respondToApproval("session")
             viewModel.respondToApproval("always")
             viewModel.respondToApproval("once")
             runCurrent()

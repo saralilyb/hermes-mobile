@@ -1075,4 +1075,7 @@
     <string name="sessions_section_automation_unknown">自动化运行</string>
     <string name="sessions_tab_automations">自动化</string>
     <string name="sessions_tab_conversations">对话</string>
+    <string name="chat_approval_allow_session">仅在此会话中允许</string>
+    <string name="notif_approval_needed">Hermes 需要您的批准</string>
+    <string name="notif_input_needed">Hermes 正在等待您的输入</string>
 </resources>

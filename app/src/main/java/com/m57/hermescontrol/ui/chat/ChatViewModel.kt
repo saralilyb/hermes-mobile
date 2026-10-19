@@ -3618,6 +3618,9 @@ class ChatViewModel(
                         sessionId = sessionId,
                         requestId = request.params["request_id"] as? String ?: request.id,
                         timeoutSeconds = (request.params["timeout_seconds"] as? Number)?.toDouble() ?: 120.0,
+                        allowSession = request.params["allow_session"] as? Boolean,
+                        choices = (request.params["choices"] as? List<*>)?.filterIsInstance<String>().orEmpty(),
+                        smartDenied = request.params["smart_denied"] == true,
                         sourceProfileId = binding.profileId,
                         connectionGeneration = binding.connectionGeneration,
                         serverRequestId = request.id,
@@ -3772,6 +3775,9 @@ class ChatViewModel(
                         command = event.command,
                         description = event.description,
                         patternKeys = event.patternKeys,
+                        offersSession =
+                            !event.smartDenied && event.allowSession != false &&
+                                (event.choices.isEmpty() || "session" in event.choices),
                         privilegedBinding = binding,
                         serverRequestBinding =
                             event.serverRequestId?.let {
@@ -3814,7 +3820,7 @@ class ChatViewModel(
         approvalExpiryJobs.put(key, job)?.cancel()
     }
 
-    /** Approve exactly once. Session-wide and permanent allows are not offered. */
+    /** Allow once, deny, or allow for this session when offered. Permanent allows are never offered. */
     fun respondToApproval(
         messageId: String,
         binding: PrivilegedRequestBinding,
@@ -3824,8 +3830,12 @@ class ChatViewModel(
             when (action) {
                 "approve" -> "once"
                 "deny" -> "deny"
-                // "session" / "always" are deliberately unreachable: a phone
-                // cannot show what a standing allow would later authorize.
+                "session" -> {
+                    val info = _uiState.value.messages.firstOrNull { it.id == messageId }?.approvalInfo
+                    if (info?.privilegedBinding != binding || !info.offersSession) return
+                    "session"
+                }
+                // Permanent grants remain unreachable, even through a stale callback.
                 else -> return
             }
         submitApproval(messageId, binding, WsMethods.APPROVAL_RESPOND, mapOf("choice" to choice))

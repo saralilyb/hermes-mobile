@@ -236,6 +236,9 @@ object EventParser {
                         sessionId = privilegedSessionId,
                         requestId = requestId,
                         timeoutSeconds = timeoutSeconds,
+                        allowSession = payload?.get("allow_session") as? Boolean,
+                        choices = (payload?.get("choices") as? List<*>)?.filterIsInstance<String>().orEmpty(),
+                        smartDenied = payload?.get("smart_denied") == true,
                     )
                 }
             }

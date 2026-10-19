@@ -1075,4 +1075,7 @@
     <string name="sessions_section_automation_unknown">自動化の実行</string>
     <string name="sessions_tab_automations">自動化</string>
     <string name="sessions_tab_conversations">会話</string>
+    <string name="chat_approval_allow_session">このセッション中は許可</string>
+    <string name="notif_approval_needed">Hermes が承認を求めています</string>
+    <string name="notif_input_needed">Hermes が入力を待っています</string>
 </resources>

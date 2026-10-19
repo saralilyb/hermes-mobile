@@ -821,4 +821,7 @@
         <item quantity="other">%1$d وكيل قيد التشغيل</item>
     </plurals>
     <string name="task_progress_open_details">فتح تفاصيل المهمة</string>
+    <string name="chat_approval_allow_session">السماح لهذه الجلسة</string>
+    <string name="notif_approval_needed">يحتاج Hermes إلى موافقتك</string>
+    <string name="notif_input_needed">ينتظر Hermes إدخالك</string>
 </resources>

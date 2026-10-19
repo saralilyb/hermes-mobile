@@ -1075,4 +1075,7 @@
     <string name="sessions_section_automation_unknown">자동화 실행</string>
     <string name="sessions_tab_automations">자동화</string>
     <string name="sessions_tab_conversations">대화</string>
+    <string name="chat_approval_allow_session">이 세션 동안 허용</string>
+    <string name="notif_approval_needed">Hermes에 승인이 필요합니다</string>
+    <string name="notif_input_needed">Hermes가 입력을 기다리고 있습니다</string>
 </resources>
