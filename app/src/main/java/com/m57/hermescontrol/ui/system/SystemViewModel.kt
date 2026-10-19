@@ -22,6 +22,7 @@ import com.m57.hermescontrol.data.model.SystemStatsResponse
 import com.m57.hermescontrol.data.model.UpdateCheckResponse
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.RestConnectionFence
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import kotlinx.coroutines.CoroutineDispatcher
@@ -422,18 +423,25 @@ class SystemViewModel(
     // ── Operation actions ──────────────────────────────────────────────
 
     fun runDoctor() {
+        val fence = RestConnectionFence.capture()
         viewModelScope.launch {
-            val result = withContext(ioDispatcher) { safeApiCall(retries = 0) { ApiClient.hermesApi.runDoctor() } }
+            val result =
+                withContext(ioDispatcher) {
+                    if (!fence.isCurrent()) return@withContext null
+                    safeApiCall(retries = 0) { ApiClient.hermesApi.runDoctor() }
+                }
+            if (!fence.isCurrent()) return@launch
             when (result) {
                 is NetworkResult.Success -> {
                     if (result.data.ok) {
-                        result.data.name?.let { pollActionStatus(it) }
+                        result.data.name?.let { pollActionStatus(it, fence) }
                         _uiState.update { it.copy(toastMessage = "Doctor started") }
                     } else {
                         _uiState.update { it.copy(toastMessage = "Doctor failed") }
                     }
                 }
                 is NetworkResult.Failure -> _uiState.update { it.copy(toastMessage = "Doctor failed") }
+                null -> Unit
             }
         }
     }
@@ -673,7 +681,10 @@ class SystemViewModel(
 
     // ── Action log polling ─────────────────────────────────────────────
 
-    private fun pollActionStatus(name: String) {
+    private fun pollActionStatus(
+        name: String,
+        fence: RestConnectionFence? = null,
+    ) {
         actionPollingJob?.cancel()
         _uiState.update {
             it.copy(
@@ -688,8 +699,12 @@ class SystemViewModel(
                     delay(1200)
                     val result =
                         withContext(ioDispatcher) {
-                            safeApiCall { ApiClient.hermesApi.getActionStatus(name) }
+                            if (fence?.isCurrent() == false) return@withContext null
+                            safeApiCall(retries = if (fence != null) 0 else 2) {
+                                ApiClient.hermesApi.getActionStatus(name)
+                            }
                         }
+                    if (fence?.isCurrent() == false) break
                     if (result is NetworkResult.Success) {
                         _uiState.update { it.copy(actionLog = result.data) }
                         if (result.data.running != true) {
