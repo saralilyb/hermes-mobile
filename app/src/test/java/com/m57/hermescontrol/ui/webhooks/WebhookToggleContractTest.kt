@@ -26,7 +26,8 @@ class WebhookToggleContractTest {
     @Before
     fun setup() {
         Dispatchers.setMain(dispatcher)
-        mockkObject(ApiClient)
+        mockkObject(ApiClient, com.m57.hermescontrol.data.local.AuthManager)
+        every { com.m57.hermescontrol.data.local.AuthManager.getSelectedProfileId() } returns "A"
         every { ApiClient.hermesApi } returns api
     }
 

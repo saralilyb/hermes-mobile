@@ -20,6 +20,11 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
  * host / port / token).
  */
 object ApiClient {
+    private val generation = java.util.concurrent.atomic.AtomicLong()
+
+    /** Changes whenever endpoint or credential settings rebuild the REST client. */
+    val connectionGeneration: Long get() = generation.get()
+
     @Volatile
     private var retrofit: Retrofit? = null
 
@@ -37,6 +42,7 @@ object ApiClient {
     /** Force-rebuild the Retrofit client (e.g. after settings change). */
     fun rebuild() {
         synchronized(this) {
+            generation.incrementAndGet()
             retrofit = null
             service = null
         }

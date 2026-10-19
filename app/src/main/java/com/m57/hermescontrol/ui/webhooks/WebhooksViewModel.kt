@@ -8,6 +8,7 @@ import com.m57.hermescontrol.data.model.WebhookSubscription
 import com.m57.hermescontrol.data.model.WebhookToggleSubscriptionRequest
 import com.m57.hermescontrol.data.remote.ApiClient
 import com.m57.hermescontrol.data.remote.NetworkResult
+import com.m57.hermescontrol.data.remote.RestConnectionFence
 import com.m57.hermescontrol.data.remote.safeApiCall
 import com.m57.hermescontrol.ui.common.ToastHost
 import com.m57.hermescontrol.ui.common.safeLaunchLoad
@@ -76,21 +77,31 @@ class WebhooksViewModel(
         )
     }
 
+    private var connection: RestConnectionFence? = null
+
+    private fun bindConnection(): RestConnectionFence {
+        if (connection?.isCurrent() == false) {
+            _uiState.value = WebhooksUiState()
+        }
+        return RestConnectionFence.capture().also { connection = it }
+    }
+
     fun toggleWebhooks(targetEnabled: Boolean) {
+        val fence = bindConnection()
         if (_uiState.value.isActionRunning) return
         val originalEnabled = _uiState.value.enabled
-        val service = ApiClient.hermesApi
         _uiState.update { it.copy(enabled = targetEnabled, isActionRunning = true, toastMessage = null) }
 
         viewModelScope.launch {
             try {
                 val result =
                     withContext(ioDispatcher) {
+                        if (!fence.isCurrent()) return@withContext null
                         safeApiCall(retries = 0) {
-                            service.configurePlatform("webhook", MessagingPlatformUpdate(enabled = targetEnabled))
+                            ApiClient.hermesApi.configurePlatform("webhook", MessagingPlatformUpdate(enabled = targetEnabled))
                         }
                     }
-                if (service !== ApiClient.hermesApi) return@launch
+                if (!fence.isCurrent()) return@launch
                 val accepted = result is NetworkResult.Success && result.data.ok == true
                 _uiState.update {
                     it.copy(
@@ -104,7 +115,9 @@ class WebhooksViewModel(
                     )
                 }
             } finally {
-                _uiState.update { it.copy(isActionRunning = false) }
+                if (fence.isCurrent()) {
+                    _uiState.update { it.copy(isActionRunning = false) }
+                }
             }
         }
     }
