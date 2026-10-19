@@ -7,6 +7,21 @@ import org.junit.Test
 
 class HistorySessionGroupsTest {
     @Test
+    fun `automation ignores project filters and collapse state`() {
+        val run = SessionInfo("cron_job_20260905_100000", source = "cron", cwd = "/app")
+        val state =
+            SessionsUiState(
+                section = HistorySection.AUTOMATIONS,
+                sessions = listOf(run),
+                projectFilter = "auto:/elsewhere",
+                collapsedProjectGroups = setOf("auto:/app"),
+            )
+        assertEquals(emptyList<Any>(), state.availableProjects)
+        assertEquals(listOf(run), state.projectFilteredSessions)
+        assertEquals("job", automationGroups(state.projectFilteredSessions).single().jobId)
+    }
+
+    @Test
     fun `groups durable job ids not titles`() {
         val groups =
             automationGroups(

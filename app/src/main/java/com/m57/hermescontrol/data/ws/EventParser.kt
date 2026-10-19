@@ -51,6 +51,7 @@ object EventParser {
         val privilegedSessionId = exactPrivilegedSessionId(params, payload)
 
         return when (eventType) {
+            "projects.changed" -> WsEvent.ProjectsChanged
             "gateway.ready" -> {
                 WsEvent.GatewayReady(payload)
             }

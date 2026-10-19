@@ -1083,4 +1083,10 @@
     <string name="chat_undo_confirm_title">Rewind %1$d turns?</string>
     <string name="chat_undo_confirm_desc">This will archive your recent conversation history.</string>
     <string name="chat_undo_confirm_action">Rewind</string>
+    <string name="sessions_project_home">Home</string>
+    <string name="sessions_group_by_project">Group by project</string>
+    <string name="sessions_project_group_collapse">Collapse %1$s</string>
+    <string name="sessions_project_group_expand">Expand %1$s</string>
+    <string name="sessions_project_group_count">%1$s (%2$d)</string>
+    <string name="sessions_project_loaded_scope">Projects shown in loaded Recents only</string>
 </resources>

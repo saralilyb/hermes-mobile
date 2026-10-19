@@ -26,6 +26,28 @@ import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionPinningTest {
+    @Test
+    fun `project filter preserves lineage pins and grouping never duplicates them`() {
+        val rows =
+            listOf(
+                SessionInfo("tip", _lineage_root_id = "root", cwd = "/a"),
+                SessionInfo("recent", cwd = "/b"),
+            )
+        val state =
+            SessionsUiState(
+                sessions = rows,
+                pinnedSessionIds = listOf("root", "tip"),
+                projectFilter = "auto:/b",
+            )
+        val sections = buildSessionSections(state.projectFilteredSessions, state.pinnedSessionIds)
+        assertEquals(listOf("tip"), sections.pinned.map { it.session.id })
+        assertEquals(
+            listOf("recent"),
+            groupSessionsByProject(sections.recent, emptyList())
+                .flatMap { it.items }.map { it.session.id },
+        )
+    }
+
     private val dispatcher = StandardTestDispatcher()
     private val api = mockk<HermesApiService>(relaxed = true)
 

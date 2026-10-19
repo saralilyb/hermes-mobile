@@ -2,6 +2,9 @@ package com.m57.hermescontrol.data.ws
 
 /** Parsed WebSocket events emitted by [HermesWsClient]. */
 sealed class WsEvent {
+    /** Invalidation only; metadata must be fetched on the source connection. */
+    data object ProjectsChanged : WsEvent()
+
     // ── Gateway lifecycle ────────────────────────────────────────────────
 
     data class GatewayReady(
