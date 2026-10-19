@@ -90,6 +90,9 @@ class AuthenticatedDisposableFixtureTest {
                                             webSocket: WebSocket,
                                             response: okhttp3.Response,
                                         ) {
+                                            webSocket.send(
+                                                """{"method":"event","params":{"type":"gateway.ready"}}""",
+                                            )
                                             peerSockets.offer(webSocket)
                                         }
 
@@ -236,6 +239,10 @@ class AuthenticatedDisposableFixtureTest {
             assertEquals(401, replay("never-issued"))
             assertEquals(setOf("ticket-1"), consumed.toSet())
             assertTrue(accepted.isEmpty())
+            assertTrue(
+                "Capability must precede the turn",
+                frames.poll(5, TimeUnit.SECONDS)?.contains("client.capabilities") == true,
+            )
             HermesWsClient.sendMessage("runtime-session", "fixture prompt")
             assertTrue(
                 "WebSocket frame not received",
@@ -245,6 +252,10 @@ class AuthenticatedDisposableFixtureTest {
             HermesWsClient.connect()
             withTimeout(5000) { HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED } }
             assertEquals("ticket-2", accepted.poll(5, TimeUnit.SECONDS))
+            assertTrue(
+                "Reconnect must advertise again",
+                frames.poll(5, TimeUnit.SECONDS)?.contains("client.capabilities") == true,
+            )
             assertEquals(2, tickets.get())
             assertEquals(setOf("ticket-1", "ticket-2"), consumed.toSet())
             assertEquals(2, issued.size)
