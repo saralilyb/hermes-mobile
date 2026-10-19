@@ -106,3 +106,20 @@ val CodeDiffDeleteBg = Color(0x26FF5C5C)
 val CodeDiffDeleteText = Color(0xFFFF5C5C)
 val CodeDiffHunkBg = Color(0x264DA8FF)
 val CodeDiffHunkText = Color(0xFF4DA8FF)
+
+private val projectHsl = Regex("""^hsl\(\s*([0-9.]{1,8})[ ,]+([0-9.]{1,8})%[ ,]+([0-9.]{1,8})%\s*\)$""")
+
+/** Bounded display accent parser; arbitrary CSS, URLs and alpha expressions are not supported. */
+fun parseProjectColor(raw: String?): Color? {
+    if (raw == null || raw.length > 64) return null
+    val text = raw.trim()
+    if (Regex("#[0-9a-fA-F]{6}").matches(text)) {
+        return Color((text.drop(1).toLong(16) or 0xFF000000).toInt())
+    }
+    val values = projectHsl.matchEntire(text)?.groupValues?.drop(1)?.map { it.toFloatOrNull() } ?: return null
+    val h = values[0] ?: return null
+    val s = values[1] ?: return null
+    val l = values[2] ?: return null
+    if (h !in 0f..360f || s !in 0f..100f || l !in 0f..100f) return null
+    return Color.hsl(h % 360f, s / 100f, l / 100f)
+}

@@ -1,3 +1,29 @@
+## Read-only Projects phase 1 (2026-10-19)
+
+Adapted `aed8ba4a`, the projects.list portion of `445da9fe`, `22e70cf9`, and
+only #1562 projects.changed invalidation from `dd1f2b05`. The existing private
+History card, local lineage pins, automation sections, pagination and search
+remain downstream-owned. No typed-RPC architecture or manageable-list redesign.
+
+- Decode real snake_case project metadata and legacy SQLite booleans; optional
+  session cwd/git_repo_root/last_active require no database migration.
+- Dispatch only `projects.list {}` using the exact connection-bound awaited
+  transport, never a queued request or a local ID as a server `profile`.
+- Distinguish initial/offline/unsupported/failed from an empty successful list;
+  fence all results by owner and generation; retain last-good only for that owner.
+- Resolve remote paths lexically for display, retaining POSIX backslashes and
+  separating relative/absolute identities. Deepest cwd match wins, primary breaks
+  ties, then recorded repo ownership; archived projects fall back to auto-workspaces.
+- Keys use project IDs, normalized auto paths and a Home sentinel, never names.
+  Filter only loaded Recents after the lineage-pin partition; pins stay visible.
+  Search and automation grouping ignore the project filter.
+- Source-bound events coalesce for 250 ms per owner; reconnect and manual refresh
+  refetch. No discovery, file/URI access, project mutation or chat launch/move.
+- A minimal transport change preserves JSON-RPC error codes on awaited errors so
+  -32601 is distinguishable from a failed read. No transport queue/retry changes.
+
+`UPSTREAM.json` remains unchanged: this is selective adoption, not a baseline move.
+
 ## Low-risk gateway correctness batch (2026-10-19)
 
 Based on fork `630ff207b88873efc8f4a99c45ecbf46c70ccba7`. Selective adaptations:

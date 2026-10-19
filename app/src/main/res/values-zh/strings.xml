@@ -1082,4 +1082,10 @@
     <string name="chat_undo_confirm_title">回退 %1$d 轮对话？</string>
     <string name="chat_undo_confirm_desc">这将归档最近的对话历史。</string>
     <string name="chat_undo_confirm_action">回退</string>
+    <string name="sessions_project_home">主页</string>
+    <string name="sessions_group_by_project">按项目分组</string>
+    <string name="sessions_project_group_collapse">折叠 %1$s</string>
+    <string name="sessions_project_group_expand">展开 %1$s</string>
+    <string name="sessions_project_group_count">%1$s（%2$d）</string>
+    <string name="sessions_project_loaded_scope">仅显示已加载的最近会话中的项目</string>
 </resources>

@@ -34,6 +34,18 @@ import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionSearchCorrectnessTest {
+    @Test
+    fun `server search ignores retained project filter and collapse`() {
+        coEvery { api.searchSessions(any(), any(), any(), any()) } returns hits("outside")
+        val vm = viewModel()
+        vm.selectProjectFilter("project:only")
+        vm.toggleProjectGroup("project:only")
+        vm.setSearchQuery("needle")
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf("outside"), vm.uiState.value.searchResults.map { it.session_id })
+        assertTrue(vm.uiState.value.availableProjects.isEmpty())
+    }
+
     private val dispatcher = StandardTestDispatcher()
     private val api = mockk<HermesApiService>(relaxed = true)
 

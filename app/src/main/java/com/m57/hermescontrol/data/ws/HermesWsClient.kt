@@ -585,6 +585,7 @@ object HermesWsClient {
     /** Thrown when an awaited [request] is neither answered nor rejected within [REQUEST_TIMEOUT_MS], or is rejected by a disconnect. */
     class HermesRpcException(
         message: String,
+        val code: Int? = null,
     ) : Exception(message)
 
     /**
@@ -878,7 +879,7 @@ object HermesWsClient {
         val call = pendingCalls.remove(id) ?: return null
         call.timeoutJob?.cancel()
         if (error != null) {
-            call.deferred.completeExceptionally(HermesRpcException(error.message))
+            call.deferred.completeExceptionally(HermesRpcException(error.message, error.code))
         } else {
             call.deferred.complete(result)
         }

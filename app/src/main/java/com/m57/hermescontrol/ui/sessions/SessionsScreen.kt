@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -334,9 +335,16 @@ fun SessionsScreen(
     var expandedAutomationGroups by remember { mutableStateOf(emptySet<String>()) }
 
     val sessionSections =
-        remember(state.sessions, state.pinnedSessionIds) {
+        remember(
+            state.sessions,
+            state.pinnedSessionIds,
+            state.projectFilter,
+            state.projects,
+            state.isSearchMode,
+            state.section,
+        ) {
             buildSessionSections(
-                sessions = state.sessions,
+                sessions = state.projectFilteredSessions,
                 pinnedSessionIds = state.pinnedSessionIds,
             )
         }
@@ -530,6 +538,45 @@ fun SessionsScreen(
                     onClick = { screenViewModel.selectSection(HistorySection.AUTOMATIONS) },
                     label = { Text(stringResource(R.string.sessions_tab_automations)) },
                     modifier = Modifier.testTag("history_tab_automations"),
+                )
+            }
+
+            if (state.availableProjects.isNotEmpty()) {
+                androidx.compose.foundation.lazy.LazyRow(
+                    modifier = Modifier.fillMaxWidth().testTag("history_project_chips"),
+                    contentPadding = PaddingValues(horizontal = spacing.md),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                ) {
+                    item {
+                        FilterChip(
+                            selected = state.groupByProject,
+                            onClick = { screenViewModel.toggleGroupByProject() },
+                            label = { Text(stringResource(R.string.sessions_group_by_project)) },
+                            modifier = Modifier.testTag("history_group_by_project"),
+                        )
+                    }
+                    items(state.availableProjects, key = { it.key }) { choice ->
+                        FilterChip(
+                            selected = state.projectFilter == choice.key,
+                            onClick = { screenViewModel.selectProjectFilter(choice.key) },
+                            label = {
+                                Text(
+                                    projectDisplayText(
+                                        choice.label.ifEmpty { stringResource(R.string.sessions_project_home) },
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 180.dp),
+                                )
+                            },
+                            modifier = Modifier.testTag("history_project_chip_${choice.key}"),
+                        )
+                    }
+                }
+                Text(
+                    stringResource(R.string.sessions_project_loaded_scope),
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = spacing.md),
                 )
             }
 
@@ -799,6 +846,7 @@ fun SessionsScreen(
                                 SessionCard(
                                     session = session,
                                     liveStatus = state.liveStatuses[session.id],
+                                    project = resolveSessionProject(session, state.projects),
                                     liveStatusesAuthoritative = state.liveStatusesAuthoritative,
                                     displayTitle = item.displayTitle,
                                     isFork = item.isFork,
@@ -892,6 +940,27 @@ fun SessionsScreen(
                                             ) { session ->
                                                 recentItemsById[session.id]?.let { sessionRow(it) }
                                             }
+                                        }
+                                    }
+                                } else if (state.groupByProject) {
+                                    groupSessionsByProject(sessionSections.recent, state.projects).forEach { group ->
+                                        val expanded = group.key !in state.collapsedProjectGroups
+                                        item(key = "project_header_${group.key}") {
+                                            com.m57.hermescontrol.ui.sessions.components.ProjectGroupHeader(
+                                                label =
+                                                    group.label.ifEmpty {
+                                                        stringResource(
+                                                            R.string.sessions_project_home,
+                                                        )
+                                                    },
+                                                count = group.items.size,
+                                                expanded = expanded,
+                                                onToggle = { screenViewModel.toggleProjectGroup(group.key) },
+                                                modifier = Modifier.testTag("history_project_group_${group.key}"),
+                                            )
+                                        }
+                                        if (expanded) {
+                                            items(group.items, key = { it.session.id }) { sessionRow(it) }
                                         }
                                     }
                                 } else {
@@ -1182,6 +1251,7 @@ private fun SessionCard(
     session: com.m57.hermescontrol.data.model.SessionInfo,
     liveStatus: SessionLiveStatus?,
     liveStatusesAuthoritative: Boolean,
+    project: SessionProject?,
     displayTitle: String,
     isFork: Boolean,
     forkDepth: Int,
@@ -1276,6 +1346,19 @@ private fun SessionCard(
 
             // Main content
             Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val accent = com.m57.hermescontrol.theme.parseProjectColor(project?.color)
+                    if (accent != null) {
+                        Text("●", color = accent, modifier = Modifier.padding(end = spacing.xs))
+                    }
+                    Text(
+                        projectDisplayText(project?.label ?: stringResource(R.string.sessions_project_home)),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag("session_project_${session.id}"),
+                    )
+                }
                 Text(
                     text =
                         if (query.isNotBlank()) {

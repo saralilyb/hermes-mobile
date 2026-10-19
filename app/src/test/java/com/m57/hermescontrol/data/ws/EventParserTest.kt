@@ -30,6 +30,20 @@ private fun createJsonRpcResponse(
     )
 
 class EventParserTest {
+    @Test
+    fun `projects changed is invalidation not payload metadata`() {
+        val event =
+            EventParser.parse(
+                createJsonRpcResponse(
+                    jsonrpc = "2.0",
+                    id = null,
+                    method = "event",
+                    params = mapOf("type" to "projects.changed", "payload" to mapOf("projects" to "untrusted")),
+                ),
+            )
+        assertEquals(WsEvent.ProjectsChanged, event)
+    }
+
     @Before
     fun setUp() {
         mockkStatic(android.util.Log::class)
