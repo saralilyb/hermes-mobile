@@ -75,6 +75,18 @@ changes the backend's sticky CLI default, not the running dashboard's profile.
 Expanding implicit route scoping requires implementing and testing that distinct
 identity first, including connection switches and stale asynchronous responses.
 
+Webhook enablement and explicit Doctor operations capture the saved connection
+ID and REST rebuild generation on acceptance. They validate it on the dispatch
+thread before resolving the current service and discard stale responses; Doctor
+polling uses the same fence. These are admission/publication fences, **not**
+immutable credential snapshots. The shared REST interceptor and authenticator
+still read live authentication state, and cookie loading remains shared. A
+concurrent credential/connection change after the preflight but before OkHttp
+interception retains the pre-existing class-wide check/use race. Do not retain a
+Retrofit service across dispatcher hops or describe these fences as complete
+REST credential isolation; closing that race requires a separate transport-wide
+authentication design.
+
 ## Android component exposure
 
 Only the launcher activity is exported. The notification service, notification

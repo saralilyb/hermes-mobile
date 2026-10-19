@@ -19,11 +19,14 @@ Based on fork `630ff207b88873efc8f4a99c45ecbf46c70ccba7`. Selective adaptations:
   IDs and refresh authoritative survivors. Do not infer deleted IDs by subtracting
   an optional skipped list from an otherwise unconfirmed response.
 - `dd1f2b05d32a5b8a151b3aa62805a63439cd19fd`: ONLY #1551 billing outcome
-  classification, #1550 webhook configuration/overlap/refusal handling, #1559
-  explicit Doctor and optional status gateway PID, #1567 progressive structured
-  Config loading, and #1556 session/connection-fenced command catalogs. Retain
-  schema-aware editor reconciliation and generation fencing. No local connection
-  ID is sent as a server management profile.
+  classification, #1550 webhook configuration/overlap/refusal handling with
+  connection-bound dispatch and load/mutation reconciliation, #1559 explicit
+  connection-bound Doctor dispatch/polling and optional status gateway PID, #1567
+  progressive structured Config loading, and #1556 session/connection-fenced
+  command catalog successes and errors (before generic error reduction). Retain
+  schema-aware editor reconciliation and generation fencing. REST operation
+  preflights do not remove the pre-existing live-auth interceptor check/use race;
+  see SECURITY.md. No local connection ID is sent as a server management profile.
 
 No auth/token/retry/OAuth/upload, updater/update receipts, Ko-fi/what's-new,
 dependency/CI policy, German, Local Models, Projects, or approvals ports.
