@@ -25,6 +25,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -290,6 +293,251 @@ class HermesWsClientTest {
             assertEquals("stored-a", sourced.storedSessionId)
             assertEquals(activeConnectionGeneration(), sourced.connectionGeneration)
         }
+
+    @Test
+    fun missingReadySilentPeerDetachesAndReplaysSessionWorkAfterReconnect() =
+        missingReadyReconnectScenario(noisy = false)
+
+    @Test
+    fun missingReadyNoisyPeerDetachesAndReplaysSessionWorkAfterReconnect() = missingReadyReconnectScenario(noisy = true)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun missingReadyReconnectScenario(noisy: Boolean) =
+        withReadinessClock { clock ->
+            every { AuthManager.isAutoReconnect() } returns true
+            val replacementFrames = java.util.concurrent.LinkedBlockingQueue<String>()
+            mockWebServer.enqueue(
+                MockResponse().withWebSocketUpgrade(
+                    object : WebSocketListener() {
+                        override fun onOpen(
+                            webSocket: WebSocket,
+                            response: okhttp3.Response,
+                        ) {
+                            webSocket.send(READY_FRAME)
+                        }
+
+                        override fun onMessage(
+                            webSocket: WebSocket,
+                            text: String,
+                        ) {
+                            replacementFrames.add(text)
+                        }
+                    },
+                ),
+            )
+            val socket = mockk<WebSocket>(relaxed = true)
+            every { socket.send(any<String>()) } returns true
+            val listener = openActiveListener(socket)
+            val create = HermesWsClient.send(WsMethods.SESSION_CREATE)
+            val resume = HermesWsClient.send(WsMethods.SESSION_RESUME, mapOf("session_id" to "stored-a"))
+            val waiting = HermesWsClient.request("test.waiting")
+            clock.runCurrent()
+            repeat(3) {
+                clock.advanceTimeBy(5_000)
+                if (noisy) listener.onMessage(socket, """{"method":"unrelated.notification","params":{}}""")
+            }
+            clock.runCurrent()
+            assertFalse("Missing gateway.ready must detach even if unrelated frames arrive", HermesWsClient.isConnected)
+            assertTrue("Awaited calls must fail when the unready socket detaches", waiting.isCompleted)
+            verify(exactly = 1) { socket.cancel() }
+            assertEquals(ConnectionStatus.RECONNECTING, HermesWsClient.connectionStatus.value)
+            assertTrue(
+                outboundQueue().any { Json.parseToJsonElement(it).jsonObject["id"]?.jsonPrimitive?.content == create },
+            )
+            assertTrue(
+                outboundQueue().any { Json.parseToJsonElement(it).jsonObject["id"]?.jsonPrimitive?.content == resume },
+            )
+            val frames =
+                (1..4).map { requireNotNull(replacementFrames.poll(5, TimeUnit.SECONDS)) }
+                    .map { Json.parseToJsonElement(it).jsonObject }
+            assertEquals("client.capabilities", frames.first()["method"]?.jsonPrimitive?.content)
+            assertEquals(listOf(create, resume), frames.drop(1).take(2).map { it["id"]?.jsonPrimitive?.content })
+            assertTrue(outboundQueue().isEmpty())
+            // Terminal callbacks from the timed-out socket must not clobber the replacement.
+            listener.onClosed(socket, 4401, "auth: late rejection")
+            assertTrue(HermesWsClient.isConnected)
+        }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun missingReadyGatedPeerReconnectMintsNewSingleUseTicket() =
+        withReadinessClock { clock ->
+            every { AuthManager.isGatedMode() } returns true
+            every { AuthManager.isAutoReconnect() } returns true
+            every { AuthManager.endpointForBuild() } returns
+                ServerEndpoint.parse(mockWebServer.url("/").toString(), CleartextPolicy.ALLOW_WITH_WARNING)
+            every { AuthManager.wsUrlWithCredential(any(), any()) } answers {
+                mockWebServer.url("/?ticket=${firstArg<String>()}").toString().replace("http://", "ws://")
+            }
+            val frames = java.util.concurrent.LinkedBlockingQueue<String>()
+            mockWebServer.enqueue(MockResponse().setBody("""{"ticket":"ticket-first"}"""))
+            mockWebServer.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}))
+            mockWebServer.enqueue(MockResponse().setBody("""{"ticket":"ticket-next"}"""))
+            mockWebServer.enqueue(
+                MockResponse().withWebSocketUpgrade(
+                    object : WebSocketListener() {
+                        override fun onOpen(
+                            webSocket: WebSocket,
+                            response: okhttp3.Response,
+                        ) {
+                            webSocket.send(READY_FRAME)
+                        }
+
+                        override fun onMessage(
+                            webSocket: WebSocket,
+                            text: String,
+                        ) {
+                            frames.add(text)
+                        }
+                    },
+                ),
+            )
+            HermesWsClient.connect()
+            runBlocking {
+                withTimeout(
+                    5_000,
+                ) { HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED } }
+            }
+            val create = HermesWsClient.send(WsMethods.SESSION_CREATE)
+            clock.runCurrent()
+            clock.advanceTimeBy(15_000)
+            clock.runCurrent()
+            assertFalse("Unready real upgrade must detach", HermesWsClient.isConnected)
+            val received =
+                (1..2).map {
+                    Json.parseToJsonElement(
+                        requireNotNull(frames.poll(5, TimeUnit.SECONDS)),
+                    ).jsonObject
+                }
+            assertEquals("client.capabilities", received.first()["method"]?.jsonPrimitive?.content)
+            assertEquals(create, received.last()["id"]?.jsonPrimitive?.content)
+            val requests = (1..4).map { requireNotNull(mockWebServer.takeRequest(5, TimeUnit.SECONDS)) }
+            assertEquals(
+                listOf("/api/auth/ws-ticket", "/api/auth/ws-ticket"),
+                requests.filterIndexed {
+                        i,
+                        _,
+                    ->
+                    i % 2 == 0
+                }.map { it.path },
+            )
+            assertEquals(
+                listOf("ticket-first", "ticket-next"),
+                requests.filterIndexed {
+                        i,
+                        _,
+                    ->
+                    i % 2 == 1
+                }.map { it.requestUrl?.queryParameter("ticket") },
+            )
+        }
+
+    @Test
+    fun readinessHoldDoesNotBlockGatewayPing() =
+        withReadinessClock {
+            val frames = mutableListOf<String>()
+            val socket = mockk<WebSocket>(relaxed = true)
+            every { socket.send(capture(frames)) } returns true
+            val listener = openActiveListener(socket)
+            HermesWsClient.send(WsMethods.SESSION_CREATE)
+            val ping = HermesWsClient.request(WsMethods.GATEWAY_PING)
+            assertEquals("Ping must bypass the readiness hold", 1, frames.size)
+            val frame = Json.parseToJsonElement(frames.single()).jsonObject
+            assertEquals(WsMethods.GATEWAY_PING, frame["method"]?.jsonPrimitive?.content)
+            listener.onMessage(socket, """{"id":"${frame["id"]!!.jsonPrimitive.content}","result":{}}""")
+            assertTrue(ping.isCompleted)
+            assertEquals(1, outboundQueue().size)
+        }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun readinessDeadlineCannotDetachReplacementEvenIfOldTimerWasNotCancelled() =
+        withReadinessClock { clock ->
+            val old = mockk<WebSocket>(relaxed = true)
+            openActiveListener(old)
+            clock.runCurrent()
+            clock.advanceTimeBy(5_000)
+            // Lose only the cancellation handle: independently prove the socket/generation fence.
+            HermesWsClient::class.java.declaredFields.firstOrNull { it.name == "gatewayReadyJob" }?.apply {
+                isAccessible = true
+                set(HermesWsClient, null)
+            }
+            val replacement = mockk<WebSocket>(relaxed = true)
+            openActiveListener(replacement)
+            clock.runCurrent()
+            clock.advanceTimeBy(10_000)
+            clock.runCurrent()
+            assertTrue("Retired timer must not detach an unready replacement", HermesWsClient.isConnected)
+            verify(exactly = 0) { replacement.cancel() }
+            verify(exactly = 0) { old.cancel() }
+            clock.advanceTimeBy(5_000)
+            clock.runCurrent()
+            assertFalse("Replacement must retain its own deadline", HermesWsClient.isConnected)
+            verify(exactly = 1) { replacement.cancel() }
+        }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun gatewayReadyCancelsReadinessDeadline() =
+        withReadinessClock { clock ->
+            val socket = mockk<WebSocket>(relaxed = true)
+            every { socket.send(any<String>()) } returns true
+            val listener = openActiveListener(socket)
+            clock.runCurrent()
+            clock.advanceTimeBy(14_999)
+            listener.onMessage(socket, READY_FRAME)
+            HermesWsClient::class.java.declaredFields.firstOrNull { it.name == "gatewayReadyJob" }?.apply {
+                isAccessible = true
+                assertNull("Readiness must cancel and retire the scheduled job", get(HermesWsClient))
+            }
+            clock.advanceTimeBy(30_000)
+            clock.runCurrent()
+            assertTrue(HermesWsClient.isConnected)
+            verify(exactly = 0) { socket.cancel() }
+        }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun credentialDisconnectDropsReadinessHeldFramesAndStopsDeadline() =
+        withReadinessClock { clock ->
+            val socket = mockk<WebSocket>(relaxed = true)
+            openActiveListener(socket)
+            HermesWsClient.send(WsMethods.SESSION_CREATE)
+            clock.runCurrent()
+            HermesWsClient.disconnect(clearPendingMessages = true)
+            clock.advanceTimeBy(15_000)
+            clock.runCurrent()
+            assertTrue(outboundQueue().isEmpty())
+            assertEquals(ConnectionStatus.DISCONNECTED, HermesWsClient.connectionStatus.value)
+            verify(exactly = 0) { socket.cancel() }
+        }
+
+    private fun openActiveListener(socket: WebSocket): WebSocketListener =
+        installActiveListener(socket).also {
+            it.onOpen(
+                socket,
+                okhttp3.Response.Builder().request(okhttp3.Request.Builder().url("https://example.com").build())
+                    .protocol(okhttp3.Protocol.HTTP_1_1).code(101).message("Switching Protocols").build(),
+            )
+        }
+
+    private fun withReadinessClock(test: (TestScope) -> Unit) {
+        val original = HermesWsClient.readinessTimeoutScope
+        val clock = TestScope()
+        every { AuthManager.getSelectedProfileId() } returns "profile-a"
+        HermesWsClient::class.java.getDeclaredField("intentionalClose").apply {
+            isAccessible = true
+            (get(HermesWsClient) as AtomicBoolean).set(false)
+        }
+        HermesWsClient.readinessTimeoutScope = clock.backgroundScope
+        try {
+            test(clock)
+        } finally {
+            HermesWsClient.disconnect(clearPendingMessages = true)
+            HermesWsClient.readinessTimeoutScope = original
+            clock.backgroundScope.coroutineContext[Job]?.cancel()
+        }
+    }
 
     private companion object {
         const val READY_FRAME = """{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}"""

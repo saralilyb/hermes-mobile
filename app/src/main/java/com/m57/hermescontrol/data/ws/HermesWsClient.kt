@@ -120,6 +120,16 @@ object HermesWsClient {
     private const val STALE_THRESHOLD_MS = 45_000L
     private const val LIVENESS_PROBE_TIMEOUT_MS = 5_000L
 
+    // Readiness-hold liveness: match the 15s connect timeout and stay below the
+    // 30s single-use ticket TTL. Inbound traffic must not extend this deadline.
+    private const val GATEWAY_READY_TIMEOUT_MS = 15_000L
+    private var gatewayReadyJob: Job? = null
+
+    private fun cancelGatewayReadyDeadlineLocked() {
+        gatewayReadyJob?.cancel()
+        gatewayReadyJob = null
+    }
+
     private fun monotonicTimeMs(): Long = System.nanoTime() / 1_000_000L
 
     // ── Internal state (all access through synchronized / atomic) ────────
@@ -178,6 +188,10 @@ object HermesWsClient {
     private var currentBackoff = INITIAL_BACKOFF_MS
 
     private val wsScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // Only this bounded timer is injectable; singleton collectors keep their original scope.
+    @VisibleForTesting
+    internal var readinessTimeoutScope: CoroutineScope = wsScope
 
     @Volatile
     private var reconnectJob: Job? = null
@@ -383,6 +397,7 @@ object HermesWsClient {
      */
     private fun closeIdleBackgroundSocket() {
         cancelBackgroundIdleCloseLocked()
+        cancelGatewayReadyDeadlineLocked()
         connectionGeneration.incrementAndGet()
         backgroundIdleClosed.set(true)
         reconnectJob?.cancel()
@@ -552,6 +567,7 @@ object HermesWsClient {
     fun disconnect(clearPendingMessages: Boolean = false) {
         synchronized(connectionLock) {
             cancelBackgroundIdleCloseLocked()
+            cancelGatewayReadyDeadlineLocked()
             connectionGeneration.incrementAndGet()
             intentionalClose.set(true)
             backgroundIdleClosed.set(false)
@@ -983,7 +999,7 @@ object HermesWsClient {
                 pendingReply = true
             }
             val ws = webSocket
-            if (ws != null && connected.get() && !awaitingGatewayReady) {
+            if (ws != null && connected.get() && (!awaitingGatewayReady || method == WsMethods.GATEWAY_PING)) {
                 if (!pendingCalls.containsKey(id)) {
                     replayAdmission(method, params)?.let { pendingReplayResponses[id] = it }
                 }
@@ -1449,6 +1465,8 @@ object HermesWsClient {
             if (generation != connectionGeneration.get() || socket !== webSocket) {
                 return@synchronized false
             }
+            cancelGatewayReadyDeadlineLocked()
+            awaitingGatewayReady = false
             webSocket = null
             activeConnectionProfileId = null
             activeConnectionGeneration = -1
@@ -1578,8 +1596,25 @@ object HermesWsClient {
                 Log.i(TAG, "WebSocket opened")
                 connected.set(true)
                 awaitingGatewayReady = true
+                cancelGatewayReadyDeadlineLocked()
+                gatewayReadyJob =
+                    readinessTimeoutScope.launch {
+                        delay(GATEWAY_READY_TIMEOUT_MS)
+                        synchronized(connectionLock) {
+                            if (generation != connectionGeneration.get() ||
+                                eventSocketGeneration != activeConnectionGeneration ||
+                                webSocket !== HermesWsClient.webSocket || !awaitingGatewayReady
+                            ) {
+                                return@synchronized
+                            }
+                            // Use the ordinary non-auth terminal path: detach first so
+                            // cancel's callback is stale, retain queued work, and mint
+                            // a fresh ticket on the normal backoff reconnect.
+                            onFailure(webSocket, java.io.IOException("Gateway readiness timed out"), null)
+                            webSocket.cancel()
+                        }
+                    }
                 _connectionStatus.value = ConnectionStatus.CONNECTED
-                currentBackoff = INITIAL_BACKOFF_MS
                 startHealthTracking()
             }
         }
@@ -1643,6 +1678,8 @@ object HermesWsClient {
                 }
                 if (event is WsEvent.GatewayReady) {
                     if (!connected.get()) return
+                    cancelGatewayReadyDeadlineLocked()
+                    currentBackoff = INITIAL_BACKOFF_MS
                     // Readiness proves this ticket usable even if advertisement/drain rejects a write.
                     ticketAuthRetryUsed.set(false)
                     if (!advertiseCapabilities(webSocket)) {
