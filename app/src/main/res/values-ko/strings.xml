@@ -1075,4 +1075,8 @@
     <string name="sessions_section_automation_unknown">자동화 실행</string>
     <string name="sessions_tab_automations">자동화</string>
     <string name="sessions_tab_conversations">대화</string>
+    <string name="cron_status_scheduled">예약됨</string>
+    <string name="cron_status_completed">완료됨</string>
+    <string name="cron_status_error">오류</string>
+    <string name="cron_status_unknown">알 수 없음</string>
 </resources>

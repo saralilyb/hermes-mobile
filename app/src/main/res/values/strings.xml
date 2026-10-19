@@ -1076,4 +1076,8 @@
     <string name="subagent_status_completed">Completed</string>
     <string name="subagent_status_cancelled">Cancelled</string>
     <string name="subagent_status_failed">Failed</string>
+    <string name="cron_status_scheduled">Scheduled</string>
+    <string name="cron_status_completed">Completed</string>
+    <string name="cron_status_error">Error</string>
+    <string name="cron_status_unknown">Unknown</string>
 </resources>

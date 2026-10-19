@@ -1075,4 +1075,8 @@
     <string name="sessions_section_automation_unknown">自動化の実行</string>
     <string name="sessions_tab_automations">自動化</string>
     <string name="sessions_tab_conversations">会話</string>
+    <string name="cron_status_scheduled">実行予定</string>
+    <string name="cron_status_completed">完了</string>
+    <string name="cron_status_error">エラー</string>
+    <string name="cron_status_unknown">不明</string>
 </resources>

@@ -1075,4 +1075,8 @@
     <string name="sessions_section_automation_unknown">自动化运行</string>
     <string name="sessions_tab_automations">自动化</string>
     <string name="sessions_tab_conversations">对话</string>
+    <string name="cron_status_scheduled">已计划</string>
+    <string name="cron_status_completed">已完成</string>
+    <string name="cron_status_error">错误</string>
+    <string name="cron_status_unknown">未知</string>
 </resources>

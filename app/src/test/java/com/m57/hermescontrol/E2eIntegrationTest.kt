@@ -553,14 +553,14 @@ class E2eIntegrationTest {
             viewModel.resumeCronJob("id1")
             // Verify optimistic update
             assertEquals(
-                "active",
+                "scheduled",
                 viewModel.uiState.value.jobs[0]
                     .state,
             )
 
             advanceUntilIdle()
             assertEquals(
-                "active",
+                "scheduled",
                 viewModel.uiState.value.jobs[0]
                     .state,
             )

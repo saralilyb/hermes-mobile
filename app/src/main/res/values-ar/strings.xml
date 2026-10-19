@@ -821,4 +821,8 @@
         <item quantity="other">%1$d وكيل قيد التشغيل</item>
     </plurals>
     <string name="task_progress_open_details">فتح تفاصيل المهمة</string>
+    <string name="cron_status_scheduled">مجدول</string>
+    <string name="cron_status_completed">مكتمل</string>
+    <string name="cron_status_error">خطأ</string>
+    <string name="cron_status_unknown">غير معروف</string>
 </resources>
