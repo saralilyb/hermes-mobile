@@ -36,8 +36,9 @@ Based on fork `630ff207b88873efc8f4a99c45ecbf46c70ccba7`. Selective adaptations:
   unsupported response rather than being queued as prompt text.
 - `dd9e23c5acc367a880ce82f664791fcdb4429b74`: connection/resume notices no longer
   become transcript rows; connection status stays in the banner.
-- `54c1fa2435a35344d84dd6987c41acd1b94666ba`: full-width inner composer text box
-  anchors the RTL caret. Instrumented regression requires parent-owned execution.
+- `54c1fa2435a35344d84dd6987c41acd1b94666ba`: not ported. The downstream composer
+  already aligns RTL input to the end edge (`Alignment.CenterEnd`, right text
+  alignment); the wrapper changed nothing and its device regression failed.
 - `a90792d5a599c7e1ab1d6f55985462c2f1f18311`: multi-turn undo confirmation retains
   downstream UndoFence and discards pending confirmation on conversation changes.
 - `474642c2d712a25c5b4f06639919d93d84af43a3`: skipped as already covered by
