@@ -328,9 +328,7 @@ fun ChatInputBar(
                                                             modifier = Modifier.fillMaxWidth(),
                                                         )
                                                     }
-                                                    Box(modifier = Modifier.fillMaxWidth()) {
-                                                        innerTextField()
-                                                    }
+                                                    innerTextField()
                                                 }
                                             }
 

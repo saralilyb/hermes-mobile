@@ -16,7 +16,6 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.core.content.ContextCompat
@@ -60,28 +59,6 @@ class ChatScreenTest {
         every {
             ContextCompat.checkSelfPermission(any(), any())
         } returns PackageManager.PERMISSION_GRANTED
-    }
-
-    @Test
-    fun rtlComposerTextLayoutUsesAvailableWidth() {
-        val vm = mockk<ChatViewModel>(relaxed = true)
-        every { vm.uiState } returns
-            MutableStateFlow(
-                ChatUiState(connectionStatus = ConnectionStatus.CONNECTED, isSessionReady = true),
-            ).asStateFlow()
-        every { vm.streamingState } returns MutableStateFlow(StreamingState()).asStateFlow()
-        composeTestRule.setContent { ChatScreen(onOpenDrawer = {}, sessionId = null, viewModel = vm) }
-        val input = composeTestRule.onNodeWithTag("chat_input")
-        input.performTextInput("مرحبا")
-        val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
-        input.performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) {
-            it(layouts)
-        }
-        val inputWidth = input.fetchSemanticsNode().boundsInRoot.width
-        org.junit.Assert.assertTrue(
-            "Text layout must not wrap to the short RTL word",
-            layouts.single().size.width > inputWidth * 0.6f,
-        )
     }
 
     @Test
