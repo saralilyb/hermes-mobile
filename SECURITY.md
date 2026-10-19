@@ -86,18 +86,23 @@ features.
 ## Gateway requests and background notifications
 
 After `gateway.ready`, each WebSocket connection advertises
-`client.capabilities {server_requests: true}` once. Negotiation and responses
+`client.capabilities {server_requests: true}` once, before releasing queued
+session work. Negotiation and responses
 remain bound to the receiving socket generation; rejected capability RPCs are
 quietly tolerated. Unsupported request methods receive a same-ID `-32601`
 error without request parameters in logs. Desktop-owned preview, terminal,
 window, tour, and theme-apply requests receive `4404` only when that connection
 negotiated `declines_not_shown`; otherwise Mobile leaves them unanswered so it
 does not preempt another client. Approval cards offer session permission only
-when the request permits it, and never offer permanent permission.
+when the request permits it, and never offer permanent permission. Malformed
+present choice metadata cannot enable session permission. Resumed requests are
+matched to the reply's live runtime ID and delivered after session establishment;
+clarification locks include null answers (skipped, not editable).
 
 Background approval notifications use fixed localized text, “Hermes needs your
-approval”; credential and vault input notifications use “Hermes is waiting for
-your input”. They include no command, description, tool, pattern, secret, or
+approval”; current-protocol clarification notifications use “Hermes needs a
+clarification”; credential and vault input notifications use “Hermes is waiting
+for your input”. They include no command, description, tool, pattern, secret, or
 session title, and have no inline actions or Quick Reply. Replayed requests are
 silent and live request IDs are deduplicated in bounded, profile-scoped memory.
 Immutable taps use the non-exported notification entry activity and the source
