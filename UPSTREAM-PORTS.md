@@ -1,3 +1,34 @@
+## Low-risk gateway correctness batch (2026-10-19)
+
+Based on fork `630ff207b88873efc8f4a99c45ecbf46c70ccba7`. Selective adaptations:
+
+- `a79c8e570e69cfd7f8f99dfa9d1e34611c1c160e`: scheduled/active cron jobs pause,
+  paused/error resume, completed expose neither control. Unknown/null states expose
+  neither control (conservative downstream policy). Resume optimistically uses
+  `scheduled`; labels are translated in all five catalogs.
+- `1fba107ac4ddcff288d2a81b0fee09d2091bdcbe`: queue management verbs receive a local
+  unsupported response rather than being queued as prompt text.
+- `dd9e23c5acc367a880ce82f664791fcdb4429b74`: connection/resume notices no longer
+  become transcript rows; connection status stays in the banner.
+- `54c1fa2435a35344d84dd6987c41acd1b94666ba`: full-width inner composer text box
+  anchors the RTL caret. Instrumented regression requires parent-owned execution.
+- `a90792d5a599c7e1ab1d6f55985462c2f1f18311`: multi-turn undo confirmation retains
+  downstream UndoFence and discards pending confirmation on conversation changes.
+- `474642c2d712a25c5b4f06639919d93d84af43a3`: skipped as already covered by
+  downstream `a15d0f82`: count-only partial/unconfirmed bulk outcomes tombstone no
+  IDs and refresh authoritative survivors. Do not infer deleted IDs by subtracting
+  an optional skipped list from an otherwise unconfirmed response.
+- `dd1f2b05d32a5b8a151b3aa62805a63439cd19fd`: ONLY #1551 billing outcome
+  classification, #1550 webhook configuration/overlap/refusal handling, #1559
+  explicit Doctor and optional status gateway PID, #1567 progressive structured
+  Config loading, and #1556 session/connection-fenced command catalogs. Retain
+  schema-aware editor reconciliation and generation fencing. No local connection
+  ID is sent as a server management profile.
+
+No auth/token/retry/OAuth/upload, updater/update receipts, Ko-fi/what's-new,
+dependency/CI policy, German, Local Models, Projects, or approvals ports.
+`UPSTREAM.json` is intentionally untouched; this is not a contiguous review.
+
 # Selective ports beyond the contiguous review baseline
 
 `UPSTREAM.json` records a contiguous reviewed range. Its reviewed-through value
