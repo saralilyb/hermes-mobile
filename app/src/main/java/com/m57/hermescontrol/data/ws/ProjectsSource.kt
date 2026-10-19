@@ -5,7 +5,12 @@ import com.m57.hermescontrol.data.model.ProjectInfo
 import com.m57.hermescontrol.data.model.ProjectsListResponse
 import com.m57.hermescontrol.data.remote.OkHttpProvider
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 
 sealed interface ProjectsResult {
     data class Ready(val projects: List<ProjectInfo>) : ProjectsResult
@@ -38,12 +43,32 @@ class HermesProjectsSource(
             HermesWsClient.requestForProfileConnectionAwaited(binding, method, params)
         },
 ) : ProjectsSource {
+    // Projects P1: the shared RPC converter returns Doubles, including integer wire values.
+    // Normalize only exact finite integers here; never truncate or saturate invalid DTO fields.
+    private fun normalizeProjectNumbers(element: JsonElement): JsonElement =
+        when (element) {
+            is JsonObject -> JsonObject(element.mapValues { normalizeProjectNumbers(it.value) })
+            is JsonArray -> JsonArray(element.map { normalizeProjectNumbers(it) })
+            is JsonPrimitive -> {
+                val value = if (element.isString || element.longOrNull != null) null else element.doubleOrNull
+                // Long.MAX_VALUE.toDouble() rounds UP to 2^63, so the upper bound is exclusive.
+                if (value != null && value.isFinite() &&
+                    value >= Long.MIN_VALUE.toDouble() && value < Long.MAX_VALUE.toDouble() &&
+                    value == kotlin.math.floor(value)
+                ) {
+                    JsonPrimitive(value.toLong())
+                } else {
+                    element
+                }
+            }
+        }
+
     override suspend fun fetchProjects(connection: SessionLiveConnection): ProjectsResult {
         if (!isConnectionCurrent(connection)) return ProjectsResult.Offline
         val result =
             try {
                 val raw = boundRpcRequest(connection, WsMethods.PROJECTS_LIST, emptyMap())
-                val element = SessionLiveStatusDecoder.anyToJsonElement(raw)
+                val element = normalizeProjectNumbers(SessionLiveStatusDecoder.anyToJsonElement(raw))
                 if (raw == null || element is JsonObject && !element.containsKey("projects")) {
                     ProjectsResult.Unsupported
                 } else {
