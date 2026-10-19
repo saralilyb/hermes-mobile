@@ -89,6 +89,10 @@ class ChatViewModelTest {
 
     @Before
     fun setUp() {
+        // Initialize the transport's process-lifetime IO scope before replacing
+        // Dispatchers.IO with this test's scheduler; otherwise later real-socket
+        // tests inherit an event collector stranded on a retired scheduler.
+        HermesWsClient.events
         Dispatchers.setMain(testDispatcher)
         val testMainDispatcher = Dispatchers.Main
         reqCount = 0
@@ -4048,6 +4052,32 @@ class ChatViewModelTest {
     // ── Gateway server-request regressions ─────────────────────────────────
 
     @Test
+    fun resumedPendingPromptsAreAnswerableAfterRuntimeInstallation() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val bindings = mutableListOf<ServerRequestBinding>()
+            every { HermesWsClient.respondToServerRequest(capture(bindings), any()) } returns true
+            for (runtime in listOf("runtime-a", "stored-a")) {
+                viewModel.switchSession("away")
+                runCurrent()
+                viewModel.switchSession("stored-a")
+                runCurrent()
+                assertFalse(viewModel.uiState.value.isSessionReady)
+                val resumeId = requireNotNull(sentRequestIds[WsMethods.SESSION_RESUME]?.lastOrNull())
+                mockEventsFlow.emit(
+                    WsEvent.RpcResult(resumeId, mapOf("session_id" to runtime, "resumed" to "stored-a")),
+                )
+                mockEventsFlow.emit(serverRequest("pending-$runtime", "approval", sessionId = runtime, replayed = true))
+                runCurrent()
+                assertTrue(viewModel.uiState.value.isSessionReady)
+                val card = requireNotNull(viewModel.approvalMessage())
+                viewModel.respondToApproval(card.id, card.approvalInfo!!.privilegedBinding, "approve")
+                runCurrent()
+                assertEquals(ServerRequestBinding("pending-$runtime", runtime, "profile-a", 7), bindings.last())
+            }
+        }
+
+    @Test
     fun gatewayVault_promptsUseExactIdsAndMethodSpecificStringValues() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
@@ -4209,7 +4239,6 @@ class ChatViewModelTest {
             runCurrent()
 
             viewModel.respondToApproval("always")
-            viewModel.respondToApproval("session")
             verify(exactly = 0) { HermesWsClient.respondToServerRequest(any(), any()) }
             viewModel.respondToApproval("approve")
             runCurrent()
@@ -4230,22 +4259,25 @@ class ChatViewModelTest {
                     "clarify",
                     extra =
                         mapOf(
-                            "answers" to mapOf("q1" to "locked"),
+                            "answers" to mapOf("q1" to "locked", "q3" to null),
                             "questions" to
                                 listOf(
                                     mapOf("qid" to "q1", "question" to "First?"),
                                     mapOf("qid" to "q2", "question" to "Second?"),
+                                    mapOf("qid" to "q3", "question" to "Skipped?"),
                                 ),
                         ),
                 ),
             )
             runCurrent()
             val prompt = requireNotNull(viewModel.uiState.value.clarifyRequest)
-            viewModel.respondToClarifyBatch(prompt, mapOf("q1" to "overwrite", "q2" to "new"))
+            assertTrue("Skipped question must remain locked", prompt.isAnswerLocked("q3"))
+            viewModel.respondToClarifyBatch(prompt, mapOf("q1" to "overwrite", "q2" to "new", "q3" to "overwrite"))
             runCurrent()
 
             assertTrue(result.captured.toString().contains("\"q1\":\"locked\""))
             assertTrue(result.captured.toString().contains("\"q2\":\"new\""))
+            assertTrue(result.captured.toString().contains("\"q3\":null"))
         }
 
     @Test
@@ -4437,6 +4469,51 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun gatewayApproval_sessionOfferHonorsEveryConstraintAndUsesWireResult() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val results = mutableListOf<JsonElement>()
+            every { HermesWsClient.respondToServerRequest(any(), capture(results)) } returns true
+            val cases =
+                listOf(
+                    emptyMap<String, Any>() to true,
+                    mapOf("choices" to listOf("once", "session")) to true,
+                    mapOf("allow_session" to false) to false,
+                    mapOf("choices" to listOf("once", "deny")) to false,
+                    mapOf("smart_denied" to true, "choices" to listOf("session")) to false,
+                    mapOf("choices" to "session") to false,
+                    mapOf("choices" to null) to false,
+                    mapOf("choices" to listOf(3)) to false,
+                    mapOf("choices" to listOf("session", 3)) to false,
+                )
+            for ((index, case) in cases.withIndex()) {
+                mockEventsFlow.emit(serverRequest("session-offer-$index", "approval", extra = case.first))
+                runCurrent()
+                val card = requireNotNull(viewModel.approvalMessage())
+                assertEquals("offer case $index", case.second, card.approvalInfo!!.offersSession)
+                val before = results.size
+                viewModel.respondToApproval(card.id, card.approvalInfo.privilegedBinding, "session")
+                runCurrent()
+                assertEquals("submit case $index", before + if (case.second) 1 else 0, results.size)
+                if (case.second) assertEquals("{\"choice\":\"session\",\"all\":false}", results.last().toString())
+                viewModel.cancelApproval(card.id, card.approvalInfo.privilegedBinding)
+                runCurrent()
+            }
+        }
+
+    @Test
+    fun respondToApproval_sessionUsesTheBoundSubmitPath() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val calls = capturePrivileged()
+            mockEventsFlow.emit(approvalRequest())
+            runCurrent()
+            viewModel.respondToApproval("session")
+            runCurrent()
+            assertEquals(listOf(mapOf("choice" to "session")), calls.map { it.params })
+        }
+
+    @Test
     fun respondToApproval_approveSendsOnceOnTheBoundRequest() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()
@@ -4470,16 +4547,15 @@ class ChatViewModelTest {
             assertEquals(listOf(mapOf("choice" to "deny")), calls.map { it.params })
         }
 
-    /** A phone cannot show what a standing allow would later authorize. */
+    /** Permanent grants and unknown action names are never offered. */
     @Test
-    fun respondToApproval_refusesSessionAndAlwaysChoices() =
+    fun respondToApproval_refusesAlwaysAndUnknownChoices() =
         runTest {
             val (viewModel, _) = createViewModelWithSession()
             val calls = capturePrivileged()
 
             mockEventsFlow.emit(approvalRequest())
             runCurrent()
-            viewModel.respondToApproval("session")
             viewModel.respondToApproval("always")
             viewModel.respondToApproval("once")
             runCurrent()

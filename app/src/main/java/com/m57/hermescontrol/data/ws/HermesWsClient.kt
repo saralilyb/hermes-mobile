@@ -120,6 +120,16 @@ object HermesWsClient {
     private const val STALE_THRESHOLD_MS = 45_000L
     private const val LIVENESS_PROBE_TIMEOUT_MS = 5_000L
 
+    // Readiness-hold liveness: match the 15s connect timeout and stay below the
+    // 30s single-use ticket TTL. Inbound traffic must not extend this deadline.
+    private const val GATEWAY_READY_TIMEOUT_MS = 15_000L
+    private var gatewayReadyJob: Job? = null
+
+    private fun cancelGatewayReadyDeadlineLocked() {
+        gatewayReadyJob?.cancel()
+        gatewayReadyJob = null
+    }
+
     private fun monotonicTimeMs(): Long = System.nanoTime() / 1_000_000L
 
     // ── Internal state (all access through synchronized / atomic) ────────
@@ -128,6 +138,9 @@ object HermesWsClient {
     private val connectionGeneration = AtomicInteger(0)
     private val socketGeneration = AtomicInteger(0)
     private val connected = AtomicBoolean(false)
+
+    // Guarded by connectionLock. Never drain session work before capability advertisement.
+    private var awaitingGatewayReady = false
     private val intentionalClose = AtomicBoolean(false)
     private val ticketAuthRetryUsed = AtomicBoolean(false)
     private val appInForeground = AtomicBoolean(true)
@@ -175,6 +188,10 @@ object HermesWsClient {
     private var currentBackoff = INITIAL_BACKOFF_MS
 
     private val wsScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // Only this bounded timer is injectable; singleton collectors keep their original scope.
+    @VisibleForTesting
+    internal var readinessTimeoutScope: CoroutineScope = wsScope
 
     @Volatile
     private var reconnectJob: Job? = null
@@ -380,6 +397,7 @@ object HermesWsClient {
      */
     private fun closeIdleBackgroundSocket() {
         cancelBackgroundIdleCloseLocked()
+        cancelGatewayReadyDeadlineLocked()
         connectionGeneration.incrementAndGet()
         backgroundIdleClosed.set(true)
         reconnectJob?.cancel()
@@ -388,8 +406,13 @@ object HermesWsClient {
         outboundDrainJob = null
         stopHealthTracking()
         rejectAllPending()
+        // Idle-close replay cleanup: terminal callbacks are stale after this detach.
+        pendingReplayResponses.clear()
         webSocket?.close(1000, "Background idle")
         webSocket = null
+        activeConnectionProfileId = null
+        activeConnectionGeneration = -1
+        awaitingGatewayReady = false
         connected.set(false)
         _connectionStatus.value = ConnectionStatus.DISCONNECTED
     }
@@ -549,6 +572,7 @@ object HermesWsClient {
     fun disconnect(clearPendingMessages: Boolean = false) {
         synchronized(connectionLock) {
             cancelBackgroundIdleCloseLocked()
+            cancelGatewayReadyDeadlineLocked()
             connectionGeneration.incrementAndGet()
             intentionalClose.set(true)
             backgroundIdleClosed.set(false)
@@ -607,7 +631,8 @@ object HermesWsClient {
         val method: String,
         val profileId: String,
         val connectionGeneration: Int,
-        val runtimeSessionId: String,
+        val requestedSessionId: String,
+        val foregroundSessionId: String?,
     )
 
     /** Tracks in-flight [request] calls by their JSON-RPC id. */
@@ -720,14 +745,23 @@ object HermesWsClient {
             ) {
                 return@synchronized false
             }
-            ws.send(
-                buildJsonObject {
-                    put("jsonrpc", "2.0")
-                    put("id", binding.requestId)
-                    put("result", result)
-                }.toString(),
-            )
+            writeServerResponse(ws, binding.requestId, "result", result)
         }
+
+    /** Caller holds connectionLock and has validated the originating socket. Never queued. */
+    private fun writeServerResponse(
+        socket: WebSocket,
+        id: String,
+        field: String,
+        value: JsonElement,
+    ): Boolean =
+        socket.send(
+            buildJsonObject {
+                put("jsonrpc", "2.0")
+                put("id", id)
+                put(field, value)
+            }.toString(),
+        )
 
     /** Capture the exact live profile/socket identity for a later bound request. */
     fun connectionBinding(expectedProfileId: String): ConnectionBinding? =
@@ -907,7 +941,13 @@ object HermesWsClient {
         val sessionId = (params["session_id"] as? String)?.takeIf { it.isNotBlank() } ?: return null
         val profileId = activeConnectionProfileId ?: return null
         if (!connected.get() || activeConnectionGeneration < 0) return null
-        return ReplayAdmission(method, profileId, activeConnectionGeneration, sessionId)
+        return ReplayAdmission(
+            method,
+            profileId,
+            activeConnectionGeneration,
+            sessionId,
+            ActiveSessionHolder.activeSessionId.value,
+        )
     }
 
     private fun ReplayAdmission.isCurrent(
@@ -918,7 +958,7 @@ object HermesWsClient {
             this.profileId == profileId &&
             connectionGeneration == generation &&
             AuthManager.getSelectedProfileId() == profileId &&
-            ActiveSessionHolder.activeSessionId.value == runtimeSessionId
+            ActiveSessionHolder.activeSessionId.value == foregroundSessionId
 
     /**
      * Fail and clear every in-flight [request]. Called on disconnect /
@@ -965,7 +1005,7 @@ object HermesWsClient {
                 pendingReply = true
             }
             val ws = webSocket
-            if (ws != null && connected.get()) {
+            if (ws != null && connected.get() && (!awaitingGatewayReady || method == WsMethods.GATEWAY_PING)) {
                 if (!pendingCalls.containsKey(id)) {
                     replayAdmission(method, params)?.let { pendingReplayResponses[id] = it }
                 }
@@ -1133,7 +1173,25 @@ object HermesWsClient {
                     messageQueue.poll()
                     continue
                 }
+                // Queued resumes acquire replay admission on the socket that actually
+                // writes them, not the disconnected generation that enqueued them.
+                val queuedRequest =
+                    runCatching {
+                        OkHttpProvider.json.decodeFromString<JsonRpcRequest>(
+                            msg,
+                        )
+                    }.getOrNull()
+                val replayId =
+                    queuedRequest?.takeIf { it.method == WsMethods.SESSION_RESUME }?.let { request ->
+                        val sessionId = request.params["session_id"]?.toAny() as? String
+                        sessionId?.let { replayAdmission(request.method, mapOf("session_id" to it)) }?.let {
+                                admission ->
+                            pendingReplayResponses[request.id] = admission
+                            request.id
+                        }
+                    }
                 if (!ws.send(msg)) {
+                    replayId?.let(pendingReplayResponses::remove)
                     Log.w(TAG, "WS rejected queued message — retaining for next connection")
                     recoverRejectedSocket(ws)
                     return
@@ -1413,6 +1471,8 @@ object HermesWsClient {
             if (generation != connectionGeneration.get() || socket !== webSocket) {
                 return@synchronized false
             }
+            cancelGatewayReadyDeadlineLocked()
+            awaitingGatewayReady = false
             webSocket = null
             activeConnectionProfileId = null
             activeConnectionGeneration = -1
@@ -1430,6 +1490,103 @@ object HermesWsClient {
         private val generation: Int,
         private val eventSocketGeneration: Int,
     ) : WebSocketListener() {
+        // Owned by this socket's listener and accessed only under connectionLock.
+        private var capabilityRequestId: String? = null
+        private var capabilitiesAdvertised = false
+        private var serverRequestMethods: List<String> = emptyList()
+        private var declinesNotShown = false
+
+        private fun advertiseCapabilities(socket: WebSocket): Boolean {
+            if (capabilitiesAdvertised) return true
+            capabilitiesAdvertised = true
+            val id = requestId.incrementAndGet().toString()
+            // Register before writing: even a synchronous response must find its owner.
+            capabilityRequestId = id
+            val frame =
+                buildJsonObject {
+                    put("jsonrpc", "2.0")
+                    put("id", id)
+                    put("method", "client.capabilities")
+                    put("params", buildJsonObject { put("server_requests", true) })
+                }
+            if (!socket.send(frame.toString())) {
+                capabilityRequestId = null
+                capabilitiesAdvertised = false
+                return false
+            }
+            return true
+        }
+
+        private fun consumeCapabilityResponse(event: WsEvent): Boolean {
+            val id =
+                when (event) {
+                    is WsEvent.RpcResult -> event.id
+                    is WsEvent.RpcError -> event.id
+                    else -> return false
+                }
+            if (id != capabilityRequestId) return false
+            capabilityRequestId = null
+            when (event) {
+                is WsEvent.RpcResult -> {
+                    val result = event.result as? Map<*, *>
+                    serverRequestMethods =
+                        (result?.get("server_requests") as? List<*>)
+                            ?.filterIsInstance<String>().orEmpty()
+                    declinesNotShown = result?.get("declines_not_shown") == true
+                }
+                is WsEvent.RpcError -> Log.d(TAG, "client.capabilities code=${event.error.code}")
+                else -> Unit
+            }
+            return true
+        }
+
+        /**
+         * Transport-owned fallback, including when no ChatViewModel exists. Never
+         * settle a Desktop-owned request on gateways without negotiated declines.
+         * Handled requests rejected by the UI's session/profile fence remain open
+         * for another client, and can be replayed by open_requests on resume.
+         */
+        private fun answerUnsupported(
+            socket: WebSocket,
+            request: WsEvent.ServerRequest,
+        ): Boolean {
+            if (request.method in
+                setOf(
+                    "approval",
+                    "clarify",
+                    "sudo",
+                    "secret",
+                    "vault.unlock_prompt",
+                    "vault.save_login",
+                    "vault.code",
+                )
+            ) {
+                return false
+            }
+            val windowOwned =
+                request.method in
+                    setOf(
+                        "preview.read",
+                        "preview.act",
+                        "terminal.read",
+                        "window.read",
+                        "tour",
+                        "theme.apply",
+                    )
+            // theme.apply is conservatively treated as window-owned too.
+            if (windowOwned && !declinesNotShown) return true
+            writeServerResponse(
+                socket,
+                request.id,
+                "error",
+                buildJsonObject {
+                    put("code", if (windowOwned) 4404 else -32601)
+                    put("message", if (windowOwned) "Not shown in this client" else "Method not found")
+                },
+            )
+            return true
+        }
+
         override fun onOpen(
             webSocket: WebSocket,
             response: Response,
@@ -1444,10 +1601,27 @@ object HermesWsClient {
                 }
                 Log.i(TAG, "WebSocket opened")
                 connected.set(true)
+                awaitingGatewayReady = true
+                cancelGatewayReadyDeadlineLocked()
+                gatewayReadyJob =
+                    readinessTimeoutScope.launch {
+                        delay(GATEWAY_READY_TIMEOUT_MS)
+                        synchronized(connectionLock) {
+                            if (generation != connectionGeneration.get() ||
+                                eventSocketGeneration != activeConnectionGeneration ||
+                                webSocket !== HermesWsClient.webSocket || !awaitingGatewayReady
+                            ) {
+                                return@synchronized
+                            }
+                            // Use the ordinary non-auth terminal path: detach first so
+                            // cancel's callback is stale, retain queued work, and mint
+                            // a fresh ticket on the normal backoff reconnect.
+                            onFailure(webSocket, java.io.IOException("Gateway readiness timed out"), null)
+                            webSocket.cancel()
+                        }
+                    }
                 _connectionStatus.value = ConnectionStatus.CONNECTED
-                currentBackoff = INITIAL_BACKOFF_MS
                 startHealthTracking()
-                drainQueue(webSocket)
             }
         }
 
@@ -1508,6 +1682,22 @@ object HermesWsClient {
                     Log.d(TAG, "Ignoring stale WebSocket message after parsing")
                     return
                 }
+                if (event is WsEvent.GatewayReady) {
+                    if (!connected.get()) return
+                    cancelGatewayReadyDeadlineLocked()
+                    currentBackoff = INITIAL_BACKOFF_MS
+                    // Readiness proves this ticket usable even if advertisement/drain rejects a write.
+                    ticketAuthRetryUsed.set(false)
+                    if (!advertiseCapabilities(webSocket)) {
+                        recoverRejectedSocket(webSocket)
+                        return
+                    }
+                    awaitingGatewayReady = false
+                    drainQueue(webSocket)
+                    if (!connected.get() || webSocket !== HermesWsClient.webSocket) return
+                }
+                if (consumeCapabilityResponse(event)) return
+                if (event is WsEvent.ServerRequest && answerUnsupported(webSocket, event)) return
                 lastPongTimestamp = monotonicTimeMs()
                 // A parsed gateway frame proves that the fresh ticket established
                 // a usable session. Do not reset on unknown/auth-noise frames: that
@@ -1515,16 +1705,21 @@ object HermesWsClient {
                 if (event !is WsEvent.Unknown) {
                     ticketAuthRetryUsed.set(false)
                 }
+                val replayEvents = mutableListOf<SourcedWsEvent>()
                 when (event) {
                     is WsEvent.RpcResult -> {
-                        val replayAdmission =
-                            resolvePending(event.id, event.result, null)?.replayAdmission
-                                ?: pendingReplayResponses.remove(event.id)
+                        val queuedAdmission = pendingReplayResponses.remove(event.id)
+                        val replayAdmission = pendingCalls[event.id]?.replayAdmission ?: queuedAdmission
                         val admittedReplay =
                             replayAdmission?.takeIf { admission ->
                                 profileId != null && admission.isCurrent(profileId, eventSocketGeneration)
                             }
-                        val replaySessionId = admittedReplay?.runtimeSessionId
+                        // The requested ID may be a stored lineage ID, not the live runtime.
+                        val replaySessionId =
+                            admittedReplay?.let {
+                                ((event.result as? Map<*, *>)?.get("session_id") as? String)?.takeIf(String::isNotBlank)
+                            }
+                        resolvePending(event.id, event.result, null)
                         val openRequests =
                             if (replaySessionId != null) {
                                 (event.result as? Map<*, *>)?.get("open_requests") as? List<*>
@@ -1541,7 +1736,20 @@ object HermesWsClient {
                             @Suppress("UNCHECKED_CAST")
                             val params = openRequest["params"] as? Map<String, Any?> ?: return@forEach
                             if (params["session_id"] != replaySessionId) return@forEach
-                            parsedEvents.tryEmit(
+                            if (answerUnsupported(
+                                    webSocket,
+                                    WsEvent.ServerRequest(
+                                        id = openId,
+                                        method = method,
+                                        params = params,
+                                        sourceProfileId = profileId,
+                                        connectionGeneration = eventSocketGeneration,
+                                    ),
+                                )
+                            ) {
+                                return@forEach
+                            }
+                            replayEvents.add(
                                 SourcedWsEvent(
                                     event =
                                         WsEvent.ServerRequest(
@@ -1589,11 +1797,19 @@ object HermesWsClient {
                             profileId = profileId,
                             connectionGeneration = eventSocketGeneration,
                             storedSessionId =
-                                (event as? WsEvent.MessageComplete)?.sessionId?.let(
-                                    ActiveSessionHolder::resolveStoredSessionId,
-                                ),
+                                when (event) {
+                                    is WsEvent.MessageComplete -> event.sessionId
+                                    is WsEvent.ServerRequest -> event.params["session_id"] as? String
+                                    is WsEvent.ApprovalRequest -> event.sessionId
+                                    is WsEvent.SudoRequest -> event.sessionId
+                                    is WsEvent.SecretRequest -> event.sessionId
+                                    else -> null
+                                }?.let(ActiveSessionHolder::resolveStoredSessionId),
                         ),
                     )
+                // Collectors process the resume result first, installing its runtime ID
+                // under their conversation fence before admitting any replayed prompt.
+                if (emitted) replayEvents.forEach { parsedEvents.tryEmit(it) }
                 if (!emitted && BuildConfig.DEBUG) {
                     Log.w(TAG, "WebSocket message dropped due to buffer overflow")
                 }

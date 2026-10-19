@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -69,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.m57.hermescontrol.R
 import com.m57.hermescontrol.theme.CodeComment
 import com.m57.hermescontrol.theme.CodeKeyword
 import com.m57.hermescontrol.theme.CodeNumber
@@ -451,9 +453,9 @@ fun ClarifyBubble(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 val lockedAnswer = clarifyRequest.lockedAnswers[question.qid]
-                if (lockedAnswer != null) {
+                if (clarifyRequest.isAnswerLocked(question.qid)) {
                     Text(
-                        text = lockedAnswer,
+                        text = lockedAnswer ?: stringResource(R.string.clarify_skipped),
                         modifier = Modifier.fillMaxWidth().testTag("clarify_locked_${question.qid}"),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

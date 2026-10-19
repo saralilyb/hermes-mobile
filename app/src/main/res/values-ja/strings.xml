@@ -1088,4 +1088,8 @@
     <string name="sessions_project_group_expand">%1$s を展開</string>
     <string name="sessions_project_group_count">%1$s（%2$d）</string>
     <string name="sessions_project_loaded_scope">読み込み済みの最近の会話のプロジェクトのみ</string>
+    <string name="chat_approval_allow_session">このセッション中は許可</string>
+    <string name="notif_approval_needed">Hermes が承認を求めています</string>
+    <string name="notif_input_needed">Hermes が入力を待っています</string>
+    <string name="clarify_skipped">スキップ済み</string>
 </resources>

@@ -56,6 +56,37 @@ class EventParserTest {
     }
 
     @Test
+    fun malformedLegacyApprovalChoicesAreNotAnUnrestrictedEmptyOffer() {
+        for (choices in listOf(null, "session", listOf(4), listOf("session", 4))) {
+            val event =
+                EventParser.parse(
+                    createJsonRpcResponse(
+                        "2.0",
+                        null,
+                        method = "event",
+                        params =
+                            mapOf(
+                                "type" to "approval.request",
+                                "session_id" to "session-a",
+                                "payload" to
+                                    mapOf(
+                                        "request_id" to "request-a",
+                                        "timeout_seconds" to 120,
+                                        "choices" to choices,
+                                    ),
+                            ),
+                    ),
+                )
+            assertTrue(event is WsEvent.ApprovalRequest)
+            assertEquals(
+                "Malformed choices must remain distinguishable",
+                null,
+                (event as WsEvent.ApprovalRequest).choices,
+            )
+        }
+    }
+
+    @Test
     fun testParseRpcResult_returnsRpcResultEvent() {
         val response =
             createJsonRpcResponse(

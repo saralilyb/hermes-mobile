@@ -237,6 +237,20 @@ only the missing downstream labels (Chinese 16, Japanese 22, Korean 16),
 preserving format arguments and the checker policy. These localized labels are
 a downstream repair, not a claim that upstream supplied Japanese translations.
 
+## Approval capability repair (2026-10-19)
+
+Based on fork `630ff207`. Selectively adapted from `c96a5ff4` (capability
+advertisement), `bfe98eb0` (unsupported server-request responses), and
+`dd1f2b05` #1565 (session approval choice and waiting notifications).
+Negotiation and fallback responses are socket-generation fenced; window-owned
+requests decline only when `declines_not_shown` is negotiated. Session grants
+are offered only when permitted, with permanent grants unreachable. Background
+approval and credential/vault notifications contain fixed generic localized
+text only, retain profile-bound stored-session taps, and have no inline actions.
+Replay alerts are suppressed and live request deduplication is bounded.
+These are downstream adaptations, not whole-commit ports or an update to the
+contiguous `UPSTREAM.json` review boundary.
+
 ## Previous reliability-batch validation and release boundary
 
 The following evidence covers the preceding 2026-09-27 reliability batch,

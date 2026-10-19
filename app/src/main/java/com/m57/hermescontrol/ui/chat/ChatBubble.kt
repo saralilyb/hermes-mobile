@@ -594,9 +594,7 @@ private fun SystemBubble(
                 ),
         )
 
-        // Approval action buttons. Approve is a single-use "once" — there is
-        // deliberately no session-wide or permanent allow, because nothing on
-        // this screen shows what a standing allow would later authorize.
+        // A session grant is offered only when permitted by the request. Never permanent.
         val approvalInfo = message.approvalInfo
         if (approvalInfo != null) {
             Spacer(Modifier.height(8.dp))
@@ -656,6 +654,15 @@ private fun SystemBubble(
                             .testTag("cancel_approval_button"),
                 ) {
                     Text(stringResource(R.string.chat_privileged_cancel))
+                }
+            }
+            if (approvalInfo.offersSession) {
+                FilledTonalButton(
+                    onClick = { onRespondApproval(message.id, approvalInfo.privilegedBinding, "session") },
+                    enabled = !approvalInfo.isSubmitting,
+                    modifier = Modifier.testTag("allow_session_button"),
+                ) {
+                    Text(stringResource(R.string.chat_approval_allow_session))
                 }
             }
         }

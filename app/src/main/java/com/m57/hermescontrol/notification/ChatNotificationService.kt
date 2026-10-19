@@ -69,6 +69,9 @@ class ChatNotificationService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var eventCollector: Job? = null
 
+    // Bounded, service-lifetime deduplication, scoped by the event's source profile.
+    private val notifiedRequests = InputNotificationDeduplicator()
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannels()
@@ -83,13 +86,23 @@ class ChatNotificationService : Service() {
                     if (!isAppInForeground.get()) {
                         val event = sourcedEvent.event
                         val notificationProfileId = sourcedEvent.profileId
+                        val decision = notificationDecisionFor(event, sourcedEvent.storedSessionId)
+                        if (decision is ChatNotificationDecision.Input &&
+                            !notifiedRequests.admit(notificationProfileId, decision.requestId)
+                        ) {
+                            return@collect
+                        }
                         launch {
                             delay(500)
                             if (!isAppInForeground.get()) {
-                                when (
-                                    val decision =
-                                        notificationDecisionFor(event, sourcedEvent.storedSessionId)
-                                ) {
+                                when (decision) {
+                                    is ChatNotificationDecision.Input ->
+                                        showReplyNotification(
+                                            getString(decision.textResource),
+                                            decision.sessionId,
+                                            notificationProfileId,
+                                            genericOnly = true,
+                                        )
                                     is ChatNotificationDecision.Reply -> {
                                         showReplyNotification(
                                             decision.preview ?: getString(R.string.notif_new_message),
@@ -120,14 +133,15 @@ class ChatNotificationService : Service() {
         text: String,
         sessionId: String?,
         profileId: String?,
+        genericOnly: Boolean = false,
     ) {
         val builder =
             NotificationCompat
                 .Builder(this, CHAT_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(getString(R.string.notif_title))
-                .setContentText(text)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                .setContentTitle(if (genericOnly) text else getString(R.string.notif_title))
+                .setContentText(if (genericOnly) null else text)
+                .setStyle(if (genericOnly) null else NotificationCompat.BigTextStyle().bigText(text))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setAutoCancel(true)
@@ -214,8 +228,7 @@ class ChatNotificationService : Service() {
  * What a background [WsEvent] is allowed to put in the system shade.
  *
  * Kept as a pure decision (mirroring [resolveNotificationEntry]) so the
- * privileged-event exclusion is a testable contract rather than an incidental
- * property of a `when` branch inside a Service coroutine.
+ * generic-only privileged-input policy is testable without Android system UI.
  */
 sealed interface ChatNotificationDecision {
     /** A completed assistant reply. [preview] is `null` when the text is blank. */
@@ -228,8 +241,25 @@ sealed interface ChatNotificationDecision {
     /** A non-privileged clarification prompt; carries no request content. */
     data object Clarify : ChatNotificationDecision
 
+    /** Fixed localized copy only; identifiers are for deduplication/navigation, never displayed. */
+    data class Input(val textResource: Int, val sessionId: String?, val requestId: String) : ChatNotificationDecision
+
     /** Nothing is posted. */
     data object Ignore : ChatNotificationDecision
+}
+
+/** Accessed by the single event collector; bounded to the most recent 256 source/request pairs. */
+internal class InputNotificationDeduplicator {
+    private val requests = LinkedHashSet<Pair<String?, String>>()
+
+    fun admit(
+        profileId: String?,
+        requestId: String,
+    ): Boolean {
+        if (!requests.add(profileId to requestId)) return false
+        if (requests.size > 256) requests.remove(requests.first())
+        return true
+    }
 }
 
 /** Longest reply preview that may appear in a notification. */
@@ -238,12 +268,11 @@ private const val NOTIFICATION_PREVIEW_CHARS = 100
 /**
  * Classify a background event.
  *
- * `sudo.request`, `secret.request`, and `approval.request` deliberately fall
- * through to [ChatNotificationDecision.Ignore]. Each is answered only from the
- * foreground against an exact request binding, and a direct-reply notification
- * would become an out-of-app secret-entry surface that persists the typed value
- * in system UI. Their expiry frames are equally silent — a notification about a
- * privileged request is itself a disclosure that one was made.
+ * Approval, sudo, secret, and vault requests use fixed localized generic text
+ * only: no command, tool, pattern, description, secret, or session title. Taps
+ * follow the immutable profile-bound entry path; no inline actions or replies.
+ * Expiry is silent. Replayed server requests are silent to avoid re-alerting for
+ * cards already displayed before reconnect. The service deduplicates live IDs.
  */
 fun notificationDecisionFor(
     event: WsEvent,
@@ -261,6 +290,47 @@ fun notificationDecisionFor(
                 stopService = true,
             )
 
+        is WsEvent.ApprovalRequest ->
+            ChatNotificationDecision.Input(
+                R.string.notif_approval_needed,
+                storedSessionId ?: event.sessionId,
+                event.requestId,
+            )
+        is WsEvent.SudoRequest ->
+            ChatNotificationDecision.Input(
+                R.string.notif_input_needed,
+                storedSessionId ?: event.sessionId,
+                event.requestId,
+            )
+        is WsEvent.SecretRequest ->
+            ChatNotificationDecision.Input(
+                R.string.notif_input_needed,
+                storedSessionId ?: event.sessionId,
+                event.requestId,
+            )
+        is WsEvent.ServerRequest ->
+            when {
+                event.replayed -> ChatNotificationDecision.Ignore
+                event.method == "clarify" ->
+                    ChatNotificationDecision.Input(
+                        R.string.notif_clarification_needed,
+                        storedSessionId ?: event.params["session_id"] as? String,
+                        event.id,
+                    )
+                event.method == "approval" ->
+                    ChatNotificationDecision.Input(
+                        R.string.notif_approval_needed,
+                        storedSessionId ?: event.params["session_id"] as? String,
+                        event.id,
+                    )
+                event.method in setOf("sudo", "secret", "vault.unlock_prompt", "vault.save_login", "vault.code") ->
+                    ChatNotificationDecision.Input(
+                        R.string.notif_input_needed,
+                        storedSessionId ?: event.params["session_id"] as? String,
+                        event.id,
+                    )
+                else -> ChatNotificationDecision.Ignore
+            }
         is WsEvent.ClarifyRequest -> ChatNotificationDecision.Clarify
 
         else -> ChatNotificationDecision.Ignore

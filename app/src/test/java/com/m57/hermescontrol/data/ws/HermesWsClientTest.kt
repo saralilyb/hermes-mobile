@@ -25,6 +25,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -96,6 +99,10 @@ class HermesWsClientTest {
         @Suppress("UNCHECKED_CAST")
         (statusField.get(HermesWsClient) as MutableStateFlow<ConnectionStatus>).value = ConnectionStatus.DISCONNECTED
 
+        val readiness = HermesWsClient::class.java.getDeclaredField("awaitingGatewayReady")
+        readiness.isAccessible = true
+        readiness.setBoolean(HermesWsClient, false)
+
         // The singleton's outbound queue survives a plain disconnect by design,
         // so clear it explicitly or a frame queued by one test leaks into the
         // next one's connection.
@@ -109,6 +116,448 @@ class HermesWsClientTest {
 
         HermesWsClient.disconnect() // Ensure it starts clean
         HermesWsClient.setAppForeground(true)
+    }
+
+    @Test
+    fun capabilityIsAdvertisedOncePerSocketAndAgainAfterReconnect() {
+        repeat(2) {
+            val frames = java.util.concurrent.LinkedBlockingQueue<String>()
+            var peer: WebSocket? = null
+            mockWebServer.enqueue(
+                MockResponse().withWebSocketUpgrade(
+                    object : WebSocketListener() {
+                        override fun onOpen(
+                            webSocket: WebSocket,
+                            response: okhttp3.Response,
+                        ) {
+                            peer = webSocket
+                            webSocket.send(READY_FRAME)
+                        }
+
+                        override fun onMessage(
+                            webSocket: WebSocket,
+                            text: String,
+                        ) {
+                            frames.add(text)
+                        }
+                    },
+                ),
+            )
+            HermesWsClient.connect()
+            val frame = Json.parseToJsonElement(requireNotNull(frames.poll(5, TimeUnit.SECONDS))).jsonObject
+            assertEquals("client.capabilities", frame["method"]?.jsonPrimitive?.content)
+            assertEquals("true", frame["params"]?.jsonObject?.get("server_requests")?.jsonPrimitive?.content)
+            peer!!.send(READY_FRAME)
+            assertNull("Duplicate gateway.ready must not advertise twice", frames.poll(200, TimeUnit.MILLISECONDS))
+            HermesWsClient.disconnect()
+        }
+    }
+
+    @Test
+    fun unsupportedRequestsAreAnsweredWithoutViewModelAndWindowDeclinesRequireNegotiation() {
+        val frames = java.util.concurrent.LinkedBlockingQueue<String>()
+        val opened = CountDownLatch(1)
+        var peer: WebSocket? = null
+        mockWebServer.enqueue(
+            MockResponse().withWebSocketUpgrade(
+                object : WebSocketListener() {
+                    override fun onOpen(
+                        webSocket: WebSocket,
+                        response: okhttp3.Response,
+                    ) {
+                        peer = webSocket
+                        opened.countDown()
+                    }
+
+                    override fun onMessage(
+                        webSocket: WebSocket,
+                        text: String,
+                    ) {
+                        frames.add(text)
+                    }
+                },
+            ),
+        )
+        HermesWsClient.connect()
+        assertTrue(opened.await(5, TimeUnit.SECONDS))
+
+        fun request(method: String) {
+            peer!!.send(
+                """{"jsonrpc":"2.0","id":"srq-exact-id","method":"$method","params":{"session_id":"runtime"}}""",
+            )
+        }
+
+        fun response(code: Int) {
+            val frame = Json.parseToJsonElement(requireNotNull(frames.poll(5, TimeUnit.SECONDS))).jsonObject
+            assertEquals("srq-exact-id", frame["id"]?.jsonPrimitive?.content)
+            assertNull(frame["method"])
+            assertEquals(code.toString(), frame["error"]?.jsonObject?.get("code")?.jsonPrimitive?.content)
+        }
+        request("preview.read")
+        assertNull("Unknown negotiation must not settle Desktop work", frames.poll(200, TimeUnit.MILLISECONDS))
+        for (method in listOf("setup_beat", "theme.pick", "unknown.method")) {
+            request(method)
+            response(-32601)
+        }
+        peer!!.send(READY_FRAME)
+        val capability = Json.parseToJsonElement(requireNotNull(frames.poll(5, TimeUnit.SECONDS))).jsonObject
+        val id = capability["id"]!!.jsonPrimitive.content
+        peer!!.send(
+            """{"jsonrpc":"2.0","id":"$id","result":{"server_requests":["approval"],"declines_not_shown":true}}""",
+        )
+        for (method in listOf("preview.read", "preview.act", "terminal.read", "window.read", "tour", "theme.apply")) {
+            request(method)
+            response(4404)
+        }
+        for (method in listOf(
+            "approval",
+            "clarify",
+            "sudo",
+            "secret",
+            "vault.unlock_prompt",
+            "vault.save_login",
+            "vault.code",
+        )) {
+            request(method)
+            assertNull("Handled requests belong to the ViewModel", frames.poll(100, TimeUnit.MILLISECONDS))
+        }
+    }
+
+    @Test
+    fun falseOrRejectedCapabilitiesNeverDeclineWindowRequestsAndResponsesStayPrivate() =
+        runBlocking {
+            for (result in listOf(
+                "\"result\":{\"declines_not_shown\":false}",
+                "\"error\":{\"code\":-32601,\"message\":\"PRIVATE PAYLOAD\"}",
+            )) {
+                val frames = mutableListOf<String>()
+                val socket = mockk<WebSocket>(relaxed = true)
+                every { socket.send(any<String>()) } answers {
+                    frames.add(firstArg())
+                    true
+                }
+                val listener = installActiveListener(socket)
+                listener.onMessage(socket, READY_FRAME)
+                val id = Json.parseToJsonElement(frames.single()).jsonObject["id"]!!.jsonPrimitive.content
+                val published =
+                    async(start = CoroutineStart.UNDISPATCHED) {
+                        withTimeoutOrNull(
+                            100,
+                        ) { HermesWsClient.events.first { it is WsEvent.RpcResult || it is WsEvent.RpcError } }
+                    }
+                listener.onMessage(socket, """{"jsonrpc":"2.0","id":"$id",$result}""")
+                assertNull("Capability reply must not reach UI", published.await())
+                frames.clear()
+                listener.onMessage(socket, """{"jsonrpc":"2.0","id":"window","method":"preview.read","params":{}}""")
+                assertTrue("False/rejected negotiation must not settle Desktop request", frames.isEmpty())
+                verify(exactly = 0) { Log.d(any<String>(), match<String> { it.contains("PRIVATE PAYLOAD") }) }
+            }
+        }
+
+    @Test
+    fun staleCapabilityResultCannotEnableDeclinesOnReplacementSocket() {
+        val oldFrames = mutableListOf<String>()
+        val old = mockk<WebSocket>(relaxed = true)
+        every { old.send(any<String>()) } answers {
+            oldFrames.add(firstArg())
+            true
+        }
+        val oldListener = installActiveListener(old)
+        oldListener.onMessage(old, READY_FRAME)
+        val id = Json.parseToJsonElement(oldFrames.single()).jsonObject["id"]!!.jsonPrimitive.content
+        val fresh = mockk<WebSocket>(relaxed = true)
+        val freshListener = installActiveListener(fresh)
+        oldListener.onMessage(old, """{"jsonrpc":"2.0","id":"$id","result":{"declines_not_shown":true}}""")
+        val field = oldListener.javaClass.getDeclaredField("declinesNotShown").apply { isAccessible = true }
+        assertFalse("Stale generation must not even mutate its retired negotiation", field.getBoolean(oldListener))
+        freshListener.onMessage(fresh, """{"jsonrpc":"2.0","id":"window","method":"preview.read","params":{}}""")
+        verify(exactly = 0) { fresh.send(any<String>()) }
+    }
+
+    @Test
+    fun approvalNotificationProvenanceRetainsSourceProfileAndStoredSession() =
+        runBlocking {
+            val socket = mockk<WebSocket>(relaxed = true)
+            val listener = installActiveListener(socket)
+            ActiveSessionHolder.set("runtime-a", "stored-a")
+            val received =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    withTimeout(5000) { HermesWsClient.sourcedEvents.first { it.event is WsEvent.ServerRequest } }
+                }
+            listener.onMessage(
+                socket,
+                """{"jsonrpc":"2.0","id":"approval-a","method":"approval","params":{"session_id":"runtime-a"}}""",
+            )
+            val sourced = received.await()
+            assertEquals("profile-a", sourced.profileId)
+            assertEquals("stored-a", sourced.storedSessionId)
+            assertEquals(activeConnectionGeneration(), sourced.connectionGeneration)
+        }
+
+    @Test
+    fun missingReadySilentPeerDetachesAndReplaysSessionWorkAfterReconnect() =
+        missingReadyReconnectScenario(noisy = false)
+
+    @Test
+    fun missingReadyNoisyPeerDetachesAndReplaysSessionWorkAfterReconnect() = missingReadyReconnectScenario(noisy = true)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun missingReadyReconnectScenario(noisy: Boolean) =
+        withReadinessClock { clock ->
+            every { AuthManager.isAutoReconnect() } returns true
+            val replacementFrames = java.util.concurrent.LinkedBlockingQueue<String>()
+            mockWebServer.enqueue(
+                MockResponse().withWebSocketUpgrade(
+                    object : WebSocketListener() {
+                        override fun onOpen(
+                            webSocket: WebSocket,
+                            response: okhttp3.Response,
+                        ) {
+                            webSocket.send(READY_FRAME)
+                        }
+
+                        override fun onMessage(
+                            webSocket: WebSocket,
+                            text: String,
+                        ) {
+                            replacementFrames.add(text)
+                        }
+                    },
+                ),
+            )
+            val socket = mockk<WebSocket>(relaxed = true)
+            every { socket.send(any<String>()) } returns true
+            val listener = openActiveListener(socket)
+            val create = HermesWsClient.send(WsMethods.SESSION_CREATE)
+            val resume = HermesWsClient.send(WsMethods.SESSION_RESUME, mapOf("session_id" to "stored-a"))
+            val waiting = HermesWsClient.request("test.waiting")
+            clock.runCurrent()
+            repeat(3) {
+                clock.advanceTimeBy(5_000)
+                if (noisy) listener.onMessage(socket, """{"method":"unrelated.notification","params":{}}""")
+            }
+            clock.runCurrent()
+            assertFalse("Missing gateway.ready must detach even if unrelated frames arrive", HermesWsClient.isConnected)
+            assertTrue("Awaited calls must fail when the unready socket detaches", waiting.isCompleted)
+            verify(exactly = 1) { socket.cancel() }
+            assertEquals(ConnectionStatus.RECONNECTING, HermesWsClient.connectionStatus.value)
+            assertTrue(
+                outboundQueue().any { Json.parseToJsonElement(it).jsonObject["id"]?.jsonPrimitive?.content == create },
+            )
+            assertTrue(
+                outboundQueue().any { Json.parseToJsonElement(it).jsonObject["id"]?.jsonPrimitive?.content == resume },
+            )
+            val frames =
+                (1..4).map { requireNotNull(replacementFrames.poll(5, TimeUnit.SECONDS)) }
+                    .map { Json.parseToJsonElement(it).jsonObject }
+            assertEquals("client.capabilities", frames.first()["method"]?.jsonPrimitive?.content)
+            assertEquals(listOf(create, resume), frames.drop(1).take(2).map { it["id"]?.jsonPrimitive?.content })
+            assertTrue(outboundQueue().isEmpty())
+            // Terminal callbacks from the timed-out socket must not clobber the replacement.
+            listener.onClosed(socket, 4401, "auth: late rejection")
+            assertTrue(HermesWsClient.isConnected)
+        }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun missingReadyGatedPeerReconnectMintsNewSingleUseTicket() =
+        withReadinessClock { clock ->
+            every { AuthManager.isGatedMode() } returns true
+            every { AuthManager.isAutoReconnect() } returns true
+            every { AuthManager.endpointForBuild() } returns
+                ServerEndpoint.parse(mockWebServer.url("/").toString(), CleartextPolicy.ALLOW_WITH_WARNING)
+            every { AuthManager.wsUrlWithCredential(any(), any()) } answers {
+                mockWebServer.url("/?ticket=${firstArg<String>()}").toString().replace("http://", "ws://")
+            }
+            val frames = java.util.concurrent.LinkedBlockingQueue<String>()
+            mockWebServer.enqueue(MockResponse().setBody("""{"ticket":"ticket-first"}"""))
+            mockWebServer.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}))
+            mockWebServer.enqueue(MockResponse().setBody("""{"ticket":"ticket-next"}"""))
+            mockWebServer.enqueue(
+                MockResponse().withWebSocketUpgrade(
+                    object : WebSocketListener() {
+                        override fun onOpen(
+                            webSocket: WebSocket,
+                            response: okhttp3.Response,
+                        ) {
+                            webSocket.send(READY_FRAME)
+                        }
+
+                        override fun onMessage(
+                            webSocket: WebSocket,
+                            text: String,
+                        ) {
+                            frames.add(text)
+                        }
+                    },
+                ),
+            )
+            HermesWsClient.connect()
+            runBlocking {
+                withTimeout(
+                    5_000,
+                ) { HermesWsClient.connectionStatus.first { it == ConnectionStatus.CONNECTED } }
+            }
+            val create = HermesWsClient.send(WsMethods.SESSION_CREATE)
+            clock.runCurrent()
+            clock.advanceTimeBy(15_000)
+            clock.runCurrent()
+            assertFalse("Unready real upgrade must detach", HermesWsClient.isConnected)
+            val received =
+                (1..2).map {
+                    Json.parseToJsonElement(
+                        requireNotNull(frames.poll(5, TimeUnit.SECONDS)),
+                    ).jsonObject
+                }
+            assertEquals("client.capabilities", received.first()["method"]?.jsonPrimitive?.content)
+            assertEquals(create, received.last()["id"]?.jsonPrimitive?.content)
+            val requests = (1..4).map { requireNotNull(mockWebServer.takeRequest(5, TimeUnit.SECONDS)) }
+            assertEquals(
+                listOf("/api/auth/ws-ticket", "/api/auth/ws-ticket"),
+                requests.filterIndexed {
+                        i,
+                        _,
+                    ->
+                    i % 2 == 0
+                }.map { it.path },
+            )
+            assertEquals(
+                listOf("ticket-first", "ticket-next"),
+                requests.filterIndexed {
+                        i,
+                        _,
+                    ->
+                    i % 2 == 1
+                }.map { it.requestUrl?.queryParameter("ticket") },
+            )
+        }
+
+    @Test
+    fun readinessHoldDoesNotBlockGatewayPing() =
+        withReadinessClock {
+            val frames = mutableListOf<String>()
+            val socket = mockk<WebSocket>(relaxed = true)
+            every { socket.send(capture(frames)) } returns true
+            val listener = openActiveListener(socket)
+            HermesWsClient.send(WsMethods.SESSION_CREATE)
+            val ping = HermesWsClient.request(WsMethods.GATEWAY_PING)
+            assertEquals("Ping must bypass the readiness hold", 1, frames.size)
+            val frame = Json.parseToJsonElement(frames.single()).jsonObject
+            assertEquals(WsMethods.GATEWAY_PING, frame["method"]?.jsonPrimitive?.content)
+            listener.onMessage(socket, """{"id":"${frame["id"]!!.jsonPrimitive.content}","result":{}}""")
+            assertTrue(ping.isCompleted)
+            assertEquals(1, outboundQueue().size)
+        }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun readinessDeadlineCannotDetachReplacementEvenIfOldTimerWasNotCancelled() =
+        withReadinessClock { clock ->
+            val old = mockk<WebSocket>(relaxed = true)
+            openActiveListener(old)
+            clock.runCurrent()
+            clock.advanceTimeBy(5_000)
+            // Lose only the cancellation handle: independently prove the socket/generation fence.
+            HermesWsClient::class.java.declaredFields.firstOrNull { it.name == "gatewayReadyJob" }?.apply {
+                isAccessible = true
+                set(HermesWsClient, null)
+            }
+            val replacement = mockk<WebSocket>(relaxed = true)
+            openActiveListener(replacement)
+            clock.runCurrent()
+            clock.advanceTimeBy(10_000)
+            clock.runCurrent()
+            assertTrue("Retired timer must not detach an unready replacement", HermesWsClient.isConnected)
+            verify(exactly = 0) { replacement.cancel() }
+            verify(exactly = 0) { old.cancel() }
+            clock.advanceTimeBy(5_000)
+            clock.runCurrent()
+            assertFalse("Replacement must retain its own deadline", HermesWsClient.isConnected)
+            verify(exactly = 1) { replacement.cancel() }
+        }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun gatewayReadyCancelsReadinessDeadline() =
+        withReadinessClock { clock ->
+            val socket = mockk<WebSocket>(relaxed = true)
+            every { socket.send(any<String>()) } returns true
+            val listener = openActiveListener(socket)
+            clock.runCurrent()
+            clock.advanceTimeBy(14_999)
+            listener.onMessage(socket, READY_FRAME)
+            HermesWsClient::class.java.declaredFields.firstOrNull { it.name == "gatewayReadyJob" }?.apply {
+                isAccessible = true
+                assertNull("Readiness must cancel and retire the scheduled job", get(HermesWsClient))
+            }
+            clock.advanceTimeBy(30_000)
+            clock.runCurrent()
+            assertTrue(HermesWsClient.isConnected)
+            verify(exactly = 0) { socket.cancel() }
+        }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun credentialDisconnectDropsReadinessHeldFramesAndStopsDeadline() =
+        withReadinessClock { clock ->
+            val socket = mockk<WebSocket>(relaxed = true)
+            openActiveListener(socket)
+            HermesWsClient.send(WsMethods.SESSION_CREATE)
+            clock.runCurrent()
+            HermesWsClient.disconnect(clearPendingMessages = true)
+            clock.advanceTimeBy(15_000)
+            clock.runCurrent()
+            assertTrue(outboundQueue().isEmpty())
+            assertEquals(ConnectionStatus.DISCONNECTED, HermesWsClient.connectionStatus.value)
+            verify(exactly = 0) { socket.cancel() }
+        }
+
+    @Test
+    fun idleCloseRetiresReplayAdmissions() {
+        every { AuthManager.getSelectedProfileId() } returns "profile-a"
+        val socket = mockk<WebSocket>(relaxed = true)
+        every { socket.send(any<String>()) } returns true
+        installActiveListener(socket)
+        HermesWsClient.send(WsMethods.SESSION_RESUME, mapOf("session_id" to "stored-a"))
+        assertEquals(1, pendingReplayResponses().size)
+        HermesWsClient.setAppForeground(false)
+        HermesWsClient.expireBackgroundIdleGraceForTest()
+        assertFalse(HermesWsClient.isConnected)
+        assertTrue(
+            "Idle detach must retire replay admissions before callbacks become stale",
+            pendingReplayResponses().isEmpty(),
+        )
+    }
+
+    private fun openActiveListener(socket: WebSocket): WebSocketListener =
+        installActiveListener(socket).also {
+            it.onOpen(
+                socket,
+                okhttp3.Response.Builder().request(okhttp3.Request.Builder().url("https://example.com").build())
+                    .protocol(okhttp3.Protocol.HTTP_1_1).code(101).message("Switching Protocols").build(),
+            )
+        }
+
+    private fun withReadinessClock(test: (TestScope) -> Unit) {
+        val original = HermesWsClient.readinessTimeoutScope
+        val clock = TestScope()
+        every { AuthManager.getSelectedProfileId() } returns "profile-a"
+        HermesWsClient::class.java.getDeclaredField("intentionalClose").apply {
+            isAccessible = true
+            (get(HermesWsClient) as AtomicBoolean).set(false)
+        }
+        HermesWsClient.readinessTimeoutScope = clock.backgroundScope
+        try {
+            test(clock)
+        } finally {
+            HermesWsClient.disconnect(clearPendingMessages = true)
+            HermesWsClient.readinessTimeoutScope = original
+            clock.backgroundScope.coroutineContext[Job]?.cancel()
+        }
+    }
+
+    private companion object {
+        const val READY_FRAME = """{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}"""
     }
 
     @Test
@@ -190,6 +639,13 @@ class HermesWsClientTest {
         mockWebServer.enqueue(
             MockResponse().withWebSocketUpgrade(
                 object : WebSocketListener() {
+                    override fun onOpen(
+                        webSocket: WebSocket,
+                        response: okhttp3.Response,
+                    ) {
+                        webSocket.send("""{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready"}}""")
+                    }
+
                     override fun onMessage(
                         webSocket: WebSocket,
                         text: String,
@@ -246,6 +702,7 @@ class HermesWsClientTest {
                         webSocket: WebSocket,
                         response: okhttp3.Response,
                     ) {
+                        webSocket.send("""{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready"}}""")
                         serverSocket = webSocket
                         connectedLatch.countDown()
                     }
@@ -380,6 +837,142 @@ class HermesWsClientTest {
     }
 
     @Test
+    fun resumeReplayUsesReturnedRuntimeAndArrivesAfterResultForNullRuntime() =
+        runBlocking {
+            for (runtimeId in listOf("runtime-a", "stored-a")) {
+                every { AuthManager.getSelectedProfileId() } returns "profile-a"
+                val socket = mockk<WebSocket>(relaxed = true)
+                val sent = mutableListOf<String>()
+                every { socket.send(any<String>()) } answers {
+                    sent.add(firstArg())
+                    true
+                }
+                val listener = installActiveListener(socket)
+                ActiveSessionHolder.set("stored-a")
+                val id = HermesWsClient.send(WsMethods.SESSION_RESUME, mapOf("session_id" to "stored-a"))
+                var installedRuntime: String? = null
+                val received =
+                    async(start = CoroutineStart.UNDISPATCHED) {
+                        withTimeoutOrNull(1_000) {
+                            HermesWsClient.events.first { event ->
+                                if (event is WsEvent.RpcResult && event.id == id) {
+                                    installedRuntime = (event.result as Map<*, *>)["session_id"] as String
+                                    ActiveSessionHolder.set(installedRuntime, "stored-a")
+                                }
+                                event is WsEvent.ServerRequest && event.replayed
+                            }
+                        }
+                    }
+                listener.onMessage(
+                    socket,
+                    """{"jsonrpc":"2.0","id":"$id","result":{"session_id":"$runtimeId","open_requests":[""" +
+                        """{"id":"pending-a","method":"secret","params":{"session_id":"$runtimeId"}},""" +
+                        """{"id":"foreign","method":"secret","params":{"session_id":"other"}}]}}""",
+                )
+                val replay = received.await() as? WsEvent.ServerRequest
+                assertEquals("Replay must use the resumed runtime", "pending-a", replay?.id)
+                assertEquals("Resume result must install runtime before replay", runtimeId, installedRuntime)
+                assertTrue(
+                    HermesWsClient.respondToServerRequest(
+                        ServerRequestBinding(replay!!.id, runtimeId, "profile-a", activeConnectionGeneration()),
+                        kotlinx.serialization.json.buildJsonObject {
+                            put(
+                                "value",
+                                kotlinx.serialization.json.JsonPrimitive("fixture"),
+                            )
+                        },
+                    ),
+                )
+                assertTrue(sent.last().contains("pending-a"))
+            }
+        }
+
+    @Test
+    fun queuedTurnWaitsForReadyAndCapabilityPrecedesIt() {
+        every { AuthManager.getSelectedProfileId() } returns "profile-a"
+        val socket = mockk<WebSocket>(relaxed = true)
+        val sent = mutableListOf<String>()
+        every { socket.send(any<String>()) } answers {
+            sent.add(firstArg())
+            true
+        }
+        val listener = installActiveListener(socket)
+        outboundQueue().add("""{"jsonrpc":"2.0","id":"queued-turn","method":"prompt.submit","params":{}}""")
+        listener.onOpen(
+            socket,
+            okhttp3.Response.Builder().request(okhttp3.Request.Builder().url("http://localhost").build())
+                .protocol(okhttp3.Protocol.HTTP_1_1).code(101).message("upgrade").build(),
+        )
+        assertTrue("No queued turn may precede capability registration", sent.isEmpty())
+        HermesWsClient.sendMessage("session-a", "between open and ready")
+        assertTrue("New sends must wait for capability registration too", sent.isEmpty())
+        listener.onMessage(socket, """{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready"}}""")
+        assertEquals(
+            listOf("client.capabilities", "prompt.submit", "prompt.submit"),
+            sent.map {
+                Json.parseToJsonElement(it).jsonObject["method"]!!.jsonPrimitive.content
+            },
+        )
+        assertTrue(outboundQueue().isEmpty())
+    }
+
+    @Test
+    fun rejectedCapabilityRetainsQueuedTurnWithoutSendingIt() {
+        val socket = mockk<WebSocket>(relaxed = true)
+        val sent = mutableListOf<String>()
+        every { socket.send(any<String>()) } answers {
+            sent.add(firstArg())
+            false
+        }
+        val listener = installActiveListener(socket)
+        val retryField = HermesWsClient::class.java.getDeclaredField("ticketAuthRetryUsed")
+        retryField.isAccessible = true
+        val ticketRetry = retryField.get(HermesWsClient) as java.util.concurrent.atomic.AtomicBoolean
+        ticketRetry.set(true)
+        val turn = """{"id":"turn","method":"prompt.submit","params":{}}"""
+        outboundQueue().add(turn)
+        listener.onMessage(socket, """{"method":"event","params":{"type":"gateway.ready"}}""")
+        assertEquals("Rejected capability must not release queued work", listOf(turn), outboundQueue().toList())
+        assertEquals(1, sent.size)
+        assertTrue(sent.single().contains("client.capabilities"))
+        assertFalse("Gateway ready proves the ticket usable even if a later write fails", ticketRetry.get())
+        assertFalse(HermesWsClient.isConnected)
+    }
+
+    @Test
+    fun queuedResumeRegistersReplayBeforeItsSynchronousReply() =
+        runBlocking {
+            every { AuthManager.getSelectedProfileId() } returns "profile-a"
+            val socket = mockk<WebSocket>(relaxed = true)
+            val listener = installActiveListener(socket)
+            ActiveSessionHolder.set("stored-a")
+            // Model a resume queued before the gateway is ready, on this socket.
+            val readiness = HermesWsClient::class.java.getDeclaredField("awaitingGatewayReady")
+            readiness.isAccessible = true
+            readiness.setBoolean(HermesWsClient, true)
+            val id = HermesWsClient.send(WsMethods.SESSION_RESUME, mapOf("session_id" to "stored-a"))
+            val received =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    withTimeoutOrNull(
+                        1_000,
+                    ) { HermesWsClient.events.first { it is WsEvent.ServerRequest && it.replayed } }
+                }
+            every { socket.send(any<String>()) } answers {
+                if (firstArg<String>().contains("session.resume")) {
+                    listener.onMessage(
+                        socket,
+                        """{"id":"$id","result":{"session_id":"runtime-a","open_requests":[""" +
+                            """{"id":"queued-pending","method":"secret","params":{"session_id":"runtime-a"}}]}}""",
+                    )
+                }
+                true
+            }
+            listener.onMessage(socket, """{"method":"event","params":{"type":"gateway.ready"}}""")
+            assertEquals("queued-pending", (received.await() as? WsEvent.ServerRequest)?.id)
+            assertTrue(pendingReplayResponses().isEmpty())
+        }
+
+    @Test
     fun replayedOpenRequestCarriesLiveConnectionProvenance() =
         runBlocking {
             every { AuthManager.getSelectedProfileId() } returns "profile-a"
@@ -402,7 +995,7 @@ class HermesWsClientTest {
 
             listener.onMessage(
                 socket,
-                """{"jsonrpc":"2.0","id":"$resumeId","result":{"open_requests":[""" +
+                """{"jsonrpc":"2.0","id":"$resumeId","result":{"session_id":"session-a","open_requests":[""" +
                     """{"id":"srq-replay","method":"secret","params":{"session_id":"session-a"}}]}}""",
             )
             val event = received.await() as WsEvent.ServerRequest
@@ -434,7 +1027,8 @@ class HermesWsClientTest {
                     }
                 listener.onMessage(
                     socket,
-                    """{"jsonrpc":"2.0","id":"$id","result":{"open_requests":[$openRequest]}}""",
+                    """{"jsonrpc":"2.0","id":"$id","result":{"session_id":"session-a",""" +
+                        """"open_requests":[$openRequest]}}""",
                 )
                 assertNull(received.await())
             }
@@ -450,7 +1044,7 @@ class HermesWsClientTest {
                 HermesWsClient.send(WsMethods.SESSION_RESUME, mapOf("session_id" to "session-a"))
             listener.onMessage(
                 socket,
-                """{"jsonrpc":"2.0","id":"$duplicateId","result":{"open_requests":[]}}""",
+                """{"jsonrpc":"2.0","id":"$duplicateId","result":{"session_id":"session-a","open_requests":[]}}""",
             )
             assertNoReplay(duplicateId, valid)
 
@@ -483,7 +1077,7 @@ class HermesWsClientTest {
                 val id = frame["id"]!!.jsonPrimitive.content
                 listener.onMessage(
                     socket,
-                    """{"jsonrpc":"2.0","id":"$id","result":{"open_requests":[""" +
+                    """{"jsonrpc":"2.0","id":"$id","result":{"session_id":"session-a","open_requests":[""" +
                         """{"id":"fast","method":"secret","params":{"session_id":"session-a"}}]}}""",
                 )
                 true
@@ -536,7 +1130,8 @@ class HermesWsClientTest {
 
             listener.onMessage(
                 socket,
-                """{"jsonrpc":"2.0","id":"$resumeId","result":{"open_requests":[null,7,"bad",""" +
+                """{"jsonrpc":"2.0","id":"$resumeId","result":{"session_id":"session-a",""" +
+                    """"open_requests":[null,7,"bad",""" +
                     """{"id":"valid","method":"secret","params":{"session_id":"session-a"}}]}}""",
             )
 
@@ -1452,6 +2047,7 @@ class HermesWsClientTest {
                         webSocket: WebSocket,
                         response: okhttp3.Response,
                     ) {
+                        webSocket.send("""{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready"}}""")
                         serverWebSocket = webSocket
                         serverLatch.countDown()
                     }
@@ -1460,6 +2056,7 @@ class HermesWsClientTest {
                         webSocket: WebSocket,
                         text: String,
                     ) {
+                        if (text.contains("client.capabilities")) return
                         receivedMessage = text
                         messageLatch.countDown()
                     }
@@ -1789,6 +2386,7 @@ class HermesWsClientTest {
                         webSocket: WebSocket,
                         response: okhttp3.Response,
                     ) {
+                        webSocket.send("""{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready"}}""")
                         serverWebSocket = webSocket
                         serverLatch.countDown()
                     }
@@ -1797,6 +2395,7 @@ class HermesWsClientTest {
                         webSocket: WebSocket,
                         text: String,
                     ) {
+                        if (text.contains("client.capabilities")) return
                         receivedMessage = text
                         messageLatch.countDown()
                     }
@@ -2436,6 +3035,7 @@ class HermesWsClientTest {
                         webSocket: WebSocket,
                         response: okhttp3.Response,
                     ) {
+                        webSocket.send("""{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready"}}""")
                         serverLatch.countDown()
                     }
 
@@ -2443,6 +3043,7 @@ class HermesWsClientTest {
                         webSocket: WebSocket,
                         text: String,
                     ) {
+                        if (text.contains("client.capabilities")) return
                         receivedMessage = text
                         messageLatch.countDown()
                     }
@@ -2474,6 +3075,7 @@ class HermesWsClientTest {
                         webSocket: WebSocket,
                         response: okhttp3.Response,
                     ) {
+                        webSocket.send("""{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready"}}""")
                         serverLatch.countDown()
                     }
 

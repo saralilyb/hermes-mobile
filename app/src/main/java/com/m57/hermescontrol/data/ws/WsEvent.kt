@@ -147,7 +147,7 @@ sealed class WsEvent {
         val sourceProfileId: String? = null,
         val connectionGeneration: Int? = null,
         val serverRequestId: String? = null,
-        val lockedAnswers: Map<String, String> = emptyMap(),
+        val lockedAnswers: Map<String, String?> = emptyMap(),
     ) : WsEvent()
 
     data class ClarifyExpire(
@@ -215,6 +215,10 @@ sealed class WsEvent {
         val sessionId: String?,
         val requestId: String,
         val timeoutSeconds: Double,
+        val allowSession: Boolean? = null,
+        // null means malformed-present; empty means absent or explicitly empty.
+        val choices: List<String>? = emptyList(),
+        val smartDenied: Boolean = false,
         val sourceProfileId: String? = null,
         val connectionGeneration: Int? = null,
         val serverRequestId: String? = null,
