@@ -606,7 +606,8 @@ object HermesWsClient {
         val method: String,
         val profileId: String,
         val connectionGeneration: Int,
-        val runtimeSessionId: String,
+        val requestedSessionId: String,
+        val foregroundSessionId: String?,
     )
 
     /** Tracks in-flight [request] calls by their JSON-RPC id. */
@@ -915,7 +916,13 @@ object HermesWsClient {
         val sessionId = (params["session_id"] as? String)?.takeIf { it.isNotBlank() } ?: return null
         val profileId = activeConnectionProfileId ?: return null
         if (!connected.get() || activeConnectionGeneration < 0) return null
-        return ReplayAdmission(method, profileId, activeConnectionGeneration, sessionId)
+        return ReplayAdmission(
+            method,
+            profileId,
+            activeConnectionGeneration,
+            sessionId,
+            ActiveSessionHolder.activeSessionId.value,
+        )
     }
 
     private fun ReplayAdmission.isCurrent(
@@ -926,7 +933,7 @@ object HermesWsClient {
             this.profileId == profileId &&
             connectionGeneration == generation &&
             AuthManager.getSelectedProfileId() == profileId &&
-            ActiveSessionHolder.activeSessionId.value == runtimeSessionId
+            ActiveSessionHolder.activeSessionId.value == foregroundSessionId
 
     /**
      * Fail and clear every in-flight [request]. Called on disconnect /
@@ -1141,7 +1148,25 @@ object HermesWsClient {
                     messageQueue.poll()
                     continue
                 }
+                // Queued resumes acquire replay admission on the socket that actually
+                // writes them, not the disconnected generation that enqueued them.
+                val queuedRequest =
+                    runCatching {
+                        OkHttpProvider.json.decodeFromString<JsonRpcRequest>(
+                            msg,
+                        )
+                    }.getOrNull()
+                val replayId =
+                    queuedRequest?.takeIf { it.method == WsMethods.SESSION_RESUME }?.let { request ->
+                        val sessionId = request.params["session_id"]?.toAny() as? String
+                        sessionId?.let { replayAdmission(request.method, mapOf("session_id" to it)) }?.let {
+                                admission ->
+                            pendingReplayResponses[request.id] = admission
+                            request.id
+                        }
+                    }
                 if (!ws.send(msg)) {
+                    replayId?.let(pendingReplayResponses::remove)
                     Log.w(TAG, "WS rejected queued message — retaining for next connection")
                     recoverRejectedSocket(ws)
                     return
@@ -1618,16 +1643,21 @@ object HermesWsClient {
                 if (event !is WsEvent.Unknown) {
                     ticketAuthRetryUsed.set(false)
                 }
+                val replayEvents = mutableListOf<SourcedWsEvent>()
                 when (event) {
                     is WsEvent.RpcResult -> {
-                        val replayAdmission =
-                            resolvePending(event.id, event.result, null)?.replayAdmission
-                                ?: pendingReplayResponses.remove(event.id)
+                        val queuedAdmission = pendingReplayResponses.remove(event.id)
+                        val replayAdmission = pendingCalls[event.id]?.replayAdmission ?: queuedAdmission
                         val admittedReplay =
                             replayAdmission?.takeIf { admission ->
                                 profileId != null && admission.isCurrent(profileId, eventSocketGeneration)
                             }
-                        val replaySessionId = admittedReplay?.runtimeSessionId
+                        // The requested ID may be a stored lineage ID, not the live runtime.
+                        val replaySessionId =
+                            admittedReplay?.let {
+                                ((event.result as? Map<*, *>)?.get("session_id") as? String)?.takeIf(String::isNotBlank)
+                            }
+                        resolvePending(event.id, event.result, null)
                         val openRequests =
                             if (replaySessionId != null) {
                                 (event.result as? Map<*, *>)?.get("open_requests") as? List<*>
@@ -1657,7 +1687,7 @@ object HermesWsClient {
                             ) {
                                 return@forEach
                             }
-                            parsedEvents.tryEmit(
+                            replayEvents.add(
                                 SourcedWsEvent(
                                     event =
                                         WsEvent.ServerRequest(
@@ -1715,6 +1745,9 @@ object HermesWsClient {
                                 }?.let(ActiveSessionHolder::resolveStoredSessionId),
                         ),
                     )
+                // Collectors process the resume result first, installing its runtime ID
+                // under their conversation fence before admitting any replayed prompt.
+                if (emitted) replayEvents.forEach { parsedEvents.tryEmit(it) }
                 if (!emitted && BuildConfig.DEBUG) {
                     Log.w(TAG, "WebSocket message dropped due to buffer overflow")
                 }

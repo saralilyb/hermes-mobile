@@ -3930,6 +3930,32 @@ class ChatViewModelTest {
     // ── Gateway server-request regressions ─────────────────────────────────
 
     @Test
+    fun resumedPendingPromptsAreAnswerableAfterRuntimeInstallation() =
+        runTest {
+            val (viewModel, _) = createViewModelWithSession()
+            val bindings = mutableListOf<ServerRequestBinding>()
+            every { HermesWsClient.respondToServerRequest(capture(bindings), any()) } returns true
+            for (runtime in listOf("runtime-a", "stored-a")) {
+                viewModel.switchSession("away")
+                runCurrent()
+                viewModel.switchSession("stored-a")
+                runCurrent()
+                assertFalse(viewModel.uiState.value.isSessionReady)
+                val resumeId = requireNotNull(sentRequestIds[WsMethods.SESSION_RESUME]?.lastOrNull())
+                mockEventsFlow.emit(
+                    WsEvent.RpcResult(resumeId, mapOf("session_id" to runtime, "resumed" to "stored-a")),
+                )
+                mockEventsFlow.emit(serverRequest("pending-$runtime", "approval", sessionId = runtime, replayed = true))
+                runCurrent()
+                assertTrue(viewModel.uiState.value.isSessionReady)
+                val card = requireNotNull(viewModel.approvalMessage())
+                viewModel.respondToApproval(card.id, card.approvalInfo!!.privilegedBinding, "approve")
+                runCurrent()
+                assertEquals(ServerRequestBinding("pending-$runtime", runtime, "profile-a", 7), bindings.last())
+            }
+        }
+
+    @Test
     fun gatewayVault_promptsUseExactIdsAndMethodSpecificStringValues() =
         runTest {
             val (viewModel, sessionId) = createViewModelWithSession()

@@ -560,6 +560,57 @@ class HermesWsClientTest {
     }
 
     @Test
+    fun resumeReplayUsesReturnedRuntimeAndArrivesAfterResultForNullRuntime() =
+        runBlocking {
+            for (runtimeId in listOf("runtime-a", "stored-a")) {
+                every { AuthManager.getSelectedProfileId() } returns "profile-a"
+                val socket = mockk<WebSocket>(relaxed = true)
+                val sent = mutableListOf<String>()
+                every { socket.send(any<String>()) } answers {
+                    sent.add(firstArg())
+                    true
+                }
+                val listener = installActiveListener(socket)
+                ActiveSessionHolder.set("stored-a")
+                val id = HermesWsClient.send(WsMethods.SESSION_RESUME, mapOf("session_id" to "stored-a"))
+                var installedRuntime: String? = null
+                val received =
+                    async(start = CoroutineStart.UNDISPATCHED) {
+                        withTimeoutOrNull(1_000) {
+                            HermesWsClient.events.first { event ->
+                                if (event is WsEvent.RpcResult && event.id == id) {
+                                    installedRuntime = (event.result as Map<*, *>)["session_id"] as String
+                                    ActiveSessionHolder.set(installedRuntime, "stored-a")
+                                }
+                                event is WsEvent.ServerRequest && event.replayed
+                            }
+                        }
+                    }
+                listener.onMessage(
+                    socket,
+                    """{"jsonrpc":"2.0","id":"$id","result":{"session_id":"$runtimeId","open_requests":[""" +
+                        """{"id":"pending-a","method":"secret","params":{"session_id":"$runtimeId"}},""" +
+                        """{"id":"foreign","method":"secret","params":{"session_id":"other"}}]}}""",
+                )
+                val replay = received.await() as? WsEvent.ServerRequest
+                assertEquals("Replay must use the resumed runtime", "pending-a", replay?.id)
+                assertEquals("Resume result must install runtime before replay", runtimeId, installedRuntime)
+                assertTrue(
+                    HermesWsClient.respondToServerRequest(
+                        ServerRequestBinding(replay!!.id, runtimeId, "profile-a", activeConnectionGeneration()),
+                        kotlinx.serialization.json.buildJsonObject {
+                            put(
+                                "value",
+                                kotlinx.serialization.json.JsonPrimitive("fixture"),
+                            )
+                        },
+                    ),
+                )
+                assertTrue(sent.last().contains("pending-a"))
+            }
+        }
+
+    @Test
     fun replayedOpenRequestCarriesLiveConnectionProvenance() =
         runBlocking {
             every { AuthManager.getSelectedProfileId() } returns "profile-a"
@@ -582,7 +633,7 @@ class HermesWsClientTest {
 
             listener.onMessage(
                 socket,
-                """{"jsonrpc":"2.0","id":"$resumeId","result":{"open_requests":[""" +
+                """{"jsonrpc":"2.0","id":"$resumeId","result":{"session_id":"session-a","open_requests":[""" +
                     """{"id":"srq-replay","method":"secret","params":{"session_id":"session-a"}}]}}""",
             )
             val event = received.await() as WsEvent.ServerRequest
@@ -614,7 +665,7 @@ class HermesWsClientTest {
                     }
                 listener.onMessage(
                     socket,
-                    """{"jsonrpc":"2.0","id":"$id","result":{"open_requests":[$openRequest]}}""",
+                    """{"jsonrpc":"2.0","id":"$id","result":{"session_id":"session-a","open_requests":[$openRequest]}}""",
                 )
                 assertNull(received.await())
             }
@@ -630,7 +681,7 @@ class HermesWsClientTest {
                 HermesWsClient.send(WsMethods.SESSION_RESUME, mapOf("session_id" to "session-a"))
             listener.onMessage(
                 socket,
-                """{"jsonrpc":"2.0","id":"$duplicateId","result":{"open_requests":[]}}""",
+                """{"jsonrpc":"2.0","id":"$duplicateId","result":{"session_id":"session-a","open_requests":[]}}""",
             )
             assertNoReplay(duplicateId, valid)
 
@@ -663,7 +714,7 @@ class HermesWsClientTest {
                 val id = frame["id"]!!.jsonPrimitive.content
                 listener.onMessage(
                     socket,
-                    """{"jsonrpc":"2.0","id":"$id","result":{"open_requests":[""" +
+                    """{"jsonrpc":"2.0","id":"$id","result":{"session_id":"session-a","open_requests":[""" +
                         """{"id":"fast","method":"secret","params":{"session_id":"session-a"}}]}}""",
                 )
                 true
@@ -716,7 +767,7 @@ class HermesWsClientTest {
 
             listener.onMessage(
                 socket,
-                """{"jsonrpc":"2.0","id":"$resumeId","result":{"open_requests":[null,7,"bad",""" +
+                """{"jsonrpc":"2.0","id":"$resumeId","result":{"session_id":"session-a","open_requests":[null,7,"bad",""" +
                     """{"id":"valid","method":"secret","params":{"session_id":"session-a"}}]}}""",
             )
 
