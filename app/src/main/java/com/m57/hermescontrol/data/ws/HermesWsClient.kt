@@ -128,6 +128,9 @@ object HermesWsClient {
     private val connectionGeneration = AtomicInteger(0)
     private val socketGeneration = AtomicInteger(0)
     private val connected = AtomicBoolean(false)
+
+    // Guarded by connectionLock. Never drain session work before capability advertisement.
+    private var awaitingGatewayReady = false
     private val intentionalClose = AtomicBoolean(false)
     private val ticketAuthRetryUsed = AtomicBoolean(false)
     private val appInForeground = AtomicBoolean(true)
@@ -980,7 +983,7 @@ object HermesWsClient {
                 pendingReply = true
             }
             val ws = webSocket
-            if (ws != null && connected.get()) {
+            if (ws != null && connected.get() && !awaitingGatewayReady) {
                 if (!pendingCalls.containsKey(id)) {
                     replayAdmission(method, params)?.let { pendingReplayResponses[id] = it }
                 }
@@ -1469,8 +1472,8 @@ object HermesWsClient {
         private var serverRequestMethods: List<String> = emptyList()
         private var declinesNotShown = false
 
-        private fun advertiseCapabilities(socket: WebSocket) {
-            if (capabilitiesAdvertised) return
+        private fun advertiseCapabilities(socket: WebSocket): Boolean {
+            if (capabilitiesAdvertised) return true
             capabilitiesAdvertised = true
             val id = requestId.incrementAndGet().toString()
             // Register before writing: even a synchronous response must find its owner.
@@ -1482,7 +1485,12 @@ object HermesWsClient {
                     put("method", "client.capabilities")
                     put("params", buildJsonObject { put("server_requests", true) })
                 }
-            if (!socket.send(frame.toString())) capabilityRequestId = null
+            if (!socket.send(frame.toString())) {
+                capabilityRequestId = null
+                capabilitiesAdvertised = false
+                return false
+            }
+            return true
         }
 
         private fun consumeCapabilityResponse(event: WsEvent): Boolean {
@@ -1569,10 +1577,10 @@ object HermesWsClient {
                 }
                 Log.i(TAG, "WebSocket opened")
                 connected.set(true)
+                awaitingGatewayReady = true
                 _connectionStatus.value = ConnectionStatus.CONNECTED
                 currentBackoff = INITIAL_BACKOFF_MS
                 startHealthTracking()
-                drainQueue(webSocket)
             }
         }
 
@@ -1633,7 +1641,16 @@ object HermesWsClient {
                     Log.d(TAG, "Ignoring stale WebSocket message after parsing")
                     return
                 }
-                if (event is WsEvent.GatewayReady) advertiseCapabilities(webSocket)
+                if (event is WsEvent.GatewayReady) {
+                    if (!connected.get()) return
+                    if (!advertiseCapabilities(webSocket)) {
+                        recoverRejectedSocket(webSocket)
+                        return
+                    }
+                    awaitingGatewayReady = false
+                    drainQueue(webSocket)
+                    if (!connected.get() || webSocket !== HermesWsClient.webSocket) return
+                }
                 if (consumeCapabilityResponse(event)) return
                 if (event is WsEvent.ServerRequest && answerUnsupported(webSocket, event)) return
                 lastPongTimestamp = monotonicTimeMs()
