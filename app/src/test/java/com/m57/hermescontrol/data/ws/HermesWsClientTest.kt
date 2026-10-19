@@ -660,12 +660,17 @@ class HermesWsClientTest {
             false
         }
         val listener = installActiveListener(socket)
+        val retryField = HermesWsClient::class.java.getDeclaredField("ticketAuthRetryUsed")
+        retryField.isAccessible = true
+        val ticketRetry = retryField.get(HermesWsClient) as java.util.concurrent.atomic.AtomicBoolean
+        ticketRetry.set(true)
         val turn = """{"id":"turn","method":"prompt.submit","params":{}}"""
         outboundQueue().add(turn)
         listener.onMessage(socket, """{"method":"event","params":{"type":"gateway.ready"}}""")
         assertEquals("Rejected capability must not release queued work", listOf(turn), outboundQueue().toList())
         assertEquals(1, sent.size)
         assertTrue(sent.single().contains("client.capabilities"))
+        assertFalse("Gateway ready proves the ticket usable even if a later write fails", ticketRetry.get())
         assertFalse(HermesWsClient.isConnected)
     }
 

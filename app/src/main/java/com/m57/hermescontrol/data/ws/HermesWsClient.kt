@@ -1643,6 +1643,8 @@ object HermesWsClient {
                 }
                 if (event is WsEvent.GatewayReady) {
                     if (!connected.get()) return
+                    // Readiness proves this ticket usable even if advertisement/drain rejects a write.
+                    ticketAuthRetryUsed.set(false)
                     if (!advertiseCapabilities(webSocket)) {
                         recoverRejectedSocket(webSocket)
                         return
