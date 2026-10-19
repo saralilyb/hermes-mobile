@@ -311,6 +311,12 @@ fun notificationDecisionFor(
         is WsEvent.ServerRequest ->
             when {
                 event.replayed -> ChatNotificationDecision.Ignore
+                event.method == "clarify" ->
+                    ChatNotificationDecision.Input(
+                        R.string.notif_clarification_needed,
+                        storedSessionId ?: event.params["session_id"] as? String,
+                        event.id,
+                    )
                 event.method == "approval" ->
                     ChatNotificationDecision.Input(
                         R.string.notif_approval_needed,

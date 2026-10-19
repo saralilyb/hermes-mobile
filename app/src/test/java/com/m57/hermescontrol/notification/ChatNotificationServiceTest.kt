@@ -102,6 +102,29 @@ class ChatNotificationServiceTest {
 /** Background input notifications use fixed generic copy, never request content or inline replies. */
 class ChatNotificationPolicyTest {
     @Test
+    fun currentClarifyIsGenericStoredSessionBoundDeduplicatedAndReplaySilent() {
+        val event =
+            WsEvent.ServerRequest(
+                "clarify-id",
+                "clarify",
+                mapOf("session_id" to "runtime", "question" to "PRIVATE QUESTION"),
+                sourceProfileId = "profile-a",
+                connectionGeneration = 7,
+            )
+        val decision = notificationDecisionFor(event, "stored")
+        assertEquals(
+            ChatNotificationDecision.Input(R.string.notif_clarification_needed, "stored", "clarify-id"),
+            decision,
+        )
+        assertFalse(decision.toString().contains("PRIVATE"))
+        assertEquals(ChatNotificationDecision.Ignore, notificationDecisionFor(event.copy(replayed = true), "stored"))
+        val dedup = InputNotificationDeduplicator()
+        assertTrue(dedup.admit(event.sourceProfileId, event.id))
+        assertFalse(dedup.admit(event.sourceProfileId, event.id))
+        assertTrue(dedup.admit("profile-b", event.id))
+    }
+
+    @Test
     fun inputDedupIsProfileScopedAndBounded() {
         val dedup = InputNotificationDeduplicator()
         assertTrue(dedup.admit("profile-a", "same-id"))
