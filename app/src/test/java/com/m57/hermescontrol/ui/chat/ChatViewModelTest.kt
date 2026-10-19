@@ -333,6 +333,43 @@ class ChatViewModelTest {
         }
 
     @Test
+    fun catalogErrorFromReplacedConnectionCannotReduceState() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            val request = sentRequestIds.getValue(WsMethods.COMMANDS_CATALOG).last()
+            every { HermesWsClient.isConnectionBindingCurrent(any()) } returns false
+            val before = vm.uiState.value
+            mockEventsFlow.emit(WsEvent.RpcError(request, com.m57.hermescontrol.data.ws.JsonRpcError(-1, "stale")))
+            advanceUntilIdle()
+            assertEquals(before.errorMessage, vm.uiState.value.errorMessage)
+            assertEquals(before.isLoading, vm.uiState.value.isLoading)
+        }
+
+    @Test
+    fun catalogErrorFromPreviousSessionCannotReduceState() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            val request = sentRequestIds.getValue(WsMethods.COMMANDS_CATALOG).last()
+            vm.switchSession("other-session")
+            advanceUntilIdle()
+            val before = vm.uiState.value
+            mockEventsFlow.emit(WsEvent.RpcError(request, com.m57.hermescontrol.data.ws.JsonRpcError(-1, "stale")))
+            advanceUntilIdle()
+            assertEquals(before.errorMessage, vm.uiState.value.errorMessage)
+            assertEquals(before.isLoading, vm.uiState.value.isLoading)
+        }
+
+    @Test
+    fun catalogCurrentErrorStillPublishes() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            val request = sentRequestIds.getValue(WsMethods.COMMANDS_CATALOG).last()
+            mockEventsFlow.emit(WsEvent.RpcError(request, com.m57.hermescontrol.data.ws.JsonRpcError(-1, "current")))
+            advanceUntilIdle()
+            assertEquals("Error (commands.catalog): current", vm.uiState.value.errorMessage)
+        }
+
+    @Test
     fun catalogFromPreviousSessionCannotPublish() =
         runTest {
             val (vm, _) = createViewModelWithSession()

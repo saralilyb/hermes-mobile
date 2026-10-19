@@ -607,6 +607,13 @@ class ChatViewModel(
             }
         if (rpcId != null && consumeRetiredResumeRequest(rpcId)) return
         val pending = rpcId?.let(pendingRequests::get)
+        // Fence both results and errors before the generic reducer can mutate UI.
+        if (pending?.method == WsMethods.COMMANDS_CATALOG &&
+            pending.catalogFence?.let(::isCatalogFenceCurrent) != true
+        ) {
+            pendingRequests.remove(rpcId)
+            return
+        }
         if (pending?.method == WsMethods.SESSION_RESUME &&
             pending.resumeFence?.let(::isResumeFenceCurrent) != true
         ) {
