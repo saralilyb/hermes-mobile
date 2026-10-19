@@ -55,6 +55,7 @@ class SlashCommandDispatchRpcTest {
     private lateinit var fakeRepo: FakeChatPersistenceRepository
     private lateinit var fakeSlashUsageStore: FakeSlashUsageStore
     private var reqCount = 0
+    private var createRequestId: String? = null
 
     @Before
     fun setUp() {
@@ -101,6 +102,7 @@ class SlashCommandDispatchRpcTest {
         every { HermesWsClient.send(any(), any(), any()) } answers {
             reqCount++
             val id = "req-id-$reqCount"
+            if (arg<String>(0) == WsMethods.SESSION_CREATE) createRequestId = id
             arg<((String) -> Unit)?>(2)?.invoke(id)
             id
         }
@@ -131,8 +133,8 @@ class SlashCommandDispatchRpcTest {
         mockConnectionStatus.value = ConnectionStatus.CONNECTED
         mockEventsFlow.emit(WsEvent.GatewayReady(null))
         advanceUntilIdle()
-        // req-id-3 = session.create (after loadSessions + fetchCommandCatalog)
-        mockEventsFlow.emit(WsEvent.RpcResult("req-id-3", mapOf("session_id" to "session-xyz")))
+        // Capture the real request: startup catalog work may be invalidated before dispatch.
+        mockEventsFlow.emit(WsEvent.RpcResult(checkNotNull(createRequestId), mapOf("session_id" to "session-xyz")))
         advanceUntilIdle()
         return Pair(vm, "session-xyz")
     }

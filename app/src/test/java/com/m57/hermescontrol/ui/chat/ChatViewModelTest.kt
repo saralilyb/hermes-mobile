@@ -316,6 +316,35 @@ class ChatViewModelTest {
     // ── Slash command tests ──────────────────────────────────────────────────
 
     @Test
+    fun catalogConnectionFenceRejectsStaleResultAndAcceptsCurrent() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            var request = sentRequestIds.getValue(WsMethods.COMMANDS_CATALOG).last()
+            mockEventsFlow.emit(WsEvent.RpcResult(request, mapOf("warning" to "current")))
+            advanceUntilIdle()
+            assertEquals("current", vm.uiState.value.commandCatalog.warning)
+            mockEventsFlow.emit(WsEvent.GatewayReady(null))
+            advanceUntilIdle()
+            request = sentRequestIds.getValue(WsMethods.COMMANDS_CATALOG).last()
+            every { HermesWsClient.isConnectionBindingCurrent(any()) } returns false
+            mockEventsFlow.emit(WsEvent.RpcResult(request, mapOf("warning" to "old-socket")))
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.commandCatalog.warning == "old-socket")
+        }
+
+    @Test
+    fun catalogFromPreviousSessionCannotPublish() =
+        runTest {
+            val (vm, _) = createViewModelWithSession()
+            val request = sentRequestIds.getValue(WsMethods.COMMANDS_CATALOG).last()
+            vm.switchSession("other-session")
+            advanceUntilIdle()
+            mockEventsFlow.emit(WsEvent.RpcResult(request, mapOf("warning" to "stale-catalog")))
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.commandCatalog.warning == "stale-catalog")
+        }
+
+    @Test
     fun connectionRowsNeverEnterTranscript() =
         runTest {
             val (vm, _) = createViewModelWithSession()
@@ -1692,7 +1721,12 @@ class ChatViewModelTest {
 
             // GatewayReady sends SESSION_LIST (req-id-1), COMMANDS_CATALOG (req-id-2),
             // then SESSION_CREATE (req-id-3)
-            mockEventsFlow.emit(WsEvent.RpcResult("req-id-3", mapOf("session_id" to "session-123")))
+            mockEventsFlow.emit(
+                WsEvent.RpcResult(
+                    sentRequestIds.getValue(WsMethods.SESSION_CREATE).last(),
+                    mapOf("session_id" to "session-123"),
+                ),
+            )
             advanceUntilIdle()
 
             assertEquals("session-123", viewModel.uiState.value.currentSessionId)
@@ -5505,7 +5539,10 @@ class ChatViewModelTest {
 
             // req-id-3: loadSessions and fetchCommandCatalog precede the create.
             mockEventsFlow.emit(
-                WsEvent.RpcResult("req-id-3", mapOf("session_id" to "session-123")),
+                WsEvent.RpcResult(
+                    sentRequestIds.getValue(WsMethods.SESSION_CREATE).last(),
+                    mapOf("session_id" to "session-123"),
+                ),
             )
             advanceUntilIdle()
 

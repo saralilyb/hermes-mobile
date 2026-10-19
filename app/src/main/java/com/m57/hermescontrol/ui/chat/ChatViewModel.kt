@@ -92,8 +92,17 @@ private const val SESSION_CREATE_MAX_ATTEMPTS = 3
 private const val REDIRECT_UNSUPPORTED_CODE = 4010
 private const val MAX_RETIRED_RESUME_REQUESTS = 64
 
+private data class CatalogFence(
+    val binding: ConnectionBinding,
+    val profileId: String,
+    val runtimeSessionId: String?,
+    val generation: Long,
+    val requestGeneration: Long,
+)
+
 private data class PendingRpcRequest(
     val method: String,
+    val catalogFence: CatalogFence? = null,
     val resumeSessionId: String? = null,
     val resumeFence: ResumeFence? = null,
     /** Runtime session that initiated a branch, used to fence late responses. */
@@ -354,6 +363,7 @@ class ChatViewModel(
 
     /** Maps an in-flight RPC id to the context needed to handle its result. */
     private val pendingRequests = ConcurrentHashMap<String, PendingRpcRequest>()
+    private var catalogRequestGeneration = 0L
     private val resumeRequestLock = Any()
     private val retiredResumeRequests = LinkedHashSet<String>()
 
@@ -911,6 +921,7 @@ class ChatViewModel(
                 sessionCreateJob?.cancel()
                 sessionCreateJob = null
                 runtimeSessionId = runtimeId
+                fetchCommandCatalog()
                 _uiState.update {
                     it.copy(
                         currentSessionId = storageId,
@@ -947,6 +958,7 @@ class ChatViewModel(
                 val terminalBackend = (info?.get("terminal_backend") as? String)?.trim()
                 clearPrivilegedControls()
                 runtimeSessionId = newId
+                fetchCommandCatalog()
                 _uiState.update {
                     it.copy(
                         currentSessionId = newId,
@@ -1015,6 +1027,7 @@ class ChatViewModel(
                         ?: requestedSessionId
                         ?: selectedSessionId
                 runtimeSessionId = resultMap?.get("session_id") as? String
+                fetchCommandCatalog()
 
                 // Parse the session-scoped snapshot returned by the backend.
                 val infoMap = resultMap?.get("info") as? Map<*, *>
@@ -1088,6 +1101,8 @@ class ChatViewModel(
             }
 
             WsMethods.COMMANDS_CATALOG -> {
+                val fence = request.catalogFence ?: return
+                if (!isCatalogFenceCurrent(fence)) return
                 val map = result as? Map<*, *> ?: return
                 val catalog = parseCommandCatalog(map)
                 if (catalog != null) {
@@ -2057,11 +2072,27 @@ class ChatViewModel(
         }
     }
 
+    private fun isCatalogFenceCurrent(fence: CatalogFence): Boolean =
+        fence.generation == conversationGeneration &&
+            fence.requestGeneration == catalogRequestGeneration &&
+            fence.profileId == selectedProfileId() &&
+            fence.runtimeSessionId == runtimeSessionId &&
+            wsClient.isConnectionBindingCurrent(fence.binding)
+
     private fun fetchCommandCatalog() {
+        val profile = selectedProfileId()
+        val binding = wsClient.connectionBinding(profile) ?: return
+        val fence = CatalogFence(binding, profile, runtimeSessionId, conversationGeneration, ++catalogRequestGeneration)
         viewModelScope.launch(Dispatchers.IO) {
+            if (!isCatalogFenceCurrent(fence)) return@launch
             wsClient.send(
                 WsMethods.COMMANDS_CATALOG,
-                onSent = { id -> trackRequest(id, WsMethods.COMMANDS_CATALOG) },
+                params = fence.runtimeSessionId?.let { mapOf("session_id" to it) } ?: emptyMap(),
+                onSent = { id ->
+                    if (isCatalogFenceCurrent(fence)) {
+                        pendingRequests[id] = PendingRpcRequest(WsMethods.COMMANDS_CATALOG, catalogFence = fence)
+                    }
+                },
             )
         }
     }
@@ -3774,6 +3805,8 @@ class ChatViewModel(
             binding.connectionGeneration == event.connectionGeneration
 
     private fun clearPrivilegedControls() {
+        catalogRequestGeneration++
+        _uiState.update { it.copy(commandCatalog = CommandCatalog()) }
         dismissUndoConfirm()
         approvalExpiryJobs.values.forEach(Job::cancel)
         approvalExpiryJobs.clear()
