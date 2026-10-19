@@ -220,8 +220,10 @@ data class ClarifyUi(
     val sourceProfileId: String? = null,
     val connectionGeneration: Int? = null,
     val serverRequestBinding: ServerRequestBinding? = null,
-    val lockedAnswers: Map<String, String> = emptyMap(),
+    val lockedAnswers: Map<String, String?> = emptyMap(),
 ) {
+    fun isAnswerLocked(questionId: String): Boolean = lockedAnswers.containsKey(questionId)
+
     val resolvedQuestions: List<ClarifyQuestionUi>
         get() =
             questions.ifEmpty {
@@ -3630,7 +3632,10 @@ class ChatViewModel(
             "clarify" -> {
                 val locked =
                     (request.params["answers"] as? Map<*, *>)?.entries
-                        ?.mapNotNull { (k, v) -> if (k is String && v is String) k to v else null }?.toMap().orEmpty()
+                        ?.mapNotNull {
+                                (k, v) ->
+                            if (k is String && (v == null || v is String)) k to v as String? else null
+                        }?.toMap().orEmpty()
                 val questions =
                     (request.params["questions"] as? List<*>)?.mapIndexedNotNull { index, raw ->
                         val map = raw as? Map<*, *> ?: return@mapIndexedNotNull null

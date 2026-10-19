@@ -144,7 +144,7 @@ sealed class WsEvent {
         val sourceProfileId: String? = null,
         val connectionGeneration: Int? = null,
         val serverRequestId: String? = null,
-        val lockedAnswers: Map<String, String> = emptyMap(),
+        val lockedAnswers: Map<String, String?> = emptyMap(),
     ) : WsEvent()
 
     data class ClarifyExpire(

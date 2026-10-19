@@ -824,4 +824,5 @@
     <string name="chat_approval_allow_session">السماح لهذه الجلسة</string>
     <string name="notif_approval_needed">يحتاج Hermes إلى موافقتك</string>
     <string name="notif_input_needed">ينتظر Hermes إدخالك</string>
+    <string name="clarify_skipped">تم التخطي</string>
 </resources>

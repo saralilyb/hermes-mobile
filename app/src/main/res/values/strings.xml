@@ -1079,4 +1079,5 @@
     <string name="chat_approval_allow_session">Allow for this session</string>
     <string name="notif_approval_needed">Hermes needs your approval</string>
     <string name="notif_input_needed">Hermes is waiting for your input</string>
+    <string name="clarify_skipped">Skipped</string>
 </resources>

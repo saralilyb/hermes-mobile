@@ -4137,22 +4137,25 @@ class ChatViewModelTest {
                     "clarify",
                     extra =
                         mapOf(
-                            "answers" to mapOf("q1" to "locked"),
+                            "answers" to mapOf("q1" to "locked", "q3" to null),
                             "questions" to
                                 listOf(
                                     mapOf("qid" to "q1", "question" to "First?"),
                                     mapOf("qid" to "q2", "question" to "Second?"),
+                                    mapOf("qid" to "q3", "question" to "Skipped?"),
                                 ),
                         ),
                 ),
             )
             runCurrent()
             val prompt = requireNotNull(viewModel.uiState.value.clarifyRequest)
-            viewModel.respondToClarifyBatch(prompt, mapOf("q1" to "overwrite", "q2" to "new"))
+            assertTrue("Skipped question must remain locked", prompt.isAnswerLocked("q3"))
+            viewModel.respondToClarifyBatch(prompt, mapOf("q1" to "overwrite", "q2" to "new", "q3" to "overwrite"))
             runCurrent()
 
             assertTrue(result.captured.toString().contains("\"q1\":\"locked\""))
             assertTrue(result.captured.toString().contains("\"q2\":\"new\""))
+            assertTrue(result.captured.toString().contains("\"q3\":null"))
         }
 
     @Test
