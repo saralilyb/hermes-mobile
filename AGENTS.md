@@ -402,6 +402,25 @@ gh pr create --title "fix(#N): description" --body "Closes #N"
   action until the transport enforces profile identity inside the send operation.
   A notification from another profile may open the app, but must never switch
   profiles or route its session ID through the active profile.
+- **Gateway server requests:** after `gateway.ready`, every WebSocket connection
+  must send `client.capabilities {server_requests: true}` once, before
+  releasing queued session work. A gateway fails every approval immediately
+  for a client that never advertises, so the phone cannot approve anything
+  when it is the only attached client. Advertising obliges answers: reply to
+  unsupported methods with a same-ID `-32601`, and to Desktop-owned preview,
+  terminal, window, tour, and theme-apply requests with `4404` only when the
+  connection negotiated `declines_not_shown`; otherwise leave them unanswered
+  so Mobile never preempts another client. Bind negotiation and responses to
+  the receiving socket generation, bound readiness with a socket-scoped
+  deadline that unrelated inbound traffic cannot extend, and never hold
+  `gateway.ping` behind readiness. Offer "Allow for this session" only when the
+  request permits it; never offer permanent ("Always allow") permission.
+- **Approval notifications:** background notifications for approvals,
+  clarifications, and credential or vault input use fixed generic text only.
+  Never include the command, description, tool, pattern, secret, or session
+  title, and never add inline actions. Replayed requests stay silent; live
+  request IDs are deduplicated per source profile. Taps follow the
+  notification-navigation rule above. See `SECURITY.md` for the full contract.
 
 ## Things to Avoid
 
